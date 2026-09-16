@@ -9,7 +9,7 @@ import time
 import urllib.parse
 
 # CONFIGURATION
-PORT = 8888
+PORT = 8899
 DIRECTORY   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # albert-moe-13/
 PROJECT     = DIRECTORY
 _BEST_MODEL = (
