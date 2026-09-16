@@ -1524,13 +1524,23 @@ fn train_cycle(
 
             // Drain both thread-locals regardless — keeps accumulators clean next batch.
             let entropy_term   = take_entropy_capture();
-            let entropy_scalar = entropy_term.as_ref()
-                .and_then(|t| t.to_scalar::<f32>().ok())
-                .unwrap_or(0.0);
             let lb_term        = take_lb_capture();
-            let lb_scalar      = lb_term.as_ref()
-                .and_then(|t| t.to_scalar::<f32>().ok())
-                .unwrap_or(0.0);
+
+            // entropy_scalar/lb_scalar are diagnostic-only (ENTR/LB log lines below) and
+            // each .to_scalar() forces a blocking GPU sync. They're only ever read on log
+            // batches (same condition as the write site further down) — skip the sync on
+            // every other batch instead of paying the stall for a value nobody reads.
+            let is_log_batch = batch_idx % 10 == 0 || batch_idx == 5;
+            let entropy_scalar = if is_log_batch {
+                entropy_term.as_ref().and_then(|t| t.to_scalar::<f32>().ok()).unwrap_or(0.0)
+            } else {
+                0.0
+            };
+            let lb_scalar = if is_log_batch {
+                lb_term.as_ref().and_then(|t| t.to_scalar::<f32>().ok()).unwrap_or(0.0)
+            } else {
+                0.0
+            };
 
             let mut batch_loss = ce_loss.clone();
 

@@ -248,9 +248,10 @@ def _ntfy(title: str, msg: str, priority: str = "3") -> None:
 
 @app.function(
     image=image,
-    gpu="L4",            # 24GB. T4 16GB OOMed immediately despite 12.2GB observed on L4 (2026-05-30).
-                         # Memory spikes during backward/checkpoint exceed buffer; L4 provides safe margin.
-                         # LayerNorm gradient bug fixed. Stay on L4 until new funds arrive.
+    gpu="L40S",          # 48GB (up from L4 24GB, 2026-09-16). Headroom to raise --batch-size
+                         # past 1 without repeating the 2026-05-29 OOM (batch_size=1 already
+                         # used ~10-12GB of the old 24GB card at CTX=512). Ramp batch_size
+                         # carefully with real nvidia-smi/gpu_mem_mb() checks, not by guessing.
     timeout=23 * 3600,   # 23-hour cap
     volumes={"/vol": vol},
     # Auth'd lighthouse telemetry: the 'lighthouse-ingest' secret (LIGHTHOUSE_INBOX_KEY) is injected so
@@ -768,4 +769,8 @@ def main():
         ).returncode
         if evo_rc != 0:
             print(f"[main] evolution sync failed (exit {evo_rc}) — train_bible will recalibrate from scratch")
-    train.remote(gate_diversity=0.3, lb_weight=0.03, div_weight=0.001, lb_disable=False, batch_size=1)
+    # batch_size=2 (up from 1, 2026-09-16, alongside the L40S 48GB upgrade). The old
+    # 24GB L4 was already at ~10-12GB for batch_size=1 at CTX=512, so this is a
+    # conservative first step, not a jump straight to 4 — watch the GPUMEM log lines
+    # (dashboard/training.log, written every 4 batches) before raising it further.
+    train.remote(gate_diversity=0.3, lb_weight=0.03, div_weight=0.001, lb_disable=False, batch_size=2)
