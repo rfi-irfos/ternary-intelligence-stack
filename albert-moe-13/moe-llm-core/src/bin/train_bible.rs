@@ -1585,6 +1585,13 @@ fn train_cycle(
             let entropy_term   = take_entropy_capture();
             let lb_term        = take_lb_capture();
 
+            // Real number of MoE gate calls in one forward pass — once per layer per
+            // stream. Both the LB loss and the logged LB/ENTR values need this: moe.rs's
+            // LB_ACC/ENTROPY_ACC just add each layer's term, never divide, so a raw
+            // .to_scalar() reads a SUM across e.g. 38 layers x 2 streams = 76 calls, not
+            // a per-layer value.
+            let gate_calls = (config.num_layers * config.num_streams.max(1)) as f64;
+
             // entropy_scalar/lb_scalar are diagnostic-only (ENTR/LB log lines below) and
             // each .to_scalar() forces a blocking GPU sync. They're only ever read on log
             // batches (same condition as the write site further down) — skip the sync on
@@ -1596,7 +1603,9 @@ fn train_cycle(
                 0.0
             };
             let lb_scalar = if is_log_batch {
-                lb_term.as_ref().and_then(|t| t.to_scalar::<f32>().ok()).unwrap_or(0.0)
+                lb_term.as_ref().and_then(|t| t.to_scalar::<f32>().ok())
+                    .map(|s| s / gate_calls as f32)
+                    .unwrap_or(0.0)
             } else {
                 0.0
             };
@@ -1605,9 +1614,19 @@ fn train_cycle(
 
             // LB loss: gated on effective_lb > 0. When LB is disabled (--lb-disable),
             // lb_term is drained but not added to batch_loss — no gradient flows.
+            //
+            // The Switch-Transformer formula (N * sum(f_i*p_i)) is designed to read ~1.0
+            // per layer at perfect balance; left unnormalized across all gate_calls,
+            // "balanced" reads ~76 instead of ~1, and real logs showed it at ~228 under
+            // actual (imbalanced) routing. At effective_lb=0.03 that was a ~6.8
+            // contribution to batch_loss -- LARGER than the ce_loss it's supposed to
+            // lightly regularize. Normalizing by gate_calls brings it back to the
+            // ~0.03-0.1 range the weight was presumably tuned for, instead of silently
+            // forcing balance harder than the CE objective itself.
             if effective_lb > 0.0 {
                 if let Some(lb) = lb_term {
-                    batch_loss = (&batch_loss + (lb * effective_lb)?)?;
+                    let lb_normalized = (lb / gate_calls)?;
+                    batch_loss = (&batch_loss + (lb_normalized * effective_lb)?)?;
                 }
             }
 
@@ -1865,12 +1884,10 @@ fn train_cycle(
                         .map(|&w| format!("{:.3}", w)).collect();
                     let _ = writeln!(f, "ROUTE step={} E={}", *global_step, route_str.join(","));
                     // ENTR — routing entropy per MoE layer (nats). Max = ln(12) ≈ 2.485.
-                    // Divisor must be the real number of gate calls per forward pass:
-                    // num_layers × num_streams (dual-stream runs the gate once per layer
-                    // PER STREAM). Dividing by num_layers alone under-divided by 2x on the
-                    // current 2-stream architecture, e.g. logging ~4.78 instead of ~2.39.
-                    let gate_calls = config.num_layers * config.num_streams.max(1);
-                    let entr_per_layer = if gate_calls > 0 {
+                    // Divisor is gate_calls (computed above, shared with the LB
+                    // normalization fix) — dividing by num_layers alone under-divided by
+                    // 2x on this 2-stream architecture, e.g. logging ~4.78 instead of ~2.39.
+                    let entr_per_layer = if gate_calls > 0.0 {
                         -entropy_scalar / gate_calls as f32
                     } else { 0.0 };
                     epoch_entr_sum   += entr_per_layer;

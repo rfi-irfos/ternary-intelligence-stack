@@ -13,7 +13,7 @@
   "max_seq_len": 512,
   "num_experts": 12,
   "num_heads": 4,
-  "num_layers": 36,
+  "num_layers": 38,
   "num_streams": 2,
   "vocab_size": 32000
 }
