@@ -238,19 +238,33 @@ fn load_checkpoint(varmap: &VarMap, path: &str, device: &Device) -> Result<usize
 
 /// Compute the global L2 gradient norm across all variables.
 /// Returns 0.0 if no gradients are present.
+///
+/// Runs every training step now (GRAD_ACCUM_STEPS=1 means is_step_batch is always true),
+/// so the old per-variable `.to_scalar()` loop meant one blocking GPU sync per tensor —
+/// ~2184 of them, every single batch. Rewritten to accumulate all per-variable squared
+/// sums as GPU-resident tensors and sync exactly ONCE at the end. Trade-off: the original
+/// filtered non-finite per-variable contributions individually before summing; this
+/// version checks finiteness only on the final total, so one NaN/Inf gradient zeroes the
+/// whole reported norm instead of just dropping that variable's term. Acceptable here —
+/// this only drives a logged health metric, not the AdamW step itself, and genuine loss
+/// explosions are already caught upstream by LOSS_EXPLOSION_THRESHOLD.
 fn global_grad_norm(varmap: &VarMap, grads: &candle_core::backprop::GradStore) -> f32 {
-    let mut sq_sum = 0.0_f32;
     let all_vars = varmap.all_vars();
+    let mut acc: Option<Tensor> = None;
     for var in &all_vars {
         if let Some(g) = grads.get(var.as_tensor()) {
-            if let Ok(sq) = g.sqr().and_then(|t| t.sum_all()).and_then(|t| t.to_scalar::<f32>()) {
-                if sq.is_finite() {
-                    sq_sum += sq;
-                }
+            if let Ok(sq) = g.sqr().and_then(|t| t.sum_all()) {
+                acc = Some(match acc.take() {
+                    None => sq,
+                    Some(prev) => (&prev + &sq).unwrap_or(prev),
+                });
             }
         }
     }
-    sq_sum.sqrt()
+    acc.and_then(|t| t.to_scalar::<f32>().ok())
+        .filter(|s| s.is_finite())
+        .unwrap_or(0.0)
+        .sqrt()
 }
 
 /// Memory-efficient gradient accumulation: fold one micro-batch's GradStore into a
@@ -299,43 +313,63 @@ fn gpu_mem_mb() -> Option<(u64, u64, u64)> {
 ///   [num_layers+1]  = lm_head norm (lm_head.*)
 /// Appending non-block entries makes the bars non-zero even when ternary block
 /// gradients are near machine-zero (common in late F32 training).
+/// See global_grad_norm's doc comment for why this batches syncs (was 1 blocking
+/// `.to_scalar()` per matching variable, ~2184 across a full pass; now exactly 1 for
+/// the whole call via a single stack + to_vec1). Same finiteness trade-off: within a
+/// layer bucket, multiple variables' squared sums are combined on-device before the one
+/// final check, so a NaN from one variable zeroes that whole layer's reported norm
+/// rather than just its own term. Cross-layer buckets remain fully independent and are
+/// checked for finiteness individually after the sync, same as before.
 fn per_layer_grad_norm(varmap: &VarMap, grads: &candle_core::backprop::GradStore, num_layers: usize) -> Vec<f32> {
-    let mut sq: Vec<f32> = vec![0.0; num_layers + 2];
+    let mut acc: Vec<Option<Tensor>> = vec![None; num_layers + 2];
     // One-shot diagnostic: on first call print how many block/embed/lm vars have vs. lack grads.
     static GRAD_DIAG_DONE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
     let first_call = GRAD_DIAG_DONE.set(()).is_ok();
     let (mut block_with, mut block_without) = (0usize, 0usize);
     let (mut lm_with, mut lm_without) = (0usize, 0usize);
-    let all_vars = varmap.data().lock().unwrap();
-    for (name, var) in all_vars.iter() {
-        let idx = if let Some(rest) = name.strip_prefix("blocks.") {
-            rest.split('.').next()
-                .and_then(|s| s.parse::<usize>().ok())
-                .filter(|&i| i < num_layers)
-        } else if name.starts_with("embed.") {
-            Some(num_layers)
-        } else if name.starts_with("lm_head.") {
-            Some(num_layers + 1)
-        } else {
-            None
-        };
-        if let Some(i) = idx {
-            if let Some(g) = grads.get(var.as_tensor()) {
-                if first_call {
-                    if i < num_layers { block_with += 1; } else { lm_with += 1; }
+    let mut device: Option<Device> = None;
+    {
+        let all_vars = varmap.data().lock().unwrap();
+        for (name, var) in all_vars.iter() {
+            let idx = if let Some(rest) = name.strip_prefix("blocks.") {
+                rest.split('.').next()
+                    .and_then(|s| s.parse::<usize>().ok())
+                    .filter(|&i| i < num_layers)
+            } else if name.starts_with("embed.") {
+                Some(num_layers)
+            } else if name.starts_with("lm_head.") {
+                Some(num_layers + 1)
+            } else {
+                None
+            };
+            if let Some(i) = idx {
+                if device.is_none() { device = Some(var.as_tensor().device().clone()); }
+                if let Some(g) = grads.get(var.as_tensor()) {
+                    if first_call {
+                        if i < num_layers { block_with += 1; } else { lm_with += 1; }
+                    }
+                    if let Ok(sq) = g.sqr().and_then(|t| t.sum_all()) {
+                        acc[i] = Some(match acc[i].take() {
+                            None => sq,
+                            Some(prev) => (&prev + &sq).unwrap_or(prev),
+                        });
+                    }
+                } else if first_call {
+                    if i < num_layers { block_without += 1; } else { lm_without += 1; }
                 }
-                if let Ok(s) = g.sqr().and_then(|t| t.sum_all()).and_then(|t| t.to_scalar::<f32>()) {
-                    if s.is_finite() { sq[i] += s; }
-                }
-            } else if first_call {
-                if i < num_layers { block_without += 1; } else { lm_without += 1; }
             }
         }
     }
     if first_call {
         println!("[GRAD-DIAG] blocks: {block_with} have grad / {block_without} None | lm+emb: {lm_with} have grad / {lm_without} None");
     }
-    sq.iter().map(|&s| s.sqrt()).collect()
+    let Some(device) = device else { return vec![0.0; num_layers + 2] };
+    let zero = || Tensor::zeros((), DType::F32, &device).unwrap();
+    let stacked: Vec<Tensor> = acc.into_iter().map(|t| t.unwrap_or_else(zero)).collect();
+    match Tensor::stack(&stacked, 0).and_then(|t| t.to_vec1::<f32>()) {
+        Ok(v) => v.into_iter().map(|s| if s.is_finite() { s.sqrt() } else { 0.0 }).collect(),
+        Err(_) => vec![0.0; num_layers + 2],
+    }
 }
 
 /// Per-layer variance of expert weight gradient norms — the definitive H3 diagnostic.
@@ -1352,8 +1386,19 @@ fn train_cycle(
         c.trim().parse::<u32>().unwrap_or(0)
     } else { 0 };
 
-    // Cosine LR: starts high, decays to near-zero over lr_cycle_steps global steps
-    let base_lr        = 3e-4_f64;   // reset to known-good; BATCH_SIZE=13 (eff. 52) does not justify 5e-4
+    // Cosine LR: starts high, decays to near-zero over lr_cycle_steps global steps.
+    // base_lr was last tuned at 3e-4 for BATCH_SIZE=13 × GRAD_ACCUM_STEPS=4 (effective
+    // batch 52). GRAD_ACCUM_STEPS dropped to 1 for a separate, sound reason (dual-stream
+    // 12E already gives 384 expert pathways of gradient diversity per forward pass — see
+    // GRAD_ACCUM_STEPS doc comment), but batch_size then fell 13 -> 1 -> 2 purely to dodge
+    // OOM on the old 24GB L4, never against base_lr. Effective batch is now 2 — a 26x drop
+    // from the value 3e-4 was calibrated for — and per-batch loss noise is real, not just
+    // visual: stdev 0.835 against a mean of 4.45 (2026-09-18, ~2100 GPUMEM-adjacent
+    // batches). Square-root scaling (the standard rule for adaptive optimizers, since
+    // AdamW's second moment already normalizes raw gradient magnitude — noise, not scale,
+    // is what actually gets worse with a smaller batch): 3e-4 * sqrt(2/52) ≈ 5.88e-5,
+    // rounded to 6e-5. Revisit if batch_size changes again.
+    let base_lr        = 6e-5_f64;
     let min_lr         = 2e-5_f64;
     let lr_cycle_steps = 500_usize;
 
@@ -1799,8 +1844,13 @@ fn train_cycle(
                         .map(|&w| format!("{:.3}", w)).collect();
                     let _ = writeln!(f, "ROUTE step={} E={}", *global_step, route_str.join(","));
                     // ENTR — routing entropy per MoE layer (nats). Max = ln(12) ≈ 2.485.
-                    let entr_per_layer = if config.num_layers > 0 {
-                        -entropy_scalar / config.num_layers as f32
+                    // Divisor must be the real number of gate calls per forward pass:
+                    // num_layers × num_streams (dual-stream runs the gate once per layer
+                    // PER STREAM). Dividing by num_layers alone under-divided by 2x on the
+                    // current 2-stream architecture, e.g. logging ~4.78 instead of ~2.39.
+                    let gate_calls = config.num_layers * config.num_streams.max(1);
+                    let entr_per_layer = if gate_calls > 0 {
+                        -entropy_scalar / gate_calls as f32
                     } else { 0.0 };
                     epoch_entr_sum   += entr_per_layer;
                     epoch_entr_count += 1;
@@ -2648,7 +2698,14 @@ fn main() -> Result<()> {
                 );
                 let _ = writeln!(f, "{}", mand_line);
             }
-            global_step = 0;
+            // global_step is intentionally NOT reset here (was `global_step = 0;`).
+            // cosine_lr keys off `global_step % lr_cycle_steps` — zeroing it snapped the LR
+            // back to base_lr at full strength after every surgery, discarding whatever
+            // progress the 500-step anneal had made. Session log 2026-05-13 already
+            // documented this exact failure mode once ("cosine bumps" interrupting descent)
+            // before growth-triggered resets reintroduced it. mycelium.on_layer_added() and
+            // wald.on_surgery() above already give those subsystems their own fresh-start
+            // signal; the LR schedule doesn't need one too.
             // Corpus reloaded at top of next loop iteration with updated num_layers.
         }
     }
