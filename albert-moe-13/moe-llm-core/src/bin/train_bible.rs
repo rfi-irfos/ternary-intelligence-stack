@@ -2588,24 +2588,38 @@ fn load_corpus_cached(tokenizer: &BpeTokenizer, num_layers: usize, root: &str) -
     })().unwrap_or(false);
 
     if cache_valid {
+        let mut token_bytes_ok = false;
         if let Ok(bytes) = fs::read(cache_path) {
             if bytes.len() > 4 && bytes.len() % 4 == 0 {
-                let tokens: Vec<u32> = bytes[4..].chunks_exact(4)
-                    .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
-                    .collect();
-                println!("[{}] Corpus cache hit — {} tokens loaded instantly (skipped tokenization).",
-                    timestamp(), tokens.len());
-                // Stage bounds ride along as a JSON sidecar. Missing/corrupt sidecar
-                // degrades to "everything is stage 0" — old/new split just goes quiet
-                // (never classified as a known "new" stage), not wrong or crashing.
-                let bounds: StageBounds = fs::read_to_string(&stages_path)
-                    .ok()
-                    .and_then(|s| serde_json::from_str::<Vec<(usize, usize, usize)>>(&s).ok())
-                    .unwrap_or_default();
-                return (tokens, bounds);
+                token_bytes_ok = true;
+                // Stage bounds ride along as a JSON sidecar (added after the token cache
+                // format was already in use). A cache built by an older binary — or any
+                // other reason the sidecar is missing/corrupt — must NOT silently return
+                // empty bounds here: that poisons known_stages in main() to stay empty
+                // through this whole cycle, so the NEXT reload (at the next surgery) sees
+                // every long-standing stage as newly "unlocked" and reports a completely
+                // spurious old/new split. (Confirmed 2026-09-18: exactly this happened on
+                // this feature's first live run — a pre-existing cache with no sidecar
+                // caused epoch 8880's STAGESPLIT to read new_n=263 when nothing had
+                // actually been unlocked.) Falling through to a full re-tokenize instead
+                // costs one cache-miss the first time this deploys against an old cache,
+                // but guarantees tokens and bounds are always computed together.
+                if let Ok(s) = fs::read_to_string(&stages_path) {
+                    if let Ok(bounds) = serde_json::from_str::<Vec<(usize, usize, usize)>>(&s) {
+                        let tokens: Vec<u32> = bytes[4..].chunks_exact(4)
+                            .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+                            .collect();
+                        println!("[{}] Corpus cache hit — {} tokens loaded instantly (skipped tokenization).",
+                            timestamp(), tokens.len());
+                        return (tokens, bounds);
+                    }
+                }
+                eprintln!("Warning: cache hit but stage-bounds sidecar missing/corrupt — re-tokenizing to keep tokens and bounds consistent.");
             }
         }
-        eprintln!("Warning: cache file corrupt, re-tokenizing.");
+        if !token_bytes_ok {
+            eprintln!("Warning: cache file corrupt, re-tokenizing.");
+        }
     }
 
     let (tokens, bounds) = load_corpus(tokenizer, num_layers, root);
