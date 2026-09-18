@@ -6,13 +6,14 @@
     5,
     8,
     13,
-    21
+    21,
+    34
   ],
   "hidden_size": 256,
   "max_seq_len": 512,
   "num_experts": 12,
   "num_heads": 4,
-  "num_layers": 33,
+  "num_layers": 36,
   "num_streams": 2,
   "vocab_size": 32000
 }
