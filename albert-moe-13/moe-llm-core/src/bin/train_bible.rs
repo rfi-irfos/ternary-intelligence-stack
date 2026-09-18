@@ -1237,6 +1237,8 @@ fn perform_resurrection(checkpoint_path: &str, jobs: &[moe_llm_core::mycelium::R
 
 fn train_cycle(
     tokens: &[u32],
+    stage_bounds: &StageBounds,
+    new_stages: &std::collections::HashSet<usize>,
     tokenizer: &BpeTokenizer,
     device: &Device,
     evolution_manager: &mut EvolutionManager,
@@ -1475,6 +1477,14 @@ fn train_cycle(
     loop {
         let mut total_loss    = 0.0_f32;
         let mut counted_batches = 0u32; // only count non-skipped batches in avg
+        // Old/new-material split (see stage_for_idx): a batch counts as "new" if ANY of
+        // its batch_size sampled windows touches a stage unlocked by the most recent
+        // surgery. Approximate at batch_size>1 (a batch can technically mix old+new
+        // material and still get filed under "new"), but cheap and directionally right.
+        let mut stagesplit_old_loss = 0.0_f32;
+        let mut stagesplit_old_n    = 0u32;
+        let mut stagesplit_new_loss = 0.0_f32;
+        let mut stagesplit_new_n    = 0u32;
         total_epochs += 1;
         // Reset per-epoch TTL freeze safety counters at epoch boundary.
         epoch_burst_count.iter_mut().for_each(|c| *c = 0);
@@ -1534,8 +1544,12 @@ fn train_cycle(
             let batch_size = flags.batch_size;
             let mut input_rows: Vec<Tensor> = Vec::with_capacity(batch_size);
             let mut target_rows: Vec<Tensor> = Vec::with_capacity(batch_size);
+            let mut batch_touches_new_stage = false;
             for _ in 0..batch_size {
                 let start = rand::random::<usize>() % (tokens.len() - seq_len - 1);
+                if let Some(stage_n) = stage_for_idx(start, stage_bounds) {
+                    if new_stages.contains(&stage_n) { batch_touches_new_stage = true; }
+                }
                 input_rows.push(Tensor::new(&tokens[start..start + seq_len], device)?
                     .to_dtype(DType::U32)?);
                 target_rows.push(Tensor::new(&tokens[start + 1..start + seq_len + 1], device)?
@@ -1644,6 +1658,13 @@ fn train_cycle(
 
             total_loss      += real_loss;
             counted_batches += 1;
+            if batch_touches_new_stage {
+                stagesplit_new_loss += real_loss;
+                stagesplit_new_n    += 1;
+            } else {
+                stagesplit_old_loss += real_loss;
+                stagesplit_old_n    += 1;
+            }
             wald.record_batch(real_loss);
 
             // Default: empty norms for non-step batches (used in GRAD log below).
@@ -2217,6 +2238,21 @@ fn train_cycle(
             if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(log_path) {
                 let _ = writeln!(f, "{}", summary_line);
             }
+            // STAGESPLIT — old vs. newly-unlocked-material loss, see stagesplit_* comment
+            // above the batch loop. new_n=0 means this epoch never sampled the recently
+            // unlocked stage(s) at all (expected — it's a small slice of a huge corpus).
+            {
+                let old_avg = if stagesplit_old_n > 0 { stagesplit_old_loss / stagesplit_old_n as f32 } else { 0.0 };
+                let new_avg = if stagesplit_new_n > 0 { stagesplit_new_loss / stagesplit_new_n as f32 } else { 0.0 };
+                let stagesplit_line = format!(
+                    "STAGESPLIT epoch={} old_avg={:.4} old_n={} new_avg={:.4} new_n={}",
+                    total_epochs, old_avg, stagesplit_old_n, new_avg, stagesplit_new_n,
+                );
+                println!("[{}] {}", timestamp(), stagesplit_line);
+                if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(log_path) {
+                    let _ = writeln!(f, "{}", stagesplit_line);
+                }
+            }
             // Compact epoch history — append-only across restarts; dashboard reads this
             // on startup to pre-seed epochLog for SMA-55/144/377/610 without needing
             // the full (large) training.log in the initial fetch window.
@@ -2379,13 +2415,27 @@ fn train_cycle(
 ///   stage_7  — Simple Wikipedia       (factual, diverse topics)
 ///   stage_9  — qa_instruction.txt     (User:/Albert: instruction format)
 ///   stage_11 — Linux docs, EU AI Act  (technical/specialized language)
-fn load_corpus(tokenizer: &BpeTokenizer, num_layers: usize, root: &str) -> Vec<u32> {
+/// Stage boundaries in the flat token stream: (stage_n, start_idx, end_idx_exclusive).
+/// Lets the training loop classify a sampled window as belonging to a specific
+/// depth-gated corpus stage, without re-tokenizing anything.
+type StageBounds = Vec<(usize, usize, usize)>;
+
+/// Which stage (if any) a sampled token index falls in. Linear scan is fine — bounds
+/// has one entry per stage_N directory, at most a few dozen.
+fn stage_for_idx(idx: usize, bounds: &StageBounds) -> Option<usize> {
+    bounds.iter()
+        .find(|(_, start, end)| idx >= *start && idx < *end)
+        .map(|(n, _, _)| *n)
+}
+
+fn load_corpus(tokenizer: &BpeTokenizer, num_layers: usize, root: &str) -> (Vec<u32>, StageBounds) {
     let corpus_root = format!("{root}/data/corpus");
     let corpus_root = corpus_root.as_str();
     // Tokenize file-by-file so we never hold the full corpus text in RAM.
     // Concatenating 635MB of text before encoding spiked peak RAM to 3-4GB (OOM).
     let mut all_tokens: Vec<u32> = Vec::new();
     let mut stages_loaded: Vec<usize> = Vec::new();
+    let mut stage_bounds: StageBounds = Vec::new();
 
     // Collect all stage_N subdirectories where N ≤ num_layers
     if let Ok(entries) = fs::read_dir(corpus_root) {
@@ -2401,6 +2451,7 @@ fn load_corpus(tokenizer: &BpeTokenizer, num_layers: usize, root: &str) -> Vec<u
         stage_dirs.sort_by_key(|(n, _)| *n);
 
         for (stage_n, dir) in &stage_dirs {
+            let stage_start = all_tokens.len();
             if let Ok(files) = fs::read_dir(dir) {
                 let mut paths: Vec<_> = files
                     .filter_map(|e| e.ok())
@@ -2419,6 +2470,9 @@ fn load_corpus(tokenizer: &BpeTokenizer, num_layers: usize, root: &str) -> Vec<u
                     }
                 }
                 stages_loaded.push(*stage_n);
+                if all_tokens.len() > stage_start {
+                    stage_bounds.push((*stage_n, stage_start, all_tokens.len()));
+                }
             }
         }
     }
@@ -2462,16 +2516,20 @@ fn load_corpus(tokenizer: &BpeTokenizer, num_layers: usize, root: &str) -> Vec<u
         }
     }
 
-    all_tokens
+    (all_tokens, stage_bounds)
 }
 
 /// Load tokenized corpus, using a binary cache to skip re-tokenization on restart.
 /// Cache is stored as: 4 bytes (num_layers as u32 LE) + N×4 bytes (token ids).
 /// Invalidated automatically when any corpus source file is newer than the cache,
 /// or when num_layers changes (surgery / new stage unlocked).
-fn load_corpus_cached(tokenizer: &BpeTokenizer, num_layers: usize, root: &str) -> Vec<u32> {
+fn load_corpus_cached(tokenizer: &BpeTokenizer, num_layers: usize, root: &str) -> (Vec<u32>, StageBounds) {
     let cache_path = format!("{root}/data/corpus_cache.bin");
     let cache_path = cache_path.as_str();
+    // Sidecar for stage boundaries — the binary token cache has no room for this
+    // without a format bump, and boundaries are cheap (a few dozen numbers) next to
+    // the tens-of-millions-of-tokens cache they ride alongside.
+    let stages_path = format!("{cache_path}.stages.json");
 
     // All dirs that contribute to the corpus — used for mtime freshness check.
     let watch_dirs = [
@@ -2520,13 +2578,20 @@ fn load_corpus_cached(tokenizer: &BpeTokenizer, num_layers: usize, root: &str) -
                     .collect();
                 println!("[{}] Corpus cache hit — {} tokens loaded instantly (skipped tokenization).",
                     timestamp(), tokens.len());
-                return tokens;
+                // Stage bounds ride along as a JSON sidecar. Missing/corrupt sidecar
+                // degrades to "everything is stage 0" — old/new split just goes quiet
+                // (never classified as a known "new" stage), not wrong or crashing.
+                let bounds: StageBounds = fs::read_to_string(&stages_path)
+                    .ok()
+                    .and_then(|s| serde_json::from_str::<Vec<(usize, usize, usize)>>(&s).ok())
+                    .unwrap_or_default();
+                return (tokens, bounds);
             }
         }
         eprintln!("Warning: cache file corrupt, re-tokenizing.");
     }
 
-    let tokens = load_corpus(tokenizer, num_layers, root);
+    let (tokens, bounds) = load_corpus(tokenizer, num_layers, root);
 
     // Write cache: 4-byte header (num_layers) + token data
     let mut bytes: Vec<u8> = (num_layers as u32).to_le_bytes().to_vec();
@@ -2536,8 +2601,11 @@ fn load_corpus_cached(tokenizer: &BpeTokenizer, num_layers: usize, root: &str) -
             timestamp(), cache_path, bytes.len() as f64 / 1_048_576.0),
         Err(e) => eprintln!("Warning: could not write corpus cache: {e}"),
     }
+    if let Ok(json) = serde_json::to_string(&bounds) {
+        let _ = fs::write(&stages_path, json);
+    }
 
-    tokens
+    (tokens, bounds)
 }
 
 fn main() -> Result<()> {
@@ -2579,6 +2647,11 @@ fn main() -> Result<()> {
     let tokenizer = BpeTokenizer::new(vocab_path);
 
     let mut global_step = 0_usize;
+    // Stage numbers seen in any corpus load so far this process. Diffed against each
+    // fresh load_corpus_cached() call to find which stages a surgery just unlocked —
+    // lets train_cycle log loss separately for batches sampled from long-known material
+    // vs. batches touching a stage that only just became reachable.
+    let mut known_stages: std::collections::HashSet<usize> = std::collections::HashSet::new();
 
     let spore_state_path = format!("{r}/models/albert_v3.0.spore_state");
     let spores_dir = if flags.spores_dir == "none" {
@@ -2652,12 +2725,23 @@ fn main() -> Result<()> {
             continue;
         }
 
-        let tokens = load_corpus_cached(&tokenizer, num_layers, &flags.root);
+        let (tokens, stage_bounds) = load_corpus_cached(&tokenizer, num_layers, &flags.root);
         println!("[{}] Total corpus: {} tokens ({}L model, stages ≤{})",
             timestamp(), tokens.len(), num_layers, num_layers);
 
+        // Stages present now but not in known_stages were just unlocked by the surgery
+        // that led into this cycle (or, on a fresh process start, are simply everything
+        // — the first cycle's old/new split is degenerate for that reason and isn't
+        // meaningful until the process has lived through at least one real surgery).
+        let new_stages: std::collections::HashSet<usize> = stage_bounds.iter()
+            .map(|(n, _, _)| *n)
+            .filter(|n| !known_stages.contains(n))
+            .collect();
+        known_stages.extend(stage_bounds.iter().map(|(n, _, _)| *n));
+
         let needs_evolution = train_cycle(
-            &tokens, &tokenizer, &device, &mut evolution_manager, &mut mycelium, &mut wald,
+            &tokens, &stage_bounds, &new_stages, &tokenizer, &device,
+            &mut evolution_manager, &mut mycelium, &mut wald,
             &mut global_step, &flags, &mut spore_manager
         )?;
         if needs_evolution {
