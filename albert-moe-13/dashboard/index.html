@@ -78,7 +78,7 @@
         .tb-cell.arch .tb-val { white-space: nowrap; }
         .tb-cell.controls { background: transparent; border: none; margin-left: auto; gap: 4px; padding-right: 4px; }
         #help-btn { width:22px;height:22px;border-radius:50%;border:1px solid var(--border2);background:var(--bg2);color:var(--muted);font-size:11px;font-family:inherit;cursor:pointer;line-height:1;padding:0;flex-shrink:0; }
-        .tb-label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .tb-label { color: var(--text); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
         .tb-val   { color: var(--text); font-weight: bold; font-size: 13px; }
         .tb-val.accent { color: var(--accent); font-size: 16px; }
         .tb-val.muted  { color: var(--muted); font-size: 12px; font-weight: normal; }
@@ -908,7 +908,7 @@
     </div>
     <div class="tb-cell arch">
         <span class="tb-label">ARCH</span>
-        <span class="tb-val muted" id="v-arch">—</span>
+        <span class="tb-val" id="v-arch">—</span>
     </div>
     <div class="tb-cell" title="Total tensors loaded in current checkpoint">
         <span class="tb-label">TNS</span>
@@ -3138,8 +3138,7 @@ let gArchNumStreams  = 1;       // 1 = single-stream, 2 = dual-stream cord; set 
         const loss = latest.y;
 
         document.getElementById('v-loss').textContent  = loss.toFixed(4);
-        document.getElementById('v-epoch').textContent =
-            latest.layers ? `${Math.floor(latest.epoch)} (${latest.layers}L)` : Math.floor(latest.epoch);
+        document.getElementById('v-epoch').textContent = Math.floor(latest.epoch);
         document.getElementById('v-batch').textContent = `${latest.batch} / ${gBatchesPerEpoch}`;
         // v-tns updated separately when "Loaded X tensors" line is parsed
 
@@ -5577,6 +5576,13 @@ let gArchNumStreams  = 1;       // 1 = single-stream, 2 = dual-stream cord; set 
             el.textContent = dual
                 ? `2×${cfg.num_layers}L · 2×${cfg.hidden_size}H · ${cfg.num_experts}E · ${cfg.max_seq_len}CTX · ${Math.round(cfg.vocab_size/1000)}K`
                 : `${cfg.num_layers}L · ${cfg.hidden_size}H · ${cfg.num_experts}E · ${cfg.max_seq_len}CTX · ${Math.round(cfg.vocab_size/1000)}K`;
+            // XPRT has no other authoritative source — it was only ever set while parsing
+            // the "ARCH ..." log line, which scrolls out of the fetched log window after
+            // enough training.log growth, so a refresh silently lost it. config.json is
+            // always fetched fresh on boot, so compute it here too (same L × E formula
+            // as the log-line parser above, kept in sync intentionally).
+            document.getElementById('v-xprt').textContent =
+                (cfg.num_layers * cfg.num_experts).toLocaleString();
         })
         .catch(() => {}); // graceful fallback — log-based ARCH line still works
 
