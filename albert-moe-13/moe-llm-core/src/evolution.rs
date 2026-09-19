@@ -35,6 +35,23 @@
 //
 // Fibonacci sequence extended to 24 terms. No architectural ceiling — the hardware
 // is the only limit.
+//
+// CURRICULUM EXHAUSTION — mastery stops being free once there's nothing left to unlock
+// -------------------------------------------------------------------------------------
+// Mastery fires the instant loss dips below mastery_threshold, with no window or
+// stability check. That is sound while the stage-aware corpus curriculum is still
+// unlocking new material at each depth: mastery genuinely means "earned the next
+// stage". Once depth has outgrown every stage_N directory (train_bible's main loop
+// diffs stage_bounds against known_stages every cycle), more depth on the same fixed
+// corpus tends to push loss below mastery_threshold anyway, and the gate rewards that
+// as if it were earned growth. set_curriculum_exhausted() lets the caller report that
+// state; promote_fib_target() responds by ratcheting mastery_threshold down by
+// MASTERY_DECAY (floored at MASTERY_FLOOR) every curriculum-exhausted surgery — growth
+// still happens, but gets exponentially harder to justify without new content, instead
+// of firing on every mild loss dip. mastery_decay_ratio() exposes how far that ratchet
+// has moved, so the training loop can macro-decay its LR schedule in lockstep: without
+// that, the cosine warm-restart amplitude never shrinks, and the model can never
+// actually settle into a minimum, no matter how long it trains on the same corpus.
 
 use std::collections::VecDeque;
 use std::fs;
@@ -54,6 +71,14 @@ const MIN_PLATEAU_THRESHOLD: f32 = 0.004;
 
 /// Multiplicative decay applied to plateau_threshold at each generation boundary.
 const THRESHOLD_DECAY: f32 = 0.75;
+
+/// Multiplicative decay applied to mastery_threshold after each surgery that fires
+/// while curriculum_exhausted is set — see the CURRICULUM EXHAUSTION note above.
+const MASTERY_DECAY: f32 = 0.9;
+
+/// Absolute floor for mastery_threshold — keeps MASTERY_DECAY from ratcheting toward
+/// zero over many curriculum-exhausted surgeries in a row.
+const MASTERY_FLOOR: f32 = 1.0;
 
 /// CTX-level calibration table.
 ///
@@ -135,6 +160,10 @@ pub struct EvolutionManager {
     near_uniform_streak:              usize,
     /// Set when near_uniform_streak reaches 34; consumed by consume_symmetry_break().
     symmetry_break_pending:           bool,
+    /// Set by the caller each cycle via set_curriculum_exhausted() — true when the most
+    /// recent corpus load unlocked no new stage_N directory. Consulted only by
+    /// promote_fib_target(), which ratchets mastery_threshold down while this holds.
+    curriculum_exhausted:             bool,
 
     // ── Generational state ────────────────────────────────────────────────────
     /// 1-indexed current generation number.
@@ -195,6 +224,7 @@ impl EvolutionManager {
             max_layers:                   FIB_TARGETS[0],
             near_uniform_streak:          0,
             symmetry_break_pending:       false,
+            curriculum_exhausted:         false,
             generation:                   1,
             gen_base_fib_index:           0,
             gen_step:                     0,
@@ -410,10 +440,37 @@ impl EvolutionManager {
         false
     }
 
+    /// Record whether the most recent corpus load unlocked any new stage_N directory.
+    /// Call once per outer-loop iteration, before promote_fib_target — see the
+    /// CURRICULUM EXHAUSTION note at the top of this file.
+    pub fn set_curriculum_exhausted(&mut self, exhausted: bool) {
+        self.curriculum_exhausted = exhausted;
+    }
+
+    /// Ratio of the current (possibly curriculum-exhaustion-decayed) mastery_threshold
+    /// to the CTX table's un-decayed baseline for the active context window. 1.0 while
+    /// growth still earns new corpus content; shrinks toward MASTERY_FLOOR/baseline once
+    /// promote_fib_target has ratcheted mastery_threshold down. The training loop uses
+    /// this to macro-decay the LR schedule in lockstep with slowing growth.
+    pub fn mastery_decay_ratio(&self) -> f32 {
+        let (baseline_mastery, _, _) = Self::ctx_entry(self.ctx);
+        (self.mastery_threshold / baseline_mastery.max(1e-6)).clamp(0.0, 1.0)
+    }
+
     /// Advance to the next position in the generational arc. Call after every successful surgery.
     /// `new_layers` is the layer count AFTER the surgery (used to update max_layers).
     pub fn promote_fib_target(&mut self, new_layers: usize) {
         let final_loss = self.loss_history.back().copied().unwrap_or(0.0);
+
+        if self.curriculum_exhausted {
+            let old_mastery = self.mastery_threshold;
+            self.mastery_threshold = (self.mastery_threshold * MASTERY_DECAY).max(MASTERY_FLOOR);
+            println!(
+                "[evolution] Curriculum exhausted — mastery threshold tightened {:.4}→{:.4} \
+                 (this surgery's growth wasn't backed by new corpus material)",
+                old_mastery, self.mastery_threshold,
+            );
+        }
 
         self.gen_step             += 1;
         self.gen_epochs_no_surgery = 0;
@@ -835,6 +892,49 @@ mod tests {
         }
         assert!(em.plateau_threshold >= em.min_plateau_threshold);
         assert!(em.plateau_threshold >= MIN_PLATEAU_THRESHOLD); // absolute global floor
+    }
+
+    // ── Curriculum exhaustion → mastery decay + LR macro-decay ─────────────────
+
+    #[test]
+    fn mastery_decay_ratio_starts_at_one() {
+        let em = EvolutionManager::with_ctx(512);
+        assert!((em.mastery_decay_ratio() - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn curriculum_exhausted_tightens_mastery_on_promote() {
+        let mut em = em_at(12);
+        let before = em.mastery_threshold;
+        em.set_curriculum_exhausted(true);
+        em.add_loss(9.84);
+        em.promote_fib_target(13);
+        assert!(em.mastery_threshold < before,
+            "mastery should tighten: {} !< {}", em.mastery_threshold, before);
+        assert!((em.mastery_threshold - before * 0.9).abs() < 1e-4);
+    }
+
+    #[test]
+    fn curriculum_not_exhausted_leaves_mastery_untouched() {
+        let mut em = em_at(12);
+        let before = em.mastery_threshold;
+        em.set_curriculum_exhausted(false);
+        em.add_loss(9.84);
+        em.promote_fib_target(13);
+        assert!((em.mastery_threshold - before).abs() < 1e-6);
+    }
+
+    #[test]
+    fn mastery_decay_floors_and_ratio_shrinks() {
+        let mut em = em_at(12);
+        em.set_curriculum_exhausted(true);
+        for i in 0..40 {
+            em.add_loss(9.0 - i as f32 * 0.01);
+            em.promote_fib_target(13 + i);
+        }
+        assert!(em.mastery_threshold >= MASTERY_FLOOR - 1e-4);
+        assert!(em.mastery_decay_ratio() < 1.0);
+        assert!(em.mastery_decay_ratio() > 0.0);
     }
 
     // ── CTX calibration ─────────────────────────────────────────────────────────

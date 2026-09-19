@@ -769,8 +769,11 @@ def main():
         ).returncode
         if evo_rc != 0:
             print(f"[main] evolution sync failed (exit {evo_rc}) — train_bible will recalibrate from scratch")
-    # batch_size=2 (up from 1, 2026-09-16, alongside the L40S 48GB upgrade). The old
-    # 24GB L4 was already at ~10-12GB for batch_size=1 at CTX=512, so this is a
-    # conservative first step, not a jump straight to 4 — watch the GPUMEM log lines
-    # (dashboard/training.log, written every 4 batches) before raising it further.
-    train.remote(gate_diversity=0.3, lb_weight=0.03, div_weight=0.001, lb_disable=False, batch_size=2)
+    # batch_size=1 (back down from 2, 2026-09-19). evolution.rs has no coded depth
+    # ceiling ("No architectural ceiling — the hardware is") and the corpus curriculum
+    # was already fully unlocked at 44L (max stage dir is stage_14), so every further
+    # surgery burns VRAM headroom with no new content to show for it. Free GPU memory
+    # dropped from ~5.3GB at 42L to ~3.55GB at 44L, ~0.87GB per layer — left running at
+    # batch_size=2 that trend hits 0 within another 3-4 surgeries. Watch the GPUMEM log
+    # lines (dashboard/training.log) before raising batch_size again.
+    train.remote(gate_diversity=0.3, lb_weight=0.03, div_weight=0.001, lb_disable=False, batch_size=1)

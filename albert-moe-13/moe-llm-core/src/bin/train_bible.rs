@@ -1403,6 +1403,14 @@ fn train_cycle(
     let base_lr        = 6e-5_f64;
     let min_lr         = 2e-5_f64;
     let lr_cycle_steps = 500_usize;
+    // base_lr/min_lr above are the CYCLE PEAK/TROUGH, not a macro-schedule — cosine_lr
+    // resets to base_lr every lr_cycle_steps forever, with no cross-cycle decay. Left
+    // alone that traps training in a fixed-amplitude noise ball around the minimum: SGD/
+    // Adam only converges to the true minimum as step size shrinks towards zero, and here
+    // it never does. evolution_manager.mastery_decay_ratio() (1.0 while growth still earns
+    // new corpus content, shrinking once curriculum_exhausted ratchets mastery_threshold
+    // down — see evolution.rs) scales both ends of the cycle down in lockstep with growth
+    // slowing, so the model gets an actual chance to anneal instead of orbiting forever.
 
     let mut opt = candle_nn::AdamW::new_lr(varmap.all_vars(), base_lr)?;
     let mut collapse_streak: u32 = 0;
@@ -1538,7 +1546,8 @@ fn train_cycle(
         for batch_idx in 0..num_batches {
             let batch_start = Instant::now();
 
-            let lr = cosine_lr(base_lr, min_lr, *global_step % lr_cycle_steps, lr_cycle_steps);
+            let lr_decay = evolution_manager.mastery_decay_ratio() as f64;
+            let lr = cosine_lr(base_lr * lr_decay, min_lr * lr_decay, *global_step % lr_cycle_steps, lr_cycle_steps);
             opt.set_learning_rate(lr);
 
             let batch_size = flags.batch_size;
@@ -2768,7 +2777,13 @@ fn main() -> Result<()> {
             .map(|(n, _, _)| *n)
             .filter(|n| !known_stages.contains(n))
             .collect();
+        let is_first_load = known_stages.is_empty();
         known_stages.extend(stage_bounds.iter().map(|(n, _, _)| *n));
+
+        // Curriculum is exhausted once a non-degenerate cycle (not the process's first
+        // corpus load, which always looks "all new" against an empty known_stages) sees
+        // zero newly-unlocked stages — see evolution.rs's CURRICULUM EXHAUSTION note.
+        evolution_manager.set_curriculum_exhausted(!is_first_load && new_stages.is_empty());
 
         let needs_evolution = train_cycle(
             &tokens, &stage_bounds, &new_stages, &tokenizer, &device,
