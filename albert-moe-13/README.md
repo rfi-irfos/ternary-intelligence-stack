@@ -82,23 +82,24 @@ The architecture combines:
 |-----------|-------|
 | **Streams** | **2 (dual-stream — cord surgery 2026-05-27)** |
 | Hidden size | **2×256H** (256H per stream) |
-| **Layers** | **33 per stream** (20 Net2Net depth surgeries + 1 cord surgery: 12L→33L dual-stream; see surgery log) |
-| Anastomosis gates | **6** — at Fibonacci layers [2,3,5,8,13,21]; `Linear(512,2)`, F32; cross-stream fusion soft-gated by gradient |
+| **Layers** | **42 per stream** (29 Net2Net depth surgeries + 1 cord surgery: 12L→42L dual-stream; see surgery log) |
+| Anastomosis gates | **7** — at Fibonacci layers [2,3,5,8,13,21,34]; `Linear(512,2)`, F32; cross-stream fusion soft-gated by gradient |
 | Attention heads | 4 per stream |
-| **Total expert capacity** | **792 expert-routing slots** = 12 experts/layer × 33 layers × 2 independently-routing streams |
+| **Total expert capacity** | **1,008 expert-routing slots** = 12 experts/layer × 42 layers × 2 independently-routing streams |
 | Experts per layer | 12 (shared FFN weights; independent per-stream routing gate) |
-| Context length | 128 tokens |
+| Context length | **512 tokens** |
 | Vocabulary | 32,000 tokens (ByteLevel BPE — EN/DE/FR/ES/PT/IT/NL/PL) |
-| Routing | Top-3 sparse — @sparseskip, 75% experts skipped per step · **192 expert activations per token** (3×32×2) |
-| TTL routing | EMA-based trit states per stream per layer — **64 TTL rows** (L0–L31 stream A, L0–L31 stream B) |
+| Routing | Top-3 sparse — @sparseskip, 75% experts skipped per step · **252 expert activations per token** (3×42×2) |
+| TTL routing | EMA-based trit states per stream per layer — **84 TTL rows** (L0–L41 stream A, L0–L41 stream B) |
 | Quantization | STE with gamma-scaled ternary, gamma cached every 20 steps |
-| Optimizer | AdamW, cosine LR 3e-4 → 1e-5 / 500 steps · BATCH=1 (post-cord) |
-| **Total parameters** | **~224M** (91.8% ternary matmul weights) |
-| **Safetensors (training)** | **~850 MB** (F32 reference checkpoint) |
-| **Packed footprint** | **~101 MB / 4.08 bits per param** deployable (ternary weights 5-trit-packed + f32 embeddings); **39.7 MB / 1.6 bits** weights-only — see [docs/FOOTPRINT.md](docs/FOOTPRINT.md) |
+| Optimizer | AdamW, cosine LR 6e-5 → 2e-5 / 500 steps (sqrt-scaled to the real effective batch size 2026-09-19, see session log) · **BATCH=2** on Modal L40S |
+| **Total parameters** | grown past the 21L-era ~224M figure with 9 additional layers since; not yet re-measured post-42L |
+| **Safetensors (training)** | **~850 MB** (F32 reference checkpoint) at 21L; scales with layer count, current checkpoint larger |
+| **Packed footprint** | figures below are from the 21L architecture — see [docs/FOOTPRINT.md](docs/FOOTPRINT.md), not yet re-run at 42L: ~101 MB / 4.08 bits per param deployable (ternary weights 5-trit-packed + f32 embeddings); 39.7 MB / 1.6 bits weights-only |
 | Corpus | **451,418,681 tokens** (stages 1–13, cache-loaded) |
+| GPU | Modal **L40S** (48GB, upgraded from T4→L4→L40S as the arch and batch size grew — see session log 2026-09-16/18) |
 
-**Surgery log — 20 Net2Net depth surgeries (12L→33L) + 1 cord surgery:**
+**Surgery log — 29 Net2Net depth surgeries (12L→42L) + 1 cord surgery:**
 
 | Surgery | Epoch | Layers | Note |
 |---------|-------|--------|------|
@@ -119,11 +120,19 @@ The architecture combines:
 | S17 | ep5610 | 29L→30L (both) | 2026-06-06 21:08 (✓ checkpoint-mtime verified) |
 | S18 | ep6339 | 30L→31L (both) | 2026-06-14 |
 | S19 | ~ep6500 | 31L→32L (both) | 2026-06-15 |
-| **S20** | **ep~7000** | **32L→33L (both)** | **2026-06-21 · current depth · CTX bumped 256→512** |
+| **S20** | **ep~7000** | **32L→33L (both)** | **2026-06-21 · CTX bumped 256→512** |
+| S21 | ep8711 | 33L→34L | 2026-09-17T03:31:35Z · first surgery after a 41-day training dormancy |
+| S22–S23 | ~ep8711–8856 | 34L→36L (both) | Exact event log lost to local rotation; outcome confirmed via live ARCH header only |
+| S24 | ~ep8865 | 36L→37L | 2026-09-18 17:01:12 CEST |
+| S25 | ~ep8867 | 37L→38L | 2026-09-18 17:37:36 CEST |
+| S26 | ~ep8879 | 38L→39L | 2026-09-18, mastery-triggered — first surgery after the LR-recalibration + surgery-reset-removal fixes, confirmed no LR snap-back |
+| S27 | ep8891 | 39L→40L | 2026-09-18 23:24:54 CEST · mastery loss 3.9334 |
+| S28 | ~ep8901 | 40L→41L | 2026-09-19 01:42:29 CEST · mastery loss 3.9409 |
+| **S29** | **~ep8906** | **41L→42L (current)** | **2026-09-19 02:58:32 CEST · mastery loss 3.9625** |
 
-**Evolution state:** Gen 3 step **1**/6 · fib_index=8 · window=55 · chip ATL **0.6116**
+**Evolution state:** Gen 2 step **4**/6 · fib_index=8 · window growing per-generation (last observed 610 epochs at S29) · ceiling=55L (F12)
 
-**Training state (live, 2026-06-21):** Global Epoch **~7592** · best EP-AVG ATL **4.6842** (ep7588, 33L) · training **active** on Modal · batch=1 · **512CTX** · fib_index=8 · window=55 · Gen3 step1/6 · mastery gate=4.0 nats
+**Training state (live, 2026-09-19):** Global Epoch **~8917** · best loss **3.9334** (ep8891, pre-S27) · training **active** on Modal L40S · batch=2 · **512CTX** · cosine LR 6e-5→2e-5/500 steps (recalibrated 2026-09-19, see session log) · mastery gate=4.0 nats. Six surgeries (36L→42L) live-validated over ~24h of 15-minute monitoring with zero LR resets and zero errors — see `ternlang-root/docs/session_log.md` 2026-09-19 entry for the full fix-and-validation writeup.
 
 ---
 
@@ -165,7 +174,7 @@ cargo build --release -p moe-test
 ```bash
 albert-train
 ```
-> Fires `modal run albert-moe-13/train_modal.py` — builds `train_bible` with CUDA on a Modal T4 GPU, streams the training log back to the local dashboard at `http://localhost:8888`. One-time setup: `python3 train_modal.py setup` uploads corpus and checkpoint to the Modal volume. Pull checkpoint back with `albert-train pull`.
+> Fires `modal run albert-moe-13/train_modal.py` — builds `train_bible` with CUDA on a Modal L40S GPU, streams the training log back to the local dashboard at `http://localhost:8899` (moved off 8888 2026-09-16 after a collision with a local SearxNG container — see session log). One-time setup: `python3 train_modal.py setup` uploads corpus and checkpoint to the Modal volume. Pull checkpoint back with `albert-train pull`.
 
 ### Train (local CPU fallback)
 ```bash
@@ -305,9 +314,10 @@ Albert automatically unlocks richer training data as it grows deeper via Net2Net
 | 256H · 5L | CPU (i7-4800MQ) | ~5.5 s |
 | 256H · 12L | CPU (i7-4800MQ) | ~13 s |
 | 256H · 17L | CPU (i7-4800MQ) | ~18 s |
-|| 256H · 30L (current) | Modal T4 GPU | ~450 ms |
+| 2×30L, 512CTX | Modal T4 GPU (24GB) | ~450 ms |
+| 2×42L, 512CTX, batch=2 (current) | Modal L40S GPU (48GB) | ~2.1–2.6 s/batch |
 
-T4 GPU training via Modal gives ~40× speedup over CPU for the 21L architecture. `albert-train` handles the full launch: image build with CUDA, volume-cached crate downloads, live log streaming to local dashboard.
+GPU tier has moved T4 → L4 → L40S as depth, context length, and batch size grew (see session log 2026-09-16/18 for the upgrade rationale and VRAM headroom tracking — currently ~5–6GB free of 48GB at 42L). `albert-train` handles the full launch: image build with CUDA, volume-cached crate downloads, live log streaming to local dashboard.
 
 ---
 
