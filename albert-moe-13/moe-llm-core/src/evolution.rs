@@ -286,15 +286,22 @@ impl EvolutionManager {
 
     /// Recalibrate thresholds when the active context window changes.
     ///
-    /// Safe to call every restart: if `new_ctx == self.ctx` it is a no-op except
-    /// refreshing mastery from the table (handles table edits without bumping CTX).
+    /// Safe to call every restart: if `new_ctx == self.ctx` it only refreshes
+    /// min_plateau_threshold from the table (handles table edits without bumping CTX).
+    /// mastery_threshold is deliberately left untouched on a same-CTX call — it can now
+    /// carry a live, persisted curriculum-exhaustion decay (see MASTERY_DECAY), and this
+    /// method runs on every single restart right after load_state(). Resetting it here
+    /// silently discarded every accumulated decay step on each restart (caught live
+    /// 2026-09-20: a restore log correctly showed "mastery=3.60", but this reset it back
+    /// to 4.0 one line later, and the LR schedule ran at full un-decayed amplitude for
+    /// hours before anyone noticed). A real CTX bump below still resets mastery_threshold
+    /// deliberately — that's a genuinely different task, not a restart of the same one.
     ///
     /// On a CTX bump the current `plateau_threshold` is scaled proportionally to the
     /// new baseline (preserving generational decay) and clamped to [new_min, new_init].
     pub fn recalibrate_ctx(&mut self, new_ctx: usize) {
         let (new_mastery, new_plateau_init, new_min) = Self::ctx_entry(new_ctx);
         if new_ctx == self.ctx {
-            self.mastery_threshold    = new_mastery;
             self.min_plateau_threshold = new_min;
             return;
         }
@@ -1153,8 +1160,21 @@ mod tests {
         em.recalibrate_ctx(256);
         // plateau must not change
         assert!((em.plateau_threshold - 0.011).abs() < 1e-5);
-        // mastery must be refreshed from table
-        assert!((em.mastery_threshold - 4.5).abs() < 1e-5);
+    }
+
+    #[test]
+    fn recalibrate_ctx_same_ctx_preserves_decayed_mastery() {
+        // Regression test: a same-CTX recalibrate_ctx() call used to silently reset
+        // mastery_threshold to the table baseline, discarding any curriculum-exhaustion
+        // decay every single restart (caught live 2026-09-20 -- see the doc comment on
+        // recalibrate_ctx). load_state() runs right before this on every boot, so this
+        // must hold for the decay to survive a restart at all.
+        let mut em = EvolutionManager::with_ctx(512);
+        em.mastery_threshold = 3.6; // as if restored from a decayed saved state
+        em.recalibrate_ctx(512);
+        assert!((em.mastery_threshold - 3.6).abs() < 1e-5,
+            "same-CTX recalibrate must not reset a decayed mastery_threshold, got {}",
+            em.mastery_threshold);
     }
 
     #[test]
