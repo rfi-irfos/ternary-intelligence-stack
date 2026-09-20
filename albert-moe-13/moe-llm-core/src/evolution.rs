@@ -36,32 +36,37 @@
 // Fibonacci sequence extended to 24 terms. No architectural ceiling — the hardware
 // is the only limit.
 //
-// CURRICULUM EXHAUSTION — mastery stops being free once there's nothing left to unlock
-// -------------------------------------------------------------------------------------
-// Mastery fires the instant loss dips below mastery_threshold, with no window or
-// stability check. That is sound while the stage-aware corpus curriculum is still
-// unlocking new material at each depth: mastery genuinely means "earned the next
-// stage". Once depth has outgrown every stage_N directory (train_bible's main loop
-// diffs stage_bounds against known_stages every cycle), more depth on the same fixed
-// corpus tends to push loss below mastery_threshold anyway, and the gate rewards that
-// as if it were earned growth. set_curriculum_exhausted() lets the caller report that
-// state; promote_fib_target() responds by ratcheting mastery_threshold down by
-// MASTERY_DECAY (floored at MASTERY_FLOOR) every curriculum-exhausted surgery — growth
-// still happens, but gets exponentially harder to justify without new content, instead
-// of firing on every mild loss dip. mastery_decay_ratio() exposes how far that ratchet
-// has moved, so the training loop can macro-decay its LR schedule in lockstep: without
-// that, the cosine warm-restart amplitude never shrinks, and the model can never
-// actually settle into a minimum, no matter how long it trains on the same corpus.
+// CURRICULUM EXHAUSTION — depth growth stops once there's nothing left to unlock
+// --------------------------------------------------------------------------------
+// The goal is a true MoE LLM in ternary logic — depth is a means toward that, earned by
+// unlocking richer training material, not a goal in itself. Mastery used to fire the
+// instant loss dipped below mastery_threshold, with no window or stability check, and no
+// awareness of whether growth was actually earning anything. That was sound while the
+// stage-aware corpus curriculum was still unlocking new material at each depth: mastery
+// genuinely meant "earned the next stage". Once depth outgrows every stage_N directory
+// (train_bible's main loop diffs stage_bounds against known_stages every cycle), more
+// depth on the same fixed corpus tends to push loss below mastery_threshold anyway, and
+// the gate rewarded that as if it were earned growth.
 //
-// The mastery-decay ratchet above only fires on rare surgery events, which themselves
-// can go hundreds of epochs apart once curriculum is exhausted — evidence from a live
-// 44L->46L run (2026-09-19/20): loss sat in a 4.0-4.4 nats band for 1000+ epochs, best
-// loss unbeaten for 120+ epochs straight, across four surgeries, with the LR barely
-// dented (one 10% cut) because so few surgeries fired. record_epoch_for_lr_stall() adds
-// a second, faster-feedback decay: every epoch (not just at surgeries), if curriculum is
-// exhausted and no new best has landed in LR_STALL_PATIENCE_EPOCHS epochs, LR gets cut
-// again — standard ReduceLROnPlateau, checked at the timescale the actual problem
-// operates on instead of the timescale surgeries happen to fire on.
+// should_evolve() now hard-stops all growth — mastery and plateau alike — the moment
+// set_curriculum_exhausted(true) is reported, with no exceptions. Proven necessary by a
+// live 44L->46L overnight run (2026-09-19/20): four surgeries added capacity while loss
+// sat flat in a 4.0-4.4 nats band the entire time, best loss unbeaten for 120+ epochs
+// straight. The model should consolidate on what it has — memorize and extract more
+// from the corpus it already sees — not keep adding depth nothing backs. The guard lifts
+// automatically the moment a fresh corpus load finds a stage_N directory this depth
+// hasn't seen yet, so genuine new material still earns real growth.
+//
+// Two secondary mechanisms stay in place for whatever training keeps happening at the
+// now-frozen depth: promote_fib_target() ratchets mastery_threshold down by
+// MASTERY_DECAY (floored at MASTERY_FLOOR) on any surgery that does fire — relevant again
+// if curriculum_exhausted ever toggles back to false after real new material arrives,
+// then runs out again. And record_epoch_for_lr_stall() gives the LR schedule its own,
+// much faster feedback loop: every epoch (not just at rare surgery events), if curriculum
+// is exhausted and no new best has landed in LR_STALL_PATIENCE_EPOCHS epochs, LR gets cut
+// again — standard ReduceLROnPlateau. Without it the cosine warm-restart amplitude never
+// shrinks, and the model can never actually settle into a minimum no matter how long it
+// trains at a fixed depth.
 
 use std::collections::VecDeque;
 use std::fs;
@@ -406,6 +411,19 @@ impl EvolutionManager {
     /// ≥ mycelium_stability_threshold epochs.
     pub fn should_evolve(&self, current_layers: usize, mycelium_stable_epochs: usize) -> bool {
         if current_layers >= self.max_layers { return false; }
+
+        // Hard guard: once the corpus curriculum is exhausted, architecture growth stops
+        // entirely — no mastery, no plateau, no exceptions. A 44L->46L overnight run
+        // (2026-09-19/20) proved growth without new material doesn't just get harder to
+        // justify, it actively hurts: four surgeries added capacity while the loss sat in
+        // a 4.0-4.4 nats band the whole time, never beating a 120+-epoch-old best. The
+        // model should consolidate — extract more from the corpus it already has — not
+        // keep adding depth nothing backs. Automatically lifts the moment a fresh corpus
+        // load finds a stage_N directory this depth hasn't seen yet (set_curriculum_exhausted
+        // goes false again), so genuine new material still earns real growth.
+        if self.curriculum_exhausted {
+            return false;
+        }
 
         let latest = match self.loss_history.back() {
             Some(&v) => v,
@@ -920,6 +938,33 @@ mod tests {
         let mut em = em_at(12);
         em.add_loss(4.0);
         assert!(em.should_evolve(12, 0));
+    }
+
+    #[test]
+    fn curriculum_exhausted_hard_blocks_mastery() {
+        let mut em = em_at(12);
+        em.set_curriculum_exhausted(true);
+        em.add_loss(0.5); // deep in mastery territory
+        assert!(!em.should_evolve(12, 0),
+            "mastery must not fire while curriculum_exhausted, no matter how low loss is");
+    }
+
+    #[test]
+    fn curriculum_exhausted_hard_blocks_plateau() {
+        let mut em = em_at(12);
+        em.set_curriculum_exhausted(true);
+        fill_flat(&mut em, 10.27); // would fire plateau if not for the guard
+        assert!(!em.should_evolve(12, 10));
+    }
+
+    #[test]
+    fn curriculum_exhaustion_lifting_unblocks_growth() {
+        let mut em = em_at(12);
+        em.set_curriculum_exhausted(true);
+        em.add_loss(4.0);
+        assert!(!em.should_evolve(12, 0));
+        em.set_curriculum_exhausted(false);
+        assert!(em.should_evolve(12, 0), "mastery should fire again once curriculum reopens");
     }
 
     #[test]
