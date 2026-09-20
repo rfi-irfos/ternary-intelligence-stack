@@ -1546,7 +1546,8 @@ fn train_cycle(
         for batch_idx in 0..num_batches {
             let batch_start = Instant::now();
 
-            let lr_decay = evolution_manager.mastery_decay_ratio() as f64;
+            let lr_decay = (evolution_manager.mastery_decay_ratio()
+                * evolution_manager.lr_stall_multiplier()) as f64;
             let lr = cosine_lr(base_lr * lr_decay, min_lr * lr_decay, *global_step % lr_cycle_steps, lr_cycle_steps);
             opt.set_learning_rate(lr);
 
@@ -2149,7 +2150,12 @@ fn train_cycle(
         evolution_manager.save_state(evo_path);
 
         // ── Best Checkpoint (save only when avg_loss improves) — LLB §11.6 ───
-        if avg_loss < best_epoch_loss {
+        let is_new_best = avg_loss < best_epoch_loss;
+        // Feed the LR stall-decay every epoch, regardless of which branch below runs —
+        // this is the fast feedback loop that catches a stalled loss curve long before
+        // the next (possibly hundreds-of-epochs-away) surgery would. See evolution.rs.
+        evolution_manager.record_epoch_for_lr_stall(is_new_best);
+        if is_new_best {
             let improvement = best_epoch_loss - avg_loss; // nats gained vs previous ATL
             best_epoch_loss = avg_loss;
             last_best_epoch = total_epochs;

@@ -52,6 +52,16 @@
 // has moved, so the training loop can macro-decay its LR schedule in lockstep: without
 // that, the cosine warm-restart amplitude never shrinks, and the model can never
 // actually settle into a minimum, no matter how long it trains on the same corpus.
+//
+// The mastery-decay ratchet above only fires on rare surgery events, which themselves
+// can go hundreds of epochs apart once curriculum is exhausted — evidence from a live
+// 44L->46L run (2026-09-19/20): loss sat in a 4.0-4.4 nats band for 1000+ epochs, best
+// loss unbeaten for 120+ epochs straight, across four surgeries, with the LR barely
+// dented (one 10% cut) because so few surgeries fired. record_epoch_for_lr_stall() adds
+// a second, faster-feedback decay: every epoch (not just at surgeries), if curriculum is
+// exhausted and no new best has landed in LR_STALL_PATIENCE_EPOCHS epochs, LR gets cut
+// again — standard ReduceLROnPlateau, checked at the timescale the actual problem
+// operates on instead of the timescale surgeries happen to fire on.
 
 use std::collections::VecDeque;
 use std::fs;
@@ -79,6 +89,24 @@ const MASTERY_DECAY: f32 = 0.9;
 /// Absolute floor for mastery_threshold — keeps MASTERY_DECAY from ratcheting toward
 /// zero over many curriculum-exhausted surgeries in a row.
 const MASTERY_FLOOR: f32 = 1.0;
+
+/// Epochs without a new all-time-best loss (while curriculum_exhausted) before the LR
+/// stall-decay cuts in. Surgeries only fire on mastery/plateau, which can itself go
+/// hundreds of epochs between events on a fixed corpus — far too slow a feedback loop
+/// to keep the LR schedule honest by itself. This is the standard ReduceLROnPlateau
+/// pattern: shrink the step size once progress genuinely stalls, checked every epoch
+/// instead of only at rare surgery boundaries.
+const LR_STALL_PATIENCE_EPOCHS: usize = 20;
+
+/// Multiplicative cut applied to the LR stall multiplier every LR_STALL_PATIENCE_EPOCHS
+/// epochs without a new best. More aggressive than MASTERY_DECAY on purpose — a stalled
+/// loss curve is direct evidence the current LR is too hot to let the model settle,
+/// not just a possible sign that growth wasn't earned.
+const LR_STALL_DECAY_FACTOR: f32 = 0.7;
+
+/// Floor for the LR stall multiplier — keeps LR from decaying to zero and stalling
+/// training entirely.
+const LR_STALL_FLOOR: f32 = 0.05;
 
 /// CTX-level calibration table.
 ///
@@ -164,6 +192,13 @@ pub struct EvolutionManager {
     /// recent corpus load unlocked no new stage_N directory. Consulted only by
     /// promote_fib_target(), which ratchets mastery_threshold down while this holds.
     curriculum_exhausted:             bool,
+    /// Additional LR multiplier (on top of mastery_decay_ratio) — see
+    /// record_epoch_for_lr_stall(). 1.0 until curriculum-exhausted stalling cuts it.
+    lr_stall_decay:                   f32,
+    /// Epochs elapsed since the last new best (or the last LR stall cut), while
+    /// curriculum_exhausted. Reset to 0 whenever curriculum isn't exhausted, a new
+    /// best lands, or a cut just fired.
+    epochs_since_lr_cut:              usize,
 
     // ── Generational state ────────────────────────────────────────────────────
     /// 1-indexed current generation number.
@@ -225,6 +260,8 @@ impl EvolutionManager {
             near_uniform_streak:          0,
             symmetry_break_pending:       false,
             curriculum_exhausted:         false,
+            lr_stall_decay:               1.0,
+            epochs_since_lr_cut:          0,
             generation:                   1,
             gen_base_fib_index:           0,
             gen_step:                     0,
@@ -457,6 +494,40 @@ impl EvolutionManager {
         (self.mastery_threshold / baseline_mastery.max(1e-6)).clamp(0.0, 1.0)
     }
 
+    /// Current LR stall multiplier — see record_epoch_for_lr_stall().
+    pub fn lr_stall_multiplier(&self) -> f32 {
+        self.lr_stall_decay
+    }
+
+    /// Call once per epoch (after best-loss bookkeeping) with whether this epoch set a
+    /// new all-time-best. While curriculum is exhausted, LR_STALL_PATIENCE_EPOCHS epochs
+    /// without a new best cuts lr_stall_decay by LR_STALL_DECAY_FACTOR (floored at
+    /// LR_STALL_FLOOR); a new best resets the multiplier to 1.0. No-op while curriculum
+    /// isn't exhausted — a stall during active growth may just be adapting to new
+    /// material, not evidence the LR itself is too hot.
+    pub fn record_epoch_for_lr_stall(&mut self, is_new_best: bool) {
+        if !self.curriculum_exhausted {
+            self.epochs_since_lr_cut = 0;
+            return;
+        }
+        if is_new_best {
+            self.lr_stall_decay      = 1.0;
+            self.epochs_since_lr_cut = 0;
+            return;
+        }
+        self.epochs_since_lr_cut += 1;
+        if self.epochs_since_lr_cut >= LR_STALL_PATIENCE_EPOCHS {
+            let old = self.lr_stall_decay;
+            self.lr_stall_decay = (self.lr_stall_decay * LR_STALL_DECAY_FACTOR).max(LR_STALL_FLOOR);
+            self.epochs_since_lr_cut = 0;
+            println!(
+                "[evolution] LR stall-decay: {} epochs without a new best (curriculum \
+                 exhausted) — LR multiplier {:.4}→{:.4}",
+                LR_STALL_PATIENCE_EPOCHS, old, self.lr_stall_decay,
+            );
+        }
+    }
+
     /// Advance to the next position in the generational arc. Call after every successful surgery.
     /// `new_layers` is the layer count AFTER the surgery (used to update max_layers).
     pub fn promote_fib_target(&mut self, new_layers: usize) {
@@ -673,6 +744,11 @@ impl EvolutionManager {
         // CTX-level calibration — tagged so old binaries ignore them gracefully.
         content.push_str(&format!("ctx:{}\n", self.ctx));
         content.push_str(&format!("mt:{:.6}\n", self.mastery_threshold));
+        // LR stall-decay state — without this, every Modal restart would silently undo
+        // any accumulated stall cuts, exactly the bug class the surgery-LR-reset fix
+        // already addressed once (session log 2026-09-19).
+        content.push_str(&format!("lsd:{:.6}\n", self.lr_stall_decay));
+        content.push_str(&format!("lsc:{}\n", self.epochs_since_lr_cut));
         // Persist loss_history so it survives restarts — without this the plateau ring
         // resets to empty on every Modal restart, forcing a 144-epoch refill before the
         // gate can ever fire (and if Modal restarts more often than that, it never fires).
@@ -777,6 +853,14 @@ impl EvolutionManager {
             } else if let Some(mt_str) = trimmed.strip_prefix("mt:") {
                 if let Ok(v) = mt_str.trim().parse::<f32>() {
                     self.mastery_threshold = v;
+                }
+            } else if let Some(lsd_str) = trimmed.strip_prefix("lsd:") {
+                if let Ok(v) = lsd_str.trim().parse::<f32>() {
+                    self.lr_stall_decay = v;
+                }
+            } else if let Some(lsc_str) = trimmed.strip_prefix("lsc:") {
+                if let Ok(v) = lsc_str.trim().parse::<usize>() {
+                    self.epochs_since_lr_cut = v;
                 }
             }
         }
@@ -935,6 +1019,52 @@ mod tests {
         assert!(em.mastery_threshold >= MASTERY_FLOOR - 1e-4);
         assert!(em.mastery_decay_ratio() < 1.0);
         assert!(em.mastery_decay_ratio() > 0.0);
+    }
+
+    #[test]
+    fn lr_stall_noop_while_curriculum_not_exhausted() {
+        let mut em = em_at(12);
+        em.set_curriculum_exhausted(false);
+        for _ in 0..LR_STALL_PATIENCE_EPOCHS * 3 {
+            em.record_epoch_for_lr_stall(false);
+        }
+        assert!((em.lr_stall_multiplier() - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn lr_stall_cuts_after_patience_epochs_without_best() {
+        let mut em = em_at(12);
+        em.set_curriculum_exhausted(true);
+        for _ in 0..LR_STALL_PATIENCE_EPOCHS - 1 {
+            em.record_epoch_for_lr_stall(false);
+        }
+        assert!((em.lr_stall_multiplier() - 1.0).abs() < 1e-6, "should not cut early");
+        em.record_epoch_for_lr_stall(false);
+        assert!((em.lr_stall_multiplier() - LR_STALL_DECAY_FACTOR).abs() < 1e-4,
+            "should cut exactly at patience: {}", em.lr_stall_multiplier());
+    }
+
+    #[test]
+    fn lr_stall_resets_on_new_best() {
+        let mut em = em_at(12);
+        em.set_curriculum_exhausted(true);
+        for _ in 0..LR_STALL_PATIENCE_EPOCHS {
+            em.record_epoch_for_lr_stall(false);
+        }
+        assert!(em.lr_stall_multiplier() < 1.0);
+        em.record_epoch_for_lr_stall(true);
+        assert!((em.lr_stall_multiplier() - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn lr_stall_floors_over_many_cuts() {
+        let mut em = em_at(12);
+        em.set_curriculum_exhausted(true);
+        for _ in 0..(LR_STALL_PATIENCE_EPOCHS * 40) {
+            em.record_epoch_for_lr_stall(false);
+        }
+        assert!(em.lr_stall_multiplier() >= LR_STALL_FLOOR - 1e-4);
+        assert!(em.lr_stall_multiplier() <= LR_STALL_FLOOR + 1e-4);
     }
 
     // ── CTX calibration ─────────────────────────────────────────────────────────
