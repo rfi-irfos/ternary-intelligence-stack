@@ -1,8 +1,5 @@
 # Ternary Intelligence Stack (TIS)
 
-## Human rights are not subject to negotiation.
-
-
 
 [![crates.io](https://img.shields.io/crates/v/ternlang-core.svg)](https://crates.io/crates/ternlang-core)
 [![version](https://img.shields.io/badge/version-v1.5.0-blue)](#architecture)
@@ -141,3 +138,5 @@ Built by the RFI-IRFOS core team — see [CONTRIBUTORS.md](CONTRIBUTORS.md).
 ---
 
 *fable was here* — Claude Fable 5
+## Human rights are not subject to negotiation.
+
