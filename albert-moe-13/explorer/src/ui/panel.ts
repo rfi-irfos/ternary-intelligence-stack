@@ -2,7 +2,8 @@ import type { Architecture, TensorSpec } from '../data/architecture';
 import type { CameraRig } from '../camera/controls';
 import { findMatrix, findVector, type WeightsLoader, weightKey } from '../data/weights';
 import { CAVEATS } from '../content/caveats';
-import { COMPONENTS, type ComponentType, componentTypeOf, sourceUrl } from '../content/components';
+import { COMPONENTS, type ComponentType, type ResolvedContent, componentTypeOf, contentFor, sourceUrl } from '../content/components';
+import { fmt, fmtText, labelBlock, richHtml, structure } from '../data/labeled';
 import {
   type ComponentId, type ParsedId, type Stream,
   attnId, bankId, embedId, expertId, lmHeadId, lnFId, ln1Id, ln2Id, parseId, routerId, slabId,
@@ -17,6 +18,11 @@ export interface PanelDeps {
   loadWeights: WeightsLoader;
   /** Called after a connection link flew the camera, so the app can follow with explode etc. */
   onNavigate?: (id: ComponentId) => void;
+  /**
+   * Awaited before a connection link flies to its target. While a component is exploded the row
+   * anchors are hidden, so the app reassembles here and the camera never flies to a hidden anchor.
+   */
+  beforeNavigate?: () => Promise<void>;
 }
 
 export interface Panel {
@@ -30,9 +36,7 @@ export interface Panel {
 export const esc = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-const shapeText = (shape: number[]): string => `[${shape.join(' × ')}]`;
 const paramCount = (shape: number[]): number => shape.reduce((a, b) => a * b, 1);
-const fmtInt = (n: number): string => n.toLocaleString('en-US');
 
 /** Which architecture.components entries describe a component type. */
 function archKeys(type: ComponentType): string[] {
@@ -153,7 +157,7 @@ function location(p: ParsedId, a: Architecture): string {
 }
 
 /** Small schematic of the maths; carries no checkpoint numbers. */
-function visual(type: ComponentType, a: Architecture, id: ComponentId): string {
+function visual(type: ComponentType, a: Architecture, id: ComponentId, rc: ResolvedContent): string {
   const p = parseId(id);
   const ternary = type === 'matrix' ? p?.type === 'matrix' && p.name !== 'gate'
     : type === 'attn' || type === 'expert' || type === 'lm_head';
@@ -177,15 +181,21 @@ function visual(type: ComponentType, a: Architecture, id: ComponentId): string {
       '<rect x="74" y="8" width="28" height="28" fill="#58c4dd"/><text x="88" y="27" text-anchor="middle" font-size="14" fill="#000">+1</text>' +
       '<text x="108" y="27" font-size="14" fill="#fff">× γ</text></svg>';
   }
-  const c = COMPONENTS[type];
   return `<svg viewBox="0 0 260 44" role="img" aria-label="in, operation, out"><title>schematic</title>` +
-    `<text x="4" y="18" font-size="10" fill="#cfd8e8">${esc(c.inputs.slice(0, 40))}</text>` +
+    `<text x="4" y="18" font-size="10" fill="#cfd8e8">${esc(rc.inputs.slice(0, 40))}</text>` +
     `<path d="M4 26 H256" stroke="#fff" stroke-width="1.5"/>` +
-    `<text x="4" y="40" font-size="10" fill="#cfd8e8">${esc(c.outputs.slice(0, 40))}</text></svg>`;
+    `<text x="4" y="40" font-size="10" fill="#cfd8e8">${esc(rc.outputs.slice(0, 40))}</text></svg>`;
 }
 
-const fmtNum = (x: number | null): string => (x === null ? '—' : String(Number(x.toPrecision(5))));
-const fmtPct = (x: number | null): string => (x === null ? '—' : `${(x * 100).toFixed(1)} %`);
+const pctText = (v: unknown): string => (typeof v === 'number' ? `${(v * 100).toFixed(1)} %` : '—');
+const numText = (v: unknown): string => (typeof v === 'number' ? fmtText(structure(v)) : '—');
+
+/** A checkpoint value (structure) as HTML; null (not defined for this matrix) shows a dash. */
+const sv = (v: number | null, key: string, format?: (x: unknown) => string): string => {
+  const el = fmt(structure(v ?? 0), { format: format ? () => format(v) : () => numText(v) });
+  el.dataset.v = key;
+  return el.outerHTML;
+};
 
 export function createPanel(deps: PanelDeps): Panel {
   const { arch, tower, rig, loadWeights } = deps;
@@ -207,6 +217,7 @@ export function createPanel(deps: PanelDeps): Panel {
 
   function html(id: ComponentId, type: ComponentType, p: ParsedId): string {
     const c = COMPONENTS[type];
+    const rc = contentFor(type, arch);
     const depth = getDepth();
     const rows = tensorRows(id, arch);
     const tau = 'layer' in p ? arch.layers[p.layer]?.tau : undefined;
@@ -216,28 +227,29 @@ export function createPanel(deps: PanelDeps): Panel {
     const tensors = rows.length === 0
       ? '<p>No tensors of its own.</p>'
       : `<table><tbody>${rows.map((r) =>
-        `<tr data-tensor="${esc(r.name)}" data-dtype="${r.ternary ? 'ternary' : 'F32'}"><td>${esc(r.name)}</td><td>${shapeText(r.shape)}</td>` +
-        `<td>${r.ternary ? 'ternary' : 'F32'}</td><td>${fmtInt(r.params)}</td></tr>`).join('')}</tbody></table>`;
+        `<tr data-tensor="${esc(r.name)}" data-dtype="${r.ternary ? 'ternary' : 'F32'}"><td>${fmt(structure(r.name)).outerHTML}</td>` +
+        `<td>${fmt(structure(r.shape)).outerHTML}</td><td>${r.ternary ? 'ternary' : 'F32'}</td>` +
+        `<td>${fmt(structure(r.params)).outerHTML}</td></tr>`).join('')}</tbody></table>`;
     const caveats = c.caveats.length === 0
       ? '<p>None recorded for this component.</p>'
       : c.caveats.map((cid) => {
         const cv = CAVEATS[cid];
-        return `<details open data-caveat="${cid}"><summary>${cid} · ${esc(cv.title)}</summary><p>${esc(cv.body)}</p>` +
-          (depth === 'intuition' ? '' : `<p class="evidence">Evidence: ${esc(cv.evidence)}</p>`) + '</details>';
+        return `<details open data-caveat="${cid}"><summary>${cid} · ${richHtml(cv.title)}</summary><p>${richHtml(cv.body)}</p>` +
+          (depth === 'intuition' ? '' : `<p class="evidence">Evidence: ${richHtml(cv.evidence)}</p>`) + '</details>';
       }).join('');
     const sources = c.source.map((s) =>
-      `<li><a href="${esc(sourceUrl(s.file, s.lines))}" target="_blank" rel="noopener noreferrer">${esc(s.file)}:${esc(s.lines)}</a></li>`).join('');
+      `<li><a href="${esc(sourceUrl(s.file, s.lines))}" target="_blank" rel="noopener noreferrer">${richHtml(`${s.file}:${s.lines}`)}</a></li>`).join('');
     return `
-      <header><h2>${esc(c.title)}</h2><button type="button" class="panel-close" aria-label="Close">×</button>
+      <header><h2>${richHtml(rc.title)}</h2><button type="button" class="panel-close" aria-label="Close">×</button>
         <div class="depth-switch">${depthButtons}</div></header>
-      <section data-section="what"><h3>What it is</h3><p>${esc(c.text[depth])}</p>
-        <p class="where">${esc(location(p, arch))}${tau !== undefined ? ` · τ <span data-kind="structure">${fmtNum(tau)}</span>` : ''}</p></section>
-      <section data-section="tensors"><h3>Real tensors</h3>${tensors}<div class="weights" data-kind="structure"></div></section>
+      <section data-section="what"><h3>What it is</h3><p>${richHtml(rc.text[depth])}</p>
+        <p class="where">${richHtml(location(p, arch))}${tau !== undefined ? ` · τ ${fmt(structure(tau)).outerHTML}` : ''}</p></section>
+      <section data-section="tensors"><h3>Real tensors</h3>${tensors}<div class="weights"></div></section>
       <section data-section="compute"><h3>In → computation → out</h3>
-        <p><b>In:</b> ${esc(c.inputs)}</p><p class="formula">${esc(c.formula)}</p><p><b>Out:</b> ${esc(c.outputs)}</p></section>
+        <p><b>In:</b> ${richHtml(rc.inputs)}</p><p class="formula">${richHtml(rc.formula)}</p><p><b>Out:</b> ${richHtml(rc.outputs)}</p></section>
       <section data-section="connections"><h3>Connections</h3>${links.length === 0 ? '<p>None.</p>' :
-        `<ul>${links.map((l) => `<li><a href="#" data-link="${esc(l.id)}">${esc(l.label)}</a></li>`).join('')}</ul>`}</section>
-      <section data-section="visual"><h3>The maths, schematic</h3><div data-kind="schematic">${visual(type, arch, id)}</div></section>
+        `<ul>${links.map((l) => `<li><a href="#" data-link="${esc(l.id)}">${richHtml(l.label)}</a></li>`).join('')}</ul>`}</section>
+      <section data-section="visual"><h3>The maths, schematic</h3>${labelBlock('illustrative', visual(type, arch, id, rc)).outerHTML}</section>
       <section data-section="caveats"><h3>Caveats</h3>${caveats}</section>
       <section data-section="source"><h3>Source</h3><ul>${sources}</ul></section>
       <section data-section="tour"><h3>Walkthrough</h3>${c.tour
@@ -255,19 +267,21 @@ export function createPanel(deps: PanelDeps): Panel {
       if (key.matrix) {
         const m = findMatrix(w, key.matrix);
         if (!m) throw new Error('matrix missing');
-        const tile = `${m.tile.length} × ${(m.tile[0] as string | number[]).length}`;
+        const tile = fmt(structure([m.tile.length, (m.tile[0] as string | number[]).length]), {
+          format: (v) => (v as number[]).join(' × '),
+        }).outerHTML;
         box.innerHTML = m.ternary
-          ? `<p>γ <span data-v="gamma">${fmtNum(m.gamma)}</span> · τ <span data-v="tau">${fmtNum(m.tau)}</span></p>` +
-            `<p>−1: <span data-v="frac_neg">${fmtPct(m.frac_neg)}</span> · 0: <span data-v="frac_zero">${fmtPct(m.frac_zero)}</span> · ` +
-            `+1: <span data-v="frac_pos">${fmtPct(m.frac_pos)}</span></p><p>tile ${tile} (checkpoint values)</p>`
+          ? `<p>γ ${sv(m.gamma, 'gamma')} · τ ${sv(m.tau, 'tau')}</p>` +
+            `<p>−${richHtml('1')}: ${sv(m.frac_neg, 'frac_neg', pctText)} · ${richHtml('0')}: ${sv(m.frac_zero, 'frac_zero', pctText)} · ` +
+            `+${richHtml('1')}: ${sv(m.frac_pos, 'frac_pos', pctText)}</p><p>tile ${tile} (checkpoint values)</p>`
           : `<p>F32, shown as a diverging colour scale. tile ${tile} (checkpoint values)</p>`;
       } else if (key.vector) {
         const v = findVector(w, key.vector);
         if (!v) throw new Error('vector missing');
-        box.innerHTML = `<p>mean ${fmtNum(v.mean)} · std ${fmtNum(v.std)} · min ${fmtNum(v.min)} · max ${fmtNum(v.max)} (checkpoint values)</p>`;
+        box.innerHTML = `<p>mean ${sv(v.mean, 'mean')} · std ${sv(v.std, 'std')} · min ${sv(v.min, 'min')} · max ${sv(v.max, 'max')} (checkpoint values)</p>`;
       }
     } catch (err) {
-      if (mine === token) box.textContent = `Weights unavailable: ${String(err)}`;
+      if (mine === token) box.innerHTML = richHtml(`Weights unavailable: ${String(err)}`);
     }
     void id;
   }
@@ -293,10 +307,14 @@ export function createPanel(deps: PanelDeps): Panel {
     if (link?.dataset.link) {
       e.preventDefault();
       const target = link.dataset.link;
-      const anchorId = flyTarget(target);
-      if (tower.has(anchorId)) void rig.flyTo(tower.anchor(anchorId), parseId(target)?.type === 'slab' ? 16 : 8);
-      void open(target);
-      deps.onNavigate?.(target);
+      void (async () => {
+        const pre = deps.beforeNavigate?.();
+        if (pre) await pre;
+        const anchorId = flyTarget(target);
+        if (tower.has(anchorId)) void rig.flyTo(tower.anchor(anchorId), parseId(target)?.type === 'slab' ? 16 : 8);
+        void open(target);
+        deps.onNavigate?.(target);
+      })();
       return;
     }
     const depthBtn = t.closest<HTMLElement>('[data-depth]');

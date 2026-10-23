@@ -3,13 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>albert. 3D Explorer</title>
+    <title>Xperience albert.</title>
     <style>
       html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
       canvas { display: block; }
+      #app-name { position: fixed; top: 10px; left: 14px; margin: 0; z-index: 2; pointer-events: none;
+        font: italic 400 28px "FreeSerif", "Times New Roman", serif; color: #fff; }
     </style>
   </head>
   <body>
+    <h1 id="app-name">Xperience albert.</h1>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

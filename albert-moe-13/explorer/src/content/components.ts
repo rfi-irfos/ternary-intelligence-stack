@@ -1,3 +1,4 @@
+import type { Architecture } from '../data/architecture';
 import type { CaveatId } from './caveats';
 import type { Depth } from '../ui/depth';
 import { type ComponentId, parseId } from '../scene/ids';
@@ -20,13 +21,25 @@ export type ComponentType =
 /** Walkthrough ids; the tour player arrives in a later task. */
 export type TourId = 'attention' | 'router' | 'expert' | 'anastomosis';
 
+export interface SourceRef {
+  file: string;
+  lines: string;
+  tokens: string[];
+}
+
+/**
+ * Text fields may hold placeholders like {layers}; resolveText fills them from the loaded architecture so
+ * no model count is typed into prose. Known: layers streams experts hidden ffn heads head_dim vocab
+ * attentions routers physical_experts slots fusion_count fusion_list.
+ */
 export interface ComponentContent {
   title: string;
   text: Record<Depth, string>;
   formula: string;
   inputs: string;
   outputs: string;
-  source: { file: string; lines: string }[];
+  /** `tokens` must all appear inside the cited range (tests/content.test.ts keeps the citations honest). */
+  source: SourceRef[];
   caveats: CaveatId[];
   tour?: TourId;
 }
@@ -40,21 +53,21 @@ export const COMPONENTS: Record<ComponentType, ComponentContent> = {
         'passed through a team of experts. The two streams have their own attention and routers but use the same experts.',
       technical:
         'A pre-norm block per stream: x = x + Attn(ln1(x)), then x = x + MoE(ln2(x)). Each layer builds stream A and ' +
-        'stream B with their own attention, norms and router. Both read the same expert weights, so the model has 92 ' +
-        'attentions, 92 routers and 552 physical experts (1,104 routing slots).',
+        'stream B with their own attention, norms and router. Both read the same expert weights, so the model has {attentions} ' +
+        'attentions, {routers} routers and {physical_experts} physical experts ({slots} routing slots).',
       researcher:
         'transformer.rs:74-99 defines the block; transformer.rs:126-131 builds stream_a and stream_b per layer over ' +
-        'one shared blocks.{i}.experts. Both streams start from the same embedding and end as their mean ' +
+        'one shared blocks.<i>.experts. Both streams start from the same embedding and end as their mean ' +
         '(h = (h_a + h_b) / 2, then ln_f, then lm_head; transformer.rs:206-208, 237-239). Ternary threshold tau is ' +
-        'set per layer (config.rs:42-51); this checkpoint has 46 layers (A6).',
+        'set per layer (config.rs:42-51); this checkpoint has {layers} layers (A6).',
     },
     formula: 'x ← x + Attn(ln1(x));  x ← x + MoE(ln2(x))   (per stream)',
     inputs: 'two residual streams h_A, h_B',
     outputs: 'updated h_A, h_B (same shape)',
     source: [
-      { file: 'model/transformer.rs', lines: '74-99' },
-      { file: 'model/transformer.rs', lines: '126-131' },
-      { file: 'model/config.rs', lines: '42-51' },
+      { file: 'model/transformer.rs', lines: '74-99', tokens: ['ln1.forward', 'ln2.forward'] },
+      { file: 'model/transformer.rs', lines: '126-131', tokens: ['new_stream', 'stream_a', 'stream_b'] },
+      { file: 'model/config.rs', lines: '42-51', tokens: ['layer_threshold', 'max(0.03)'] },
     ],
     caveats: ['A6', 'A7', 'A8'],
   },
@@ -65,15 +78,18 @@ export const COMPONENTS: Record<ComponentType, ComponentContent> = {
         'A pool of small expert networks that both streams use. Each stream picks its own favourites from the pool.',
       technical:
         'The experts of a layer are stored once and read by both streams. Each stream routes into the bank independently, ' +
-        'which gives 2 × num_experts routing slots over num_experts physical experts per layer.',
+        'which gives {streams} × {experts} routing slots over {experts} physical experts per layer.',
       researcher:
-        'Both stream_a and stream_b read the same blocks.{i}.experts weights (transformer.rs:126-131). Routing: moe.rs:197-381. ' +
+        'Both stream_a and stream_b read the same blocks.<i>.experts weights (transformer.rs:126-131). Routing: moe.rs:197-381. ' +
         'Experts with zero load in a batch are not executed (@sparseskip).',
     },
     formula: 'MoE_s(x) = Σ_{e ∈ top3_s(x)} softmax(top-3 logits)_e · scale_e · Expert_e(x)',
     inputs: 'ln2 output of stream A or B',
     outputs: 'weighted sum of the selected expert outputs',
-    source: [{ file: 'model/transformer.rs', lines: '126-131' }, { file: 'model/moe.rs', lines: '197-381' }],
+    source: [
+      { file: 'model/transformer.rs', lines: '126-131', tokens: ['vb_experts', 'stream_b'] },
+      { file: 'model/moe.rs', lines: '197-381', tokens: ['pub fn forward', 'expert_seeds'] },
+    ],
     caveats: [],
     tour: 'expert',
   },
@@ -82,7 +98,7 @@ export const COMPONENTS: Record<ComponentType, ComponentContent> = {
     text: {
       intuition: 'A lookup table. Each token ID pulls out one row of numbers that stands for that token.',
       technical:
-        'A [vocab × hidden] table, kept in F32 (not ternary). Both streams start from the same embedding output.',
+        'A [{vocab} × {hidden}] table, kept in F32 (not ternary). Both streams start from the same embedding output.',
       researcher:
         'EmbeddingLayer wraps candle_nn::embedding (embedding.rs:9-16). F32 weights. Stream A and stream B both start ' +
         'from this output (transformer.rs:184-215). Positions are not in this table: they come from RoPE in attention, ' +
@@ -91,7 +107,10 @@ export const COMPONENTS: Record<ComponentType, ComponentContent> = {
     formula: 'h⁰ = E[token]',
     inputs: 'token ids',
     outputs: 'h⁰ for stream A and stream B (identical)',
-    source: [{ file: 'model/embedding.rs', lines: '9-16' }, { file: 'model/transformer.rs', lines: '184-215' }],
+    source: [
+      { file: 'model/embedding.rs', lines: '9-16', tokens: ['candle_nn::embedding'] },
+      { file: 'model/transformer.rs', lines: '184-215', tokens: ['self.embedding.forward', 'blocks_b'] },
+    ],
     caveats: [],
   },
   ln1: {
@@ -99,12 +118,18 @@ export const COMPONENTS: Record<ComponentType, ComponentContent> = {
     text: {
       intuition: 'Rescales the numbers of one stream so attention sees them on a steady scale.',
       technical: 'LayerNorm in F32 (weight and bias), applied before attention: Attn(ln1(x)). Each stream has its own.',
-      researcher: 'DiffLayerNorm with eps 1e-5 (diff_layer_norm.rs, transformer.rs:145). Pre-norm placement: transformer.rs:74-99. Not ternary.',
+      researcher:
+        'DiffLayerNorm with eps 1e-5 (diff_layer_norm.rs:21-34). Each stream block builds ln1 and ln2 with it at transformer.rs:53-54 ' +
+        '(single-stream constructor: 31-32). Pre-norm placement: ln1 is applied at transformer.rs:75. Not ternary.',
     },
     formula: 'ln(x) = (x − mean) / std · weight + bias',
     inputs: 'residual stream x',
     outputs: 'normalised x',
-    source: [{ file: 'model/diff_layer_norm.rs', lines: '21-34' }, { file: 'model/transformer.rs', lines: '74-99' }],
+    source: [
+      { file: 'model/diff_layer_norm.rs', lines: '21-34', tokens: ['pub struct DiffLayerNorm', 'eps'] },
+      { file: 'model/transformer.rs', lines: '53-54', tokens: ['pp("ln1")', '1e-5'] },
+      { file: 'model/transformer.rs', lines: '75', tokens: ['ln1.forward'] },
+    ],
     caveats: [],
   },
   ln2: {
@@ -113,22 +138,26 @@ export const COMPONENTS: Record<ComponentType, ComponentContent> = {
       intuition: 'Rescales one stream again, before it goes to the router and the experts.',
       technical: 'LayerNorm in F32, applied before the MoE: MoE(ln2(x)). Each stream has its own.',
       researcher:
-        'Same DiffLayerNorm as ln1 (diff_layer_norm.rs). Its output std is about 0.003 according to the source comment ' +
-        'in mlp.rs:40-42, which is why seed_bias dominates the expert input (A4).',
+        'Same DiffLayerNorm as ln1 (diff_layer_norm.rs:21-34), applied at transformer.rs:93. Its output std is about 0.003 according to the ' +
+        'source comment in mlp.rs:40-42, which is why seed_bias dominates the expert input (A4).',
     },
     formula: 'ln(x) = (x − mean) / std · weight + bias',
     inputs: 'residual stream x after attention',
     outputs: 'normalised x, read by the router and the experts',
-    source: [{ file: 'model/diff_layer_norm.rs', lines: '21-34' }, { file: 'model/transformer.rs', lines: '74-99' }],
+    source: [
+      { file: 'model/diff_layer_norm.rs', lines: '21-34', tokens: ['pub struct DiffLayerNorm', 'eps'] },
+      { file: 'model/transformer.rs', lines: '53-54', tokens: ['pp("ln2")', '1e-5'] },
+      { file: 'model/transformer.rs', lines: '93', tokens: ['ln2.forward', 'moe.forward'] },
+    ],
     caveats: ['A4'],
   },
   attn: {
     title: 'Attention',
     text: {
       intuition:
-        'Each word looks back at the earlier words and decides which ones matter. Four heads look for four different things.',
+        'Each word looks back at the earlier words and decides which ones matter. Each head looks for something different.',
       technical:
-        'Four heads of 64 dimensions with a causal mask and RoPE on Q and K. Q, K, V and O are ternary matrices. ' +
+        '{heads} heads of {head_dim} dimensions with a causal mask and RoPE on Q and K. Q, K, V and O are ternary matrices. ' +
         'RoPE has no weights, so no position tensor exists in the checkpoint.',
       researcher:
         'attention.rs:77-120: q/k/v projections, reshape to [heads, head_dim], apply_rope (84-89), scores / sqrt(head_dim) + mask, ' +
@@ -138,22 +167,25 @@ export const COMPONENTS: Record<ComponentType, ComponentContent> = {
     formula: 'Attn(x) = O · concat_h softmax(RoPE(Q_h) RoPE(K_h)ᵀ / √d_head + mask) V_h',
     inputs: 'ln1 output',
     outputs: 'attention output added to the residual stream',
-    source: [{ file: 'model/attention.rs', lines: '77-120' }, { file: 'model/attention.rs', lines: '84-89' }],
+    source: [
+      { file: 'model/attention.rs', lines: '77-120', tokens: ['q_proj.forward', 'softmax'] },
+      { file: 'model/attention.rs', lines: '84-89', tokens: ['apply_rope', 'self.head_dim'] },
+    ],
     caveats: [],
     tour: 'attention',
   },
   head: {
     title: 'Attention head',
     text: {
-      intuition: 'One of four readers. Each head looks at the earlier words in its own way.',
+      intuition: 'One of {heads} readers. Each head looks at the earlier words in its own way.',
       technical:
-        'A head is a 64-wide slice of the Q, K and V outputs. It has no weights of its own; the slice comes from the shared Q, K and V matrices.',
+        'A head is a {head_dim}-wide slice of the Q, K and V outputs. It has no weights of its own; the slice comes from the shared Q, K and V matrices.',
       researcher: 'Reshape to [batch, heads, seq, head_dim] and RoPE at attention.rs:84-89.',
     },
     formula: 'head_h = softmax(RoPE(Q_h) RoPE(K_h)ᵀ / √d_head + mask) V_h',
     inputs: 'Q_h, K_h, V_h slices',
     outputs: 'head output, concatenated and sent to O',
-    source: [{ file: 'model/attention.rs', lines: '84-89' }],
+    source: [{ file: 'model/attention.rs', lines: '84-89', tokens: ['apply_rope', 'self.num_heads'] }],
     caveats: [],
   },
   matrix: {
@@ -163,16 +195,22 @@ export const COMPONENTS: Record<ComponentType, ComponentContent> = {
         'A grid of numbers the model learned. Ternary matrices only hold three values: −1 (red), 0 (dark) and +1 (cyan).',
       technical:
         'The checkpoint stores F32 latent weights. When the model runs, each ternary matrix is turned into γ · sign(w) · [|w| > τ] ' +
-        'with γ = mean(|w|) per matrix. The router gate stays F32. The tile shows a 32 × 32 view of the matrix.',
+        'with γ = mean(|w|) per matrix. The router gate stays F32. The tile shows a cut-out of the matrix, not all of it.',
       researcher:
-        'ste.rs:12-20, ternary_linear.rs. τ per layer = 0.01 + (top − 0.01) · i / (num_layers − 1), capped at 0.05, with ' +
+        'γ = w.abs().mean_all() at ste.rs:5-8 and, refreshed every 20 calls, in TernaryLinear::get_gamma (ternary_linear.rs:386-392); ' +
+        'the threshold and sign step is ste.rs:12-20. τ per layer = 0.01 + (top − 0.01) · i / (num_layers − 1), capped at 0.05, with ' +
         'top = max(config.threshold, 0.03) (config.rs:42-51). Router gate: F32 "for routing resolution" (moe.rs:202). ' +
         'Tile cells are checkpoint values (structure).',
     },
     formula: 'w_t = γ · sign(w) · [|w| > τ],   γ = mean(|w|)',
     inputs: 'F32 latent weights from the checkpoint',
     outputs: 'ternary weights used in the matmul',
-    source: [{ file: 'model/ste.rs', lines: '12-20' }, { file: 'model/ternary_linear.rs', lines: '1-40' }],
+    source: [
+      { file: 'model/ste.rs', lines: '5-8', tokens: ['abs', 'mean_all'] },
+      { file: 'model/ste.rs', lines: '12-20', tokens: ['gt(threshold)', 'lt(-threshold)', 'broadcast_mul(gamma)'] },
+      { file: 'model/ternary_linear.rs', lines: '386-392', tokens: ['abs', 'mean_all', 'GAMMA_REFRESH'] },
+      { file: 'model/moe.rs', lines: '202', tokens: ['F32 linear for routing resolution'] },
+    ],
     caveats: [],
   },
   router: {
@@ -191,7 +229,10 @@ export const COMPONENTS: Record<ComponentType, ComponentContent> = {
     formula: 'p = softmax(top3(gate(x) / T)),   out = Σ_i p_i · scale_i · Expert_i(x)',
     inputs: 'ln2 output of this stream',
     outputs: 'three expert choices with weights',
-    source: [{ file: 'model/moe.rs', lines: '197-381' }, { file: 'model/moe.rs', lines: '310-326' }],
+    source: [
+      { file: 'model/moe.rs', lines: '197-381', tokens: ['pub fn forward', 'gate_logits'] },
+      { file: 'model/moe.rs', lines: '310-326', tokens: ['safety_threshold', 'apply_safety'] },
+    ],
     caveats: ['A3', 'A5', 'A9'],
     tour: 'router',
   },
@@ -199,10 +240,11 @@ export const COMPONENTS: Record<ComponentType, ComponentContent> = {
     title: 'Expert',
     text: {
       intuition:
-        'A small two-step network. Its input is first shifted by a fixed vector (seed_bias), which does most of the shaping.',
+        'A small two-step network. Its input is first shifted by a fixed vector (seed_bias) that is far larger than the input itself.',
       technical:
-        'c_proj(GELU(c_fc(x + seed_bias))): 256 → 1024 → 256, with ternary c_fc and c_proj. seed_bias is added to the input ' +
-        'before c_fc and is much larger than the layer-norm output.',
+        'c_proj(GELU(c_fc(x + seed_bias))): {hidden} → {ffn} → {hidden}, with ternary c_fc and c_proj. seed_bias is added to the input ' +
+        'before c_fc. The fixed seed_bias dominates the expert\'s input: its spread is about 0.7 against about 0.003 for the normalised ' +
+        'input (source comment, mlp.rs:40-42).',
       researcher:
         'The seed is added at moe.rs:369-370; the MLP is mlp.rs:85-89. Source comment: seed std about 0.7 against LN output ' +
         'std about 0.003, and about 29.6 % of inner neurons are seed-saturated (A4, mlp.rs:12, 40-42).',
@@ -210,15 +252,20 @@ export const COMPONENTS: Record<ComponentType, ComponentContent> = {
     formula: 'E(x) = c_proj(GELU(c_fc(x + seed_bias)))',
     inputs: 'ln2 output of stream A or B (selected by the router)',
     outputs: 'expert output, weighted by the router',
-    source: [{ file: 'model/mlp.rs', lines: '85-89' }, { file: 'model/moe.rs', lines: '369-370' }],
+    source: [
+      { file: 'model/mlp.rs', lines: '85-89', tokens: ['c_fc.forward', 'c_proj.forward'] },
+      { file: 'model/moe.rs', lines: '369-370', tokens: ['expert_seeds', 'broadcast_add'] },
+    ],
     caveats: ['A4'],
     tour: 'expert',
   },
   seed_bias: {
     title: 'seed_bias',
     text: {
-      intuition: 'A fixed offset added to every input of this expert. It is so strong that it decides which neurons switch on.',
-      technical: 'An F32 vector of 256 values per expert, added to the expert input. It stays F32 (not ternary).',
+      intuition: 'A fixed offset added to every input of this expert. It is far larger than the input itself, so the expert mostly sees the offset.',
+      technical:
+        'An F32 vector of {hidden} values per expert, added to the expert input. It stays F32 (not ternary). The fixed seed_bias ' +
+        'dominates the expert\'s input: its spread is about 0.7 against about 0.003 for the normalised input (mlp.rs:40-42).',
       researcher:
         'Source comment: seed std about 0.7 against LN output std about 0.003; about 29.6 % of inner neurons are seed-saturated ' +
         '(A4, mlp.rs:12, 40-42). Added at moe.rs:369-370.',
@@ -226,38 +273,44 @@ export const COMPONENTS: Record<ComponentType, ComponentContent> = {
     formula: 'x′ = x + seed_bias_e',
     inputs: 'ln2 output',
     outputs: 'shifted input for c_fc',
-    source: [{ file: 'model/mlp.rs', lines: '40-42' }, { file: 'model/moe.rs', lines: '369-370' }],
+    source: [
+      { file: 'model/mlp.rs', lines: '40-42', tokens: ['seed std≈0.7', 'LN output std≈0.003'] },
+      { file: 'model/moe.rs', lines: '369-370', tokens: ['expert_seeds', 'broadcast_add'] },
+    ],
     caveats: ['A4'],
   },
   gelu: {
     title: 'GELU',
     text: {
       intuition: 'A smooth switch between the two layers of the expert. Small negative values are squashed towards zero.',
-      technical: 'Elementwise GELU on the 1,024 inner neurons. It has no weights.',
+      technical: 'Elementwise GELU on the {ffn} inner neurons. It has no weights.',
       researcher: 'x.gelu() at mlp.rs:87.',
     },
     formula: 'GELU(z) = z · Φ(z)',
-    inputs: 'c_fc output (1,024 values)',
+    inputs: 'c_fc output ({ffn} values)',
     outputs: 'activations for c_proj',
-    source: [{ file: 'model/mlp.rs', lines: '85-89' }],
+    source: [{ file: 'model/mlp.rs', lines: '87', tokens: ['x.gelu()'] }],
     caveats: [],
   },
   anastomosis: {
     title: 'Anastomosis gate',
     text: {
       intuition:
-        'A valve between the two streams. It lets a little of each stream flow into the other, at seven layers.',
+        'A valve between the two streams. It lets a little of each stream flow into the other, at {fusion_count} layers.',
       technical:
         'g = σ(W [h_a; h_b] + b) gives two numbers per position. Both streams update at once from the old values. ' +
         'The code skips this gate in the training forward pass and applies it only in prefill and decode (see caveats).',
       researcher:
         'anastomosis.rs:60-73. h_a′ = h_a + g₀ · h_b and h_b′ = h_b + g₁ · h_a, simultaneous. Applied after block i for ' +
-        'i in {2, 3, 5, 8, 13, 21, 34} (fusion_layers). Training forward skips it (A1); gate weights sit at init scale (A2).',
+        'i in [{fusion_list}] (fusion_layers). Training forward skips it (A1); gate weights sit at init scale (A2).',
     },
     formula: 'g = σ(W [h_a; h_b] + b);  h_a′ = h_a + g₀·h_b;  h_b′ = h_b + g₁·h_a',
     inputs: 'h_A, h_B after the block',
     outputs: 'mixed h_A′, h_B′',
-    source: [{ file: 'model/anastomosis.rs', lines: '60-73' }, { file: 'model/transformer.rs', lines: '184-215' }],
+    source: [
+      { file: 'model/anastomosis.rs', lines: '60-73', tokens: ['Tensor::cat', 'sigmoid'] },
+      { file: 'model/transformer.rs', lines: '184-215', tokens: ['blocks_b', 'fn forward'] },
+    ],
     caveats: ['A1', 'A2'],
     tour: 'anastomosis',
   },
@@ -271,20 +324,26 @@ export const COMPONENTS: Record<ComponentType, ComponentContent> = {
     formula: 'h = ln_f((h_A + h_B) / 2)',
     inputs: 'h_A, h_B after the last block',
     outputs: 'one normalised vector per position',
-    source: [{ file: 'model/transformer.rs', lines: '206-208' }, { file: 'model/transformer.rs', lines: '237-239' }],
+    source: [
+      { file: 'model/transformer.rs', lines: '206-208', tokens: ['affine(0.5', 'ln_f.forward'] },
+      { file: 'model/transformer.rs', lines: '237-239', tokens: ['affine(0.5', 'ln_f.forward'] },
+    ],
     caveats: [],
   },
   lm_head: {
     title: 'LM head',
     text: {
       intuition: 'Turns the final vector into a score for every word in the vocabulary. The highest scores are the likely next words.',
-      technical: 'A ternary [vocab × hidden] projection. The checkpoint stores it as F32 latent weights.',
+      technical: 'A ternary [{vocab} × {hidden}] projection. The checkpoint stores it as F32 latent weights.',
       researcher: 'TernaryLinear built at transformer.rs:147; applied after ln_f at transformer.rs:207-208.',
     },
     formula: 'logits = W_head · h',
     inputs: 'ln_f output',
     outputs: 'one logit per vocabulary entry',
-    source: [{ file: 'model/transformer.rs', lines: '145-147' }, { file: 'model/transformer.rs', lines: '206-208' }],
+    source: [
+      { file: 'model/transformer.rs', lines: '145-147', tokens: ['ln_f', 'TernaryLinear::new'] },
+      { file: 'model/transformer.rs', lines: '206-208', tokens: ['lm_head.forward'] },
+    ],
     caveats: [],
   },
   shaft: {
@@ -292,13 +351,16 @@ export const COMPONENTS: Record<ComponentType, ComponentContent> = {
     text: {
       intuition: 'The running notes of one stream. Every block adds to it; nothing is overwritten.',
       technical:
-        'Stream A and stream B are two residual streams. Blocks add to them (x = x + …); anastomosis gates mix them at seven layers.',
+        'Stream A and stream B are two residual streams. Blocks add to them (x = x + …); anastomosis gates mix them at {fusion_count} layers.',
       researcher: 'transformer.rs:74-99 (residual adds), 126-131 (two streams), 206-208 (mean merge).',
     },
     formula: 'x ← x + f(ln(x))',
     inputs: 'embedding output',
     outputs: 'merged by mean before ln_f',
-    source: [{ file: 'model/transformer.rs', lines: '74-99' }, { file: 'model/transformer.rs', lines: '126-131' }],
+    source: [
+      { file: 'model/transformer.rs', lines: '74-99', tokens: ['x + self.attention', 'feed_forward'] },
+      { file: 'model/transformer.rs', lines: '126-131', tokens: ['stream_a', 'stream_b'] },
+    ],
     caveats: [],
   },
 };
@@ -311,4 +373,57 @@ export function componentTypeOf(id: ComponentId): ComponentType | null {
     case 'gate': return 'anastomosis';
     default: return p.type;
   }
+}
+
+/** Placeholder values for an architecture. Every number comes from `a`; nothing is typed here. */
+export function placeholders(a: Architecture): Record<string, string> {
+  const m = a.model;
+  const n = (x: number): string => x.toLocaleString('en-US');
+  return {
+    layers: n(m.num_layers),
+    streams: n(m.num_streams),
+    experts: n(m.num_experts),
+    hidden: n(m.hidden),
+    ffn: n(m.ffn_inner),
+    heads: n(m.num_heads),
+    head_dim: n(m.head_dim),
+    vocab: n(m.vocab),
+    attentions: n(m.num_layers * m.num_streams),
+    routers: n(m.num_layers * m.num_streams),
+    physical_experts: n(m.num_layers * m.num_experts),
+    slots: n(m.num_layers * m.num_experts * m.num_streams),
+    fusion_count: n(m.fusion_layers.length),
+    fusion_list: m.fusion_layers.join(', '),
+  };
+}
+
+/** Fills {name} placeholders from the architecture; an unknown name is a bug and throws. */
+export function resolveText(s: string, a: Architecture): string {
+  const vars = placeholders(a);
+  return s.replace(/\{([a-z_]+)\}/g, (_, k: string) => {
+    const v = vars[k];
+    if (v === undefined) throw new Error(`unknown placeholder {${k}} in "${s.slice(0, 40)}"`);
+    return v;
+  });
+}
+
+export interface ResolvedContent {
+  title: string;
+  text: Record<Depth, string>;
+  formula: string;
+  inputs: string;
+  outputs: string;
+}
+
+/** Component texts for the loaded architecture. */
+export function contentFor(type: ComponentType, a: Architecture): ResolvedContent {
+  const c = COMPONENTS[type];
+  const r = (x: string): string => resolveText(x, a);
+  return {
+    title: r(c.title),
+    text: { intuition: r(c.text.intuition), technical: r(c.text.technical), researcher: r(c.text.researcher) },
+    formula: r(c.formula),
+    inputs: r(c.inputs),
+    outputs: r(c.outputs),
+  };
 }

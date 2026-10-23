@@ -9,9 +9,15 @@ import { isExplodable } from './scene/hierarchy';
 import { slabId } from './scene/ids';
 import { createPanel, PANEL_CSS } from './ui/panel';
 import { attachDepthKeys } from './ui/depth';
+import { pickAction } from './ui/pickAction';
+import { APP_NAME } from './content/brand';
+import { LABEL_CSS } from './data/labeled';
 import { attachPicking, createHover, createRaycastPicker } from './ui/picking';
 
 async function main(): Promise<void> {
+  document.title = APP_NAME;
+  const heading = document.getElementById('app-name');
+  if (heading) heading.textContent = APP_NAME;
   const arch = await loadArchitecture();
   const tower = buildTower(arch);
 
@@ -42,13 +48,21 @@ async function main(): Promise<void> {
     .slab-rail-item.fusion { border-color: #ffd940; color: #ffd940; }
     .slab-rail-item.active { background: #58c4dd; color: #000; }
     ${PANEL_CSS}
-    .overview-btn { position: fixed; top: 10px; left: 10px; font: 12px monospace; padding: 6px 10px; color: #fff;
+    ${LABEL_CSS}
+    .overview-btn { position: fixed; top: 56px; left: 14px; font: 12px monospace; padding: 6px 10px; color: #fff;
       background: #14161b; border: 1px solid #333a46; border-radius: 4px; cursor: pointer; }`;
   document.head.appendChild(style);
   const loadWeights = createWeightsLoader();
-  const panel = createPanel({ arch, tower, rig, loadWeights });
+  // Declared before use: the panel reassembles an open explosion before a connection link flies.
+  let view: ReturnType<typeof createExplode>;
+  const panel = createPanel({
+    arch, tower, rig, loadWeights,
+    beforeNavigate: async () => {
+      while (view.depth() > 0) await view.reassemble();
+    },
+  });
   document.body.appendChild(panel.element);
-  const view = createExplode({
+  view = createExplode({
     tower, arch, rig, loadWeights,
     onChange: (id) => {
       if (id) void panel.openPanel(id);
@@ -76,10 +90,11 @@ async function main(): Promise<void> {
   const hover = createHover(scene);
   attachPicking(renderer.domElement, {
     pickAt: (x, y) => rayAt(x, y)?.id ?? null,
-    onPick: (id) => {
-      void panel.openPanel(id);
-      if (isExplodable(id, arch)) view.explode(id).catch((err: unknown) => console.error(err));
-    },
+    onPick: (id) => pickAction(id, {
+      explodable: (x) => isExplodable(x, arch),
+      explode: (x) => view.explode(x),
+      openPanel: (x) => panel.openPanel(x),
+    }),
     onEmpty: () => {
       if (view.depth() > 0) void view.reassemble();
       else panel.close();

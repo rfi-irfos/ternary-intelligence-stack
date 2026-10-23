@@ -6,6 +6,9 @@ import fixture from './fixtures/L12.fixture.json';
 import { validateArchitecture } from '../src/data/architecture';
 import { createWeightsLoader, validateLayerWeights } from '../src/data/weights';
 import { buildTower } from '../src/scene/tower';
+import { createExplode } from '../src/scene/explode';
+import { pickAction } from '../src/ui/pickAction';
+import { isExplodable } from '../src/scene/hierarchy';
 import { connectionsOf, createPanel, tensorRows } from '../src/ui/panel';
 import { setDepth } from '../src/ui/depth';
 
@@ -19,6 +22,8 @@ function make() {
   document.body.appendChild(panel.element);
   return { panel, flyTo };
 }
+
+const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 afterEach(() => {
   document.body.innerHTML = '';
@@ -63,6 +68,7 @@ describe('inspection panel', () => {
     const link = panel.element.querySelector<HTMLElement>('[data-link="L12.A.router"]');
     expect(link).not.toBeNull();
     link!.click();
+    await flush();
     expect(flyTo).toHaveBeenCalledTimes(1);
     const target = (flyTo.mock.calls[0] as unknown as [THREE.Vector3, number])[0];
     expect(target.distanceTo(tower.anchor('L12.A.router'))).toBeLessThan(1e-9);
@@ -73,7 +79,7 @@ describe('inspection panel', () => {
     const { panel } = make();
     await panel.openPanel('L12.A.attn.q');
     const box = panel.element.querySelector<HTMLElement>('.weights');
-    expect(box?.dataset.kind).toBe('structure');
+    expect(box?.querySelector<HTMLElement>('[data-v="gamma"]')?.dataset.kind).toBe('structure');
     expect(box?.textContent).toContain('γ');
     expect(box?.querySelector('[data-v="gamma"]')?.textContent).toBe('0.1');
     expect(box?.textContent).toContain('32 × 32');
@@ -113,6 +119,56 @@ describe('inspection panel', () => {
     await Promise.all([load(12), load(12)]);
     expect(f).toHaveBeenCalledTimes(1);
     expect(f).toHaveBeenCalledWith('/w/L12.json');
+  });
+});
+
+describe('exploded navigation and picking', () => {
+  const noLabel = () => new THREE.Object3D();
+
+  it('a connection link while exploded reassembles first, then flies to the visible anchor', async () => {
+    const order: string[] = [];
+    const t = buildTower(a);
+    const rig = { flyTo: vi.fn(() => { order.push('fly'); return Promise.resolve(); }) };
+    const viewRig = { flyTo: vi.fn(() => Promise.resolve()), escapeGuard: null as (() => boolean) | null };
+    const view = createExplode({ tower: t, arch: a, rig: viewRig, loadWeights, label: noLabel, ms: 0 });
+    const panel = createPanel({
+      arch: a, tower: t, rig, loadWeights,
+      beforeNavigate: async () => {
+        while (view.depth() > 0) await view.reassemble();
+        order.push(`reassembled depth ${view.depth()}`);
+      },
+    });
+    document.body.appendChild(panel.element);
+    await view.explode('L12');
+    await view.explode('L12.A.attn');
+    expect(view.depth()).toBe(2);
+    rig.flyTo.mockClear();
+    order.length = 0;
+    await panel.openPanel('L12.A.attn');
+    panel.element.querySelector<HTMLElement>('[data-link="L12.A.ln1"]')!.click();
+    await flush();
+    expect(view.depth()).toBe(0);
+    expect(order).toEqual(['reassembled depth 0', 'fly']);
+    const target = (rig.flyTo.mock.calls[0] as unknown as [THREE.Vector3, number])[0];
+    expect(target.distanceTo(t.anchor('L12.A.ln1'))).toBeLessThan(1e-9);
+    expect(panel.current()).toBe('L12.A.ln1');
+    view.dispose();
+  });
+
+  it('picking an explodable component opens the panel once, a leaf once', async () => {
+    const t = buildTower(a);
+    const rig = { flyTo: vi.fn(() => Promise.resolve()), escapeGuard: null as (() => boolean) | null };
+    const openPanel = vi.fn(async () => {});
+    const view = createExplode({ tower: t, arch: a, rig, loadWeights, label: noLabel, ms: 0, onChange: (id) => { if (id) void openPanel(); } });
+    const deps = { explodable: (id: string) => isExplodable(id, a), explode: (id: string) => view.explode(id), openPanel };
+    pickAction('L12.A.attn', deps);
+    await flush();
+    expect(view.depth()).toBe(1);
+    expect(openPanel).toHaveBeenCalledTimes(1);
+    openPanel.mockClear();
+    pickAction('L12.expert.7.gelu', { ...deps, explodable: () => false });
+    expect(openPanel).toHaveBeenCalledTimes(1);
+    view.dispose();
   });
 });
 

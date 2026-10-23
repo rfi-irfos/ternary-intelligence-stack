@@ -6,7 +6,7 @@ import fixture from './fixtures/L12.fixture.json';
 import { validateArchitecture } from '../src/data/architecture';
 import { validateLayerWeights } from '../src/data/weights';
 import { createControls } from '../src/camera/controls';
-import { createExplode } from '../src/scene/explode';
+import { createExplode, fitFontPx } from '../src/scene/explode';
 import { childrenOf, lanePath } from '../src/scene/hierarchy';
 import { tileGrid } from '../src/scene/tile';
 import { LANE_Y, buildTower } from '../src/scene/tower';
@@ -162,8 +162,68 @@ describe('explode view', () => {
     esc();
     expect(view.depth()).toBe(0);
     expect(overview).not.toHaveBeenCalled();
+    await new Promise((r) => setTimeout(r, 0)); // let the last reassemble finish
     esc();
     expect(overview).toHaveBeenCalledTimes(1);
+  });
+
+  it('Esc never pops a level and flies to overview in one keypress, whichever listener is registered first', async () => {
+    const tower = buildTower(a);
+    // explode is created (and registers its keydown listener) before the rig exists.
+    const shim = { flyTo: vi.fn(() => Promise.resolve()), escapeGuard: null as (() => boolean) | null };
+    const view = createExplode({ tower, arch: a, rig: shim, loadWeights, label: noLabel, ms: 700 });
+    cleanup.push(() => view.dispose());
+    const camera = new THREE.PerspectiveCamera(45, 1.5, 0.1, 1000);
+    const rig = createControls(camera, document.createElement('canvas'), tower.rowExtent);
+    cleanup.push(() => rig.dispose());
+    const overview = vi.spyOn(rig, 'overview');
+    const tick = (s: number) => { for (let i = 0; i < 20; i++) view.update(s / 20); };
+    const open = async (id: string) => { const p = view.explode(id); tick(1); await p; };
+    const esc = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+
+    await open('L12');
+    await open('L12.A.attn');
+    expect(view.depth()).toBe(2);
+    esc();
+    expect(view.depth()).toBe(1);
+    expect(overview).not.toHaveBeenCalled();
+    esc(); // second Esc while the first reassemble still animates
+    expect(view.depth()).toBe(0);
+    expect(overview).not.toHaveBeenCalled();
+    esc(); // third Esc while the last reassemble still animates: swallowed, no jump to overview
+    expect(overview).not.toHaveBeenCalled();
+    tick(1);
+    await new Promise((r) => setTimeout(r, 0));
+    esc(); // everything closed: now the rig may fly to overview
+    expect(overview).toHaveBeenCalledTimes(1);
+  });
+
+  it('tile captions are structure labels and fit: one short line each, never a long single line', async () => {
+    const calls: [string, string | undefined][] = [];
+    const tower = buildTower(a);
+    const rig = { flyTo: vi.fn(() => Promise.resolve()), escapeGuard: null as (() => boolean) | null };
+    const view = createExplode({
+      tower, arch: a, rig, loadWeights, ms: 0,
+      label: (t, k) => { calls.push([t, k]); return new THREE.Object3D(); },
+    });
+    cleanup.push(() => view.dispose());
+    await view.explode('L12');
+    await view.explode('L12.A.attn');
+    calls.length = 0;
+    await view.explode('L12.A.attn.q');
+    expect(calls.map((c) => c[0])).toEqual([
+      'stream_a.attn.q_proj.weight', 'γ 0.1 · τ 0.0153', '−1 40.0 % · 0 20.0 % · +1 40.0 %',
+    ]);
+    for (const [t, k] of calls) {
+      expect(k).toBe('structure');
+      expect(t.length).toBeLessThanOrEqual(40);
+    }
+  });
+
+  it('label font shrinks until the text fits', () => {
+    expect(fitFontPx((px) => px * 10, 400)).toBe(30);
+    expect(fitFontPx((px) => px * 20, 400)).toBe(20);
+    expect(fitFontPx(() => 9999, 400)).toBe(12);
   });
 
   it('picks parts only from the open level', async () => {

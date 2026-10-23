@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { MatrixData } from '../data/weights';
+import { fmtText, structure } from '../data/labeled';
 
 /** Spec 4.2b value colours: +1 cyan, -1 red, 0 near-black. */
 export const TILE_COLORS = { plus: 0x58c4dd, minus: 0xfc6255, zero: 0x1a1c21 } as const;
@@ -37,6 +38,18 @@ export function tileGrid(m: MatrixData): TileGrid {
   const cols = data[0]?.length ?? 0;
   const maxAbs = Math.max(0, ...data.flat().map(Math.abs));
   return { rows, cols, colors: data.flatMap((r) => r.map((v) => divergingColor(v, maxAbs))) };
+}
+
+/** Caption lines under a tile (structure values from the weights file); short enough for the label width. */
+export function tileCaption(m: MatrixData): string[] {
+  const num = (v: number | null): string => (v === null ? '—' : fmtText(structure(v)));
+  const pct = (v: number | null): string => (v === null ? '—' : `${(v * 100).toFixed(1)} %`);
+  if (!m.ternary) return [m.name, `F32 · ${fmtText(structure(m.shape))}`];
+  return [
+    m.name,
+    `γ ${num(m.gamma)} · τ ${num(m.tau)}`,
+    `−1 ${pct(m.frac_neg)} · 0 ${pct(m.frac_zero)} · +1 ${pct(m.frac_pos)}`,
+  ];
 }
 
 /** Glass plane facing -Y (towards the default camera) with one quad per tile cell. */

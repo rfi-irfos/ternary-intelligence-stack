@@ -4,7 +4,8 @@ import type { CameraRig } from '../camera/controls';
 import { findMatrix, type WeightsLoader, weightKey } from '../data/weights';
 import { type ComponentId, type Stream, parseId } from './ids';
 import { type ChildSpec, type PartKind, childrenOf, isExplodable, lanePath } from './hierarchy';
-import { buildTile, CELL } from './tile';
+import { buildTile, CELL, tileCaption } from './tile';
+import type { LabelKind } from '../data/labeled';
 import { COLORS, type TowerScene } from './tower';
 
 export interface TileInfo {
@@ -28,7 +29,7 @@ export interface ExplodeDeps {
   rig: Pick<CameraRig, 'flyTo' | 'escapeGuard'>;
   loadWeights: WeightsLoader;
   /** Text label factory; defaults to a serif canvas sprite. Tests inject a stub. */
-  label?: (text: string) => THREE.Object3D;
+  label?: (text: string, kind?: LabelKind) => THREE.Object3D;
   /** Animation length in ms (0 = instant). */
   ms?: number;
   doc?: Document;
@@ -71,22 +72,35 @@ interface Tween {
   done: () => void;
 }
 
-export function defaultLabel(text: string): THREE.Object3D {
+const LABEL_W = 512;
+const LABEL_H = 64;
+
+/** Largest font size (px, at most 30, at least 12) at which `text` fits the label width. */
+export function fitFontPx(measure: (px: number) => number, maxWidth: number): number {
+  let px = 30;
+  while (px > 12 && measure(px) > maxWidth) px -= 1;
+  return px;
+}
+
+/** Serif canvas sprite; the text shrinks to fit so long captions are never clipped. `kind` is kept on userData. */
+export function defaultLabel(text: string, kind: LabelKind = 'structure'): THREE.Object3D {
   const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 64;
+  canvas.width = LABEL_W;
+  canvas.height = LABEL_H;
   const ctx = canvas.getContext('2d');
   if (!ctx) return new THREE.Object3D();
   ctx.fillStyle = '#ffffff';
-  ctx.font = 'italic 30px "Times New Roman", Georgia, serif';
+  const font = (px: number): string => `italic ${px}px "Times New Roman", Georgia, serif`;
+  ctx.font = font(fitFontPx((px) => { ctx.font = font(px); return ctx.measureText(text).width; }, LABEL_W - 16));
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(text, 128, 32);
+  ctx.fillText(text, LABEL_W / 2, LABEL_H / 2);
   const sprite = new THREE.Sprite(
     new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, depthTest: false }),
   );
-  sprite.scale.set(2, 0.5, 1);
+  sprite.scale.set(4, 0.5, 1);
   sprite.renderOrder = 5;
+  sprite.userData.kind = kind;
   return sprite;
 }
 
@@ -208,6 +222,8 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
   };
 
   let loading = false;
+  /** Levels whose reassemble animation is still running. */
+  let closing = 0;
   const top = (): Level | undefined => stack[stack.length - 1];
 
   const flyTo = (level: Level, extent: number): void => {
@@ -227,12 +243,8 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
     tile.position.copy(start);
     group.add(tile);
     const grid = tile.userData.grid as { rows: number; cols: number; colors: number[] };
-    const pct = (x: number | null): string => (x === null ? '' : ` ${(x * 100).toFixed(1)}%`);
-    const lines = [m.name, m.ternary
-      ? `γ ${m.gamma} · τ ${m.tau} · −${pct(m.frac_neg)} 0${pct(m.frac_zero)} +${pct(m.frac_pos)}`
-      : `F32 · ${m.shape.join(' × ')}`];
-    lines.forEach((t, i) => {
-      const l = label(t);
+    tileCaption(m).forEach((t, i) => {
+      const l = label(t, 'structure');
       l.position.set(0, -0.05, -(grid.rows * CELL) / 2 - 0.35 - i * 0.45);
       tile.add(l);
     });
@@ -259,7 +271,7 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
       mesh.name = c.id;
       mesh.userData.ids = [c.id];
       mesh.position.copy(start());
-      const text = label(c.label);
+      const text = label(c.label, 'structure');
       text.position.set(0, -0.2, -(c.kind === 'bank' ? 1.6 : 0.95));
       mesh.add(text);
       group.add(mesh);
@@ -346,6 +358,7 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
     async reassemble() {
       const level = stack.pop();
       if (!level) return;
+      closing++;
       const lanes = level.group.userData.lanes as THREE.Object3D | undefined;
       if (lanes) lanes.visible = false;
       const prev = top();
@@ -356,7 +369,11 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
       }
       const back = prev?.parts.get(level.id)?.position.clone()
         ?? (tower.has(level.id) ? tower.anchor(level.id) : level.center.clone());
-      await Promise.all([...level.parts.values()].map((o) => animate(o, back, 1, 0.2)));
+      try {
+        await Promise.all([...level.parts.values()].map((o) => animate(o, back, 1, 0.2)));
+      } finally {
+        closing--;
+      }
       root.remove(level.group);
       disposeTree(level.group);
       if (stack.length === 0) {
@@ -403,12 +420,17 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
     },
   };
 
-  // Esc: reassemble one level. The rig skips its own overview while a level is open (guard), so
-  // overview only fires from the top level.
-  const guard = (): boolean => stack.length > 0;
+  // Esc belongs to the explode view while a level is open, a level is closing or a weight tile loads.
+  // The handler stops the event for every other listener, so the rig's overview never fires in the
+  // same keypress, whatever order the listeners were registered in; the guard covers the rig-first
+  // order and rigs wired through escapeGuard only.
+  const busy = (): boolean => stack.length > 0 || closing > 0 || loading;
+  const guard = busy;
   rig.escapeGuard = guard;
   const onKey = (e: KeyboardEvent): void => {
-    if (e.key === 'Escape' && stack.length > 0) void view.reassemble();
+    if (e.key !== 'Escape' || !busy()) return;
+    e.stopImmediatePropagation();
+    if (stack.length > 0) void view.reassemble();
   };
   doc?.addEventListener('keydown', onKey);
   return view;
