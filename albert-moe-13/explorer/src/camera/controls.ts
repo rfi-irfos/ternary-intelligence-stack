@@ -8,10 +8,21 @@ export interface RowExtent {
 }
 const OVERVIEW_DIR = new THREE.Vector3(-0.45, -1, 0.5).normalize(); // front-left, slightly above
 
+export interface CameraPose {
+  position: THREE.Vector3;
+  target: THREE.Vector3;
+}
+
 export interface CameraRig {
   readonly controls: OrbitControls;
   flyTo(target: THREE.Vector3, distance: number, ms?: number): Promise<void>;
   overview(ms?: number): Promise<void>;
+  /** Current camera pose (copies). */
+  pose(): CameraPose;
+  /** Flies back to a pose taken with `pose()`. */
+  flyToPose(p: CameraPose, ms?: number): Promise<void>;
+  /** Flies along the current view direction until a box of half size (halfWidth x halfHeight) around `target` fills the view. */
+  frame(target: THREE.Vector3, halfWidth: number, halfHeight: number, ms?: number): Promise<void>;
   /** dt in seconds. */
   update(dt: number): void;
   isFlying(): boolean;
@@ -94,6 +105,17 @@ export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement
   const rig: CameraRig = {
     controls,
     flyTo(target, distance, ms = 900) {
+      const dir = camera.position.clone().sub(controls.target);
+      if (dir.lengthSq() < 1e-9) dir.copy(OVERVIEW_DIR);
+      dir.normalize();
+      return start(target, target.clone().addScaledVector(dir, distance), ms);
+    },
+    pose: () => ({ position: camera.position.clone(), target: controls.target.clone() }),
+    flyToPose: (p, ms = 900) => start(p.target, p.position, ms),
+    frame(target, halfWidth, halfHeight, ms = 900) {
+      const halfV = THREE.MathUtils.degToRad(camera.fov) / 2;
+      const halfH = Math.atan(Math.tan(halfV) * Math.max(camera.aspect, 0.2));
+      const distance = Math.max(halfHeight / Math.tan(halfV), halfWidth / Math.tan(halfH)) * 1.15;
       const dir = camera.position.clone().sub(controls.target);
       if (dir.lengthSq() < 1e-9) dir.copy(OVERVIEW_DIR);
       dir.normalize();

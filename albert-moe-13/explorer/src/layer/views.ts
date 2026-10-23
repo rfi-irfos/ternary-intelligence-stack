@@ -5,7 +5,8 @@ import { type LabelKind, fmt, fmtText, structure } from '../data/labeled';
 import { type Trace, decodeToken, loadTrace } from '../data/trace';
 import { type LayerWeights, type WeightsLoader, findMatrix } from '../data/weights';
 import type { ExplodeView } from '../scene/explode';
-import type { ComponentId, Stream } from '../scene/ids';
+import type { CameraPose, CameraRig } from '../camera/controls';
+import { type ComponentId, type Stream, parseId } from '../scene/ids';
 import { divergingColor, ternaryColor } from '../scene/tile';
 import { DEPTHS, DEPTH_LABEL, type Depth, getDepth, onDepthChange } from '../ui/depth';
 import { type Step, type ViewSpec, layerSteps } from './steps';
@@ -102,6 +103,7 @@ function attentionView(v: Extract<ViewSpec, { kind: 'attention' }>): HTMLElement
       const c = el('span', 'layer-heat-cell');
       c.style.background = hex(divergingColor(w, mx));
       c.title = `${toks[i] ?? i}: ${w.toFixed(3)}`;
+      c.dataset.weight = String(w);
       strip.append(c);
     });
     r.append(strip);
@@ -145,18 +147,24 @@ function barsView(v: Extract<ViewSpec, { kind: 'bars' }>): HTMLElement {
   box.append(head);
   const mx = Math.max(1e-9, ...v.values.map(Math.abs));
   const chart = el('div', 'layer-bars');
+  chart.append(Object.assign(el('div', 'layer-bars-zero'), { title: 'zero' }));
   v.values.forEach((x, i) => {
     const col = el('div', 'layer-bar');
     const isMarked = v.marked.includes(i);
+    const isClamped = (v.clamped ?? []).includes(i);
     col.dataset.marked = String(isMarked);
-    const bar = el('span', 'layer-bar-fill');
-    bar.style.height = `${Math.round((Math.abs(x) / mx) * 60)}px`;
-    bar.style.background = isMarked ? '#ffd940' : x >= 0 ? '#58c4dd' : '#fc6255';
-    col.title = `${i}: ${Number(x.toPrecision(4))}`;
-    col.append(bar, el('span', 'layer-bar-label', String(i)));
+    col.classList.toggle('layer-bar--chosen', isMarked);
+    col.classList.toggle('layer-bar--a3', isClamped);
+    const bar = el('span', `layer-bar-fill ${x >= 0 ? 'layer-bar--pos' : 'layer-bar--neg'}`);
+    bar.style.height = `${Math.round((Math.abs(x) / mx) * 44)}px`;
+    col.title = `${v.labels?.[i] ?? i}: ${Number(x.toPrecision(4))}${isMarked ? ' (chosen)' : ''}${isClamped ? ' (A3 clamp may have changed this logit)' : ''}`;
+    col.append(bar);
+    if (isMarked) col.append(el('span', 'layer-bar-chosen', 'chosen'));
+    if (isClamped) col.append(el('span', 'layer-bar-a3', 'A3'));
+    col.append(el('span', 'layer-bar-label', v.labels?.[i] ?? String(i)));
     chart.append(col);
   });
-  box.append(chart);
+  box.append(chart, el('div', 'layer-legend', 'bar up = positive, down = negative; outlined and labelled "chosen" = selected expert; A3 = clamp flag set for this token'));
   return box;
 }
 
@@ -204,9 +212,11 @@ export function renderView(v: ViewSpec, weights: LayerWeights | null = null): HT
     case 'rope': {
       const box = el('div', 'layer-view layer-view--rope');
       const head = el('div', 'layer-view-title');
-      head.append(`rotation angles at position ${v.position} `, kindChip('illustrative', 'position is real, frequencies are a toy'));
-      box.append(head);
-      for (const [i, a] of v.angles.entries()) box.append(el('div', 'layer-rope-row', `pair ${i}: ${a} rad`));
+      head.append(`rotation angles at position ${v.position}, head_dim ${v.headDim} `, kindChip('structure'));
+      box.append(head, el('div', 'layer-rope-pairing', v.pairing));
+      for (const p of v.pairs) {
+        box.append(el('div', 'layer-rope-row', `pair ${p.pair}: freq ${Number(p.freq.toPrecision(4))}, angle ${Number(p.angle.toPrecision(4))} rad`));
+      }
       return box;
     }
     case 'readout': {
@@ -250,7 +260,13 @@ export function applyHighlight(root: THREE.Object3D, ids: ComponentId[]): number
   root.traverse((o) => {
     if (o.name === HL) stale.push(o);
   });
-  for (const o of stale) o.removeFromParent();
+  for (const o of stale) {
+    o.removeFromParent();
+    if (o instanceof THREE.LineSegments) {
+      o.geometry.dispose();
+      (o.material as THREE.Material).dispose();
+    }
+  }
   root.traverse((o) => {
     if (!(o instanceof THREE.Mesh) || !want.has(o.name)) return;
     const edges = new THREE.LineSegments(
@@ -265,9 +281,11 @@ export function applyHighlight(root: THREE.Object3D, ids: ComponentId[]): number
 }
 
 export const LAYER_CSS = `
-.layer-panel { position: fixed; right: 14px; top: 56px; width: min(380px, 92vw); max-height: 80vh; overflow: auto;
-  box-sizing: border-box; padding: 10px; font: 12px monospace; color: #cfd8e8; background: rgba(0,0,0,0.78);
-  border: 1px solid #333a46; border-radius: 6px; }
+.layer-panel { position: fixed; right: 12px; top: 12px; width: 340px; max-height: calc(100vh - 220px); overflow-y: auto;
+  box-sizing: border-box; padding: 10px; font: 12px monospace; color: #cfd8e8; background: #0a0c12;
+  border: 1px solid #333a46; border-radius: 6px; z-index: 5; }
+.layer-mode .inspect-panel { display: none; }
+.layer-panel[hidden] { display: none; }
 .layer-panel button, .layer-panel select, .layer-panel input[type=number] { font: 12px monospace; color: #fff;
   background: #14161b; border: 1px solid #333a46; border-radius: 3px; padding: 3px 6px; cursor: pointer; }
 .layer-ctl { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
@@ -279,9 +297,17 @@ export const LAYER_CSS = `
 .layer-heat-cell { display: inline-block; width: 6px; height: 12px; }
 .layer-heat-row, .layer-attn-row { display: flex; gap: 6px; align-items: center; margin: 2px 0; }
 .layer-heat-name { min-width: 3.5em; }
-.layer-bars { display: flex; gap: 3px; align-items: flex-end; height: 80px; }
-.layer-bar { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; }
-.layer-bar-fill { display: block; width: 14px; }
+.layer-bars { position: relative; display: flex; gap: 3px; height: 130px; }
+.layer-bars-zero { position: absolute; left: 0; right: 0; top: 50px; border-top: 1px solid #cfd8e8; }
+.layer-bar { position: relative; flex: 1 1 0; height: 100%; }
+.layer-bar-fill { position: absolute; left: 20%; width: 60%; }
+.layer-bar-fill.layer-bar--pos { bottom: 80px; background: #58c4dd; }
+.layer-bar-fill.layer-bar--neg { top: 50px; background: #fc6255; }
+.layer-bar--chosen { outline: 2px solid #ffd940; outline-offset: -1px; }
+.layer-bar-chosen { position: absolute; top: 106px; left: 0; right: 0; text-align: center; font-size: 8px; color: #ffd940; }
+.layer-bar-a3 { position: absolute; top: 96px; left: 0; right: 0; text-align: center; font-size: 8px; color: #fc6255; }
+.layer-bar-label { position: absolute; bottom: 0; left: 0; right: 0; text-align: center; font-size: 9px; }
+.layer-legend { margin-top: 4px; font-size: 10px; }
 .layer-kind { display: inline-block; padding: 0 5px; border-radius: 3px; border: 1px solid #cfd8e8; }
 .layer-kind--measured { border-color: #ffd940; color: #ffd940; }
 .layer-kind--illustrative { background: repeating-linear-gradient(45deg, #333a46 0 2px, transparent 2px 4px); }
@@ -295,27 +321,57 @@ export const LAYER_CSS = `
 
 export interface LayerModeDeps {
   arch: Architecture;
-  view: Pick<ExplodeView, 'explode' | 'reassemble' | 'depth' | 'root'>;
+  view: Pick<ExplodeView, 'explode' | 'reassemble' | 'depth' | 'current' | 'root'>;
+  rig: Pick<CameraRig, 'pose' | 'flyToPose' | 'frame'>;
+  /** World centre of a slab, for framing. */
+  slabCenter(layer: number): THREE.Vector3;
   loadWeights: WeightsLoader;
   /** Defaults to fetching the demo traces. */
   load?: (id: string) => Promise<Trace>;
   ids?: string[];
+  /** Layer currently selected in the rail, scene or panel. */
+  selectedLayer?: () => number | null;
+  /** Prompt and token position of the player; the step card starts there. */
+  defaults?: () => { promptId: string; position: number } | null;
+  /** Defaults to the media query. */
+  reducedMotion?: () => boolean;
 }
 
 export interface LayerMode {
   element: HTMLElement;
-  /** Opens layer mode for one layer and stream (a user action: it opens the exploded slab). */
-  enter(layer: number, stream?: Stream): Promise<void>;
+  /** Opens layer mode (a user action: it opens the exploded slab and frames it). Default layer: the selected one. */
+  enter(layer?: number, stream?: Stream): Promise<void>;
   exit(): Promise<void>;
   index(): number;
+  layer(): number;
+  /** Token position of the token select. */
+  position(): number;
   steps(): readonly Step[];
   goto(i: number): Promise<void>;
+  next(): Promise<void>;
+  prev(): Promise<void>;
+  /** Resolves when every queued draw has finished. */
+  idle(): Promise<void>;
 }
 
+/** Layer of a component id (null for embed, lm_head, ln_f, shafts). */
+export function layerOfId(id: ComponentId | null): number | null {
+  const p = id ? parseId(id) : null;
+  return p && 'layer' in p ? p.layer : null;
+}
+
+const FRAME_HALF_W = 9;
+const FRAME_HALF_H = 5;
+const FLY_MS = 900;
+
+const samePath = (a: ComponentId[], b: ComponentId[]): boolean => a.length === b.length && a.every((x, k) => x === b[k]);
+
 export function createLayerMode(deps: LayerModeDeps): LayerMode {
-  const { arch, view, loadWeights } = deps;
+  const { arch, view, loadWeights, rig } = deps;
   const load = deps.load ?? ((id: string) => loadTrace(id, arch));
   const ids = deps.ids ?? ['kjv', 'de', 'ternary'];
+  const reduced = deps.reducedMotion ?? ((): boolean => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const ms = (): number => (reduced() ? 0 : FLY_MS);
   const root = el('div', 'layer-panel');
   root.hidden = true;
   root.setAttribute('role', 'region');
@@ -345,86 +401,143 @@ export function createLayerMode(deps: LayerModeDeps): LayerMode {
   let trace: Trace | null = null;
   let stepList: Step[] = [];
   let i = 0;
+  /** Index requested by the latest click; draws run in order, so rapid clicks all count. */
+  let target = 0;
   let weights: LayerWeights | null = null;
+  let openPath: ComponentId[] = [];
+  let active = false;
+  let saved: CameraPose | null = null;
+  let busy = 0;
+  let chain: Promise<void> = Promise.resolve();
   const traces = new Map<string, Trace>();
-  let token = 0;
 
-  const rebuild = (): void => {
-    stepList = layerSteps(trace, layer, streamSel.value as Stream, token, arch);
-    i = Math.min(i, stepList.length - 1);
+  const position = (): number => Number(tokenSel.value) || 0;
+  const syncButtons = (): void => {
+    prev.disabled = busy > 0 || i === 0;
+    next.disabled = busy > 0 || i >= stepList.length - 1;
   };
-  const fillTokens = (): void => {
+  const enqueue = (fn: () => Promise<void>): Promise<void> => {
+    const run = chain.then(async () => {
+      busy++;
+      syncButtons();
+      try { await fn(); } finally { busy--; syncButtons(); }
+    });
+    chain = run.catch((err: unknown) => console.error(err));
+    return chain;
+  };
+
+  const fillTokens = (keep: number): void => {
     tokenSel.replaceChildren();
     const toks = trace ? trace.provenance.tokens.map(decodeToken) : Array.from({ length: 12 }, (_, k) => `toy ${k}`);
     toks.forEach((t, k) => tokenSel.append(new Option(`${k}: ${JSON.stringify(t)}`, String(k))));
-    token = Math.min(token, toks.length - 1);
-    tokenSel.value = String(token);
+    tokenSel.value = String(Math.max(0, Math.min(toks.length - 1, keep)));
+  };
+  const rebuild = (): void => {
+    stepList = layerSteps(trace, layer, streamSel.value as Stream, position(), arch);
+    i = Math.min(i, stepList.length - 1);
+    target = i;
+  };
+  const ensureTrace = async (id: string): Promise<void> => {
+    if (!id) { trace = null; return; }
+    let t = traces.get(id);
+    if (!t) { t = await load(id); traces.set(id, t); }
+    trace = t;
   };
 
-  const draw = async (open: boolean): Promise<void> => {
+  /** Opens `path` in the exploded view, reusing the levels that are already right. */
+  const ensureOpen = async (path: ComponentId[]): Promise<void> => {
+    const consistent = view.depth() === openPath.length && (openPath.length === 0 || view.current() === openPath[openPath.length - 1]);
+    if (consistent && samePath(openPath, path)) return;
+    let k = 0;
+    if (consistent) while (k < openPath.length && k < path.length && openPath[k] === path[k]) k++;
+    while (view.depth() > k) await view.reassemble();
+    for (const id of path.slice(k)) await view.explode(id);
+    openPath = [...path];
+  };
+
+  const show = (): void => {
     const step = stepList[i];
     if (!step) return;
     body.replaceChildren(renderStep(step, getDepth(), weights));
-    where.textContent = `layer ${layer}, stream ${streamSel.value}, step ${i + 1} of ${stepList.length}`;
-    prev.disabled = i === 0;
-    next.disabled = i === stepList.length - 1;
-    if (open) {
-      while (view.depth() > 0) await view.reassemble();
-      for (const id of step.open) await view.explode(id);
-    }
+    where.textContent = `layer ${layer}, stream ${streamSel.value}, token ${position()}, step ${i + 1} of ${stepList.length}`;
+  };
+  const draw = async (): Promise<void> => {
+    const step = stepList[i];
+    if (!step) return;
+    show();
+    await ensureOpen(step.open);
     applyHighlight(view.root, step.highlight);
   };
-
-  const go = async (to: number, open = true): Promise<void> => {
-    i = Math.max(0, Math.min(stepList.length - 1, to));
-    await draw(open);
+  const go = (to: number): Promise<void> => {
+    target = Math.max(0, Math.min(stepList.length - 1, to));
+    const mine = target;
+    return enqueue(async () => { i = mine; await draw(); });
   };
-  const reload = async (): Promise<void> => {
+  const reload = (): Promise<void> => enqueue(async () => {
+    const keep = position();
+    const id = prompt.value;
+    await ensureTrace(id);
+    fillTokens(keep);
     rebuild();
-    await draw(false);
-  };
-
-  prompt.addEventListener('change', () => {
-    void (async () => {
-      const id = prompt.value;
-      if (id) {
-        let t = traces.get(id);
-        if (!t) { t = await load(id); traces.set(id, t); }
-        trace = t;
-      } else trace = null;
-      token = 0;
-      fillTokens();
-      await reload();
-    })();
+    await draw();
   });
-  tokenSel.addEventListener('change', () => { token = Number(tokenSel.value); void reload(); });
+
+  prompt.addEventListener('change', () => { void (async () => { tokenSel.value = '0'; await reload(); })(); });
+  tokenSel.addEventListener('change', () => { void reload(); });
   streamSel.addEventListener('change', () => { void reload(); });
-  depthSel.addEventListener('change', () => { void draw(false); });
-  onDepthChange((d) => { depthSel.value = d; void draw(false); });
-  prev.addEventListener('click', () => void go(i - 1));
-  next.addEventListener('click', () => void go(i + 1));
+  depthSel.addEventListener('change', () => { show(); });
+  onDepthChange((d) => { depthSel.value = d; if (active) show(); });
+  prev.addEventListener('click', () => void go(target - 1));
+  next.addEventListener('click', () => void go(target + 1));
   close.addEventListener('click', () => void api.exit());
 
   const api: LayerMode = {
     element: root,
-    async enter(l, s = 'A') {
-      layer = l;
-      streamSel.value = s;
-      depthSel.value = getDepth();
-      weights = await loadWeights(l).catch(() => null);
-      fillTokens();
-      rebuild();
-      root.hidden = false;
-      await go(0);
+    enter(l, s = 'A') {
+      return enqueue(async () => {
+        layer = l ?? deps.selectedLayer?.() ?? 0;
+        streamSel.value = s;
+        depthSel.value = getDepth();
+        const d = deps.defaults?.() ?? null;
+        const wanted = d && ids.includes(d.promptId) ? d.promptId : '';
+        prompt.value = wanted;
+        await ensureTrace(wanted);
+        fillTokens(d && wanted ? d.position : 0);
+        weights = await loadWeights(layer).catch(() => null);
+        i = 0;
+        rebuild();
+        if (!active) saved = rig.pose();
+        active = true;
+        document.body.classList.add('layer-mode');
+        root.hidden = false;
+        // Start from a clean view: whatever was open (a panel level, another layer) closes first.
+        while (view.depth() > 0) await view.reassemble();
+        openPath = [];
+        await draw();
+        await rig.frame(deps.slabCenter(layer), FRAME_HALF_W, FRAME_HALF_H, ms());
+      });
     },
-    async exit() {
-      root.hidden = true;
-      applyHighlight(view.root, []);
-      while (view.depth() > 0) await view.reassemble();
+    exit() {
+      return enqueue(async () => {
+        if (!active) return;
+        active = false;
+        root.hidden = true;
+        document.body.classList.remove('layer-mode');
+        applyHighlight(view.root, []);
+        while (view.depth() > 0) await view.reassemble();
+        openPath = [];
+        if (saved) await rig.flyToPose(saved, ms());
+        saved = null;
+      });
     },
     index: () => i,
+    layer: () => layer,
+    position,
     steps: () => stepList,
     goto: (k) => go(k),
+    next: () => go(target + 1),
+    prev: () => go(target - 1),
+    idle: () => chain,
   };
   return api;
 }

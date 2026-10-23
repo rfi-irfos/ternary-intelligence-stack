@@ -13,7 +13,7 @@ import { pickAction } from './ui/pickAction';
 import { APP_NAME } from './content/brand';
 import { LABEL_CSS } from './data/labeled';
 import { createAnimator } from './flow/animate';
-import { LAYER_CSS, createLayerMode } from './layer/views';
+import { LAYER_CSS, createLayerMode, layerOfId } from './layer/views';
 import { PLAYER_CSS, createPlayerBar } from './ui/player';
 import { attachPicking, createHover, createRaycastPicker } from './ui/picking';
 
@@ -58,6 +58,12 @@ async function main(): Promise<void> {
       background: #14161b; border: 1px solid #333a46; border-radius: 4px; cursor: pointer; }`;
   document.head.appendChild(style);
   const loadWeights = createWeightsLoader();
+  // The slab the user last selected (rail, scene click or panel); Enter layer starts there.
+  let selectedLayer: number | null = null;
+  const note = (id: string | null): void => {
+    const l = layerOfId(id);
+    if (l !== null) selectedLayer = l;
+  };
   // Declared before use: the panel reassembles an open explosion before a connection link flies.
   let view: ReturnType<typeof createExplode>;
   const panel = createPanel({
@@ -70,13 +76,17 @@ async function main(): Promise<void> {
   view = createExplode({
     tower, arch, rig, loadWeights,
     onChange: (id) => {
+      note(id);
       if (id) void panel.openPanel(id);
       else panel.close();
     },
   });
   scene.add(view.root);
   attachDepthKeys();
-  const rail = createSlabRail(tower, rig, (l) => void panel.openPanel(slabId(l)));
+  const rail = createSlabRail(tower, rig, (l) => {
+    selectedLayer = l;
+    void panel.openPanel(slabId(l));
+  });
   document.body.appendChild(rail.element);
   const animator = createAnimator(tower);
   scene.add(animator.root);
@@ -87,24 +97,20 @@ async function main(): Promise<void> {
   ov.textContent = 'Overview (Esc)';
   ov.addEventListener('click', () => void rig.overview());
   document.body.appendChild(ov);
-  const layerMode = createLayerMode({ arch, view, loadWeights });
+    const layerMode = createLayerMode({
+    arch, view, rig, loadWeights,
+    slabCenter: (l) => new THREE.Vector3(tower.slabX(l), 0, 0),
+    selectedLayer: () => selectedLayer ?? rail.selected() ?? layerOfId(panel.current()),
+    defaults: () => bar.selection(),
+  });
   document.body.appendChild(layerMode.element);
-  const enter = document.createElement('div');
-  enter.className = 'overview-btn';
-  enter.style.top = '96px';
-  const enterIn = document.createElement('input');
-  enterIn.type = 'number';
-  enterIn.min = '0';
-  enterIn.max = String(arch.model.num_layers - 1);
-  enterIn.value = '12';
-  enterIn.style.width = '4em';
-  enterIn.setAttribute('aria-label', 'Layer to enter');
   const enterBtn = document.createElement('button');
+  enterBtn.className = 'overview-btn';
+  enterBtn.style.top = '96px';
   enterBtn.textContent = 'Enter layer';
-  // A user click opens the exploded slab (the same camera flight as picking a slab); nothing moves on its own.
-  enterBtn.addEventListener('click', () => void layerMode.enter(Math.max(0, Math.min(arch.model.num_layers - 1, Number(enterIn.value) || 0))));
-  enter.append(enterIn, ' ', enterBtn);
-  document.body.appendChild(enter);
+  // A user click opens the exploded slab and frames it; nothing moves on its own.
+  enterBtn.addEventListener('click', () => void layerMode.enter());
+  document.body.appendChild(enterBtn);
 
   const rayAt = createRaycastPicker(camera, renderer.domElement, () => view.pickRoot(),
     (hit) => (view.depth() > 0 ? view.pick(hit) : tower.pick(hit)));
@@ -117,11 +123,14 @@ async function main(): Promise<void> {
   const hover = createHover(scene);
   attachPicking(renderer.domElement, {
     pickAt: (x, y) => rayAt(x, y)?.id ?? null,
-    onPick: (id) => pickAction(id, {
-      explodable: (x) => isExplodable(x, arch),
-      explode: (x) => view.explode(x),
-      openPanel: (x) => panel.openPanel(x),
-    }),
+    onPick: (id) => {
+      note(id);
+      pickAction(id, {
+        explodable: (x) => isExplodable(x, arch),
+        explode: (x) => view.explode(x),
+        openPanel: (x) => panel.openPanel(x),
+      });
+    },
     onEmpty: () => {
       if (view.depth() > 0) void view.reassemble();
       else panel.close();

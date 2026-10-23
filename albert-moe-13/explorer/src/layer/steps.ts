@@ -3,7 +3,7 @@ import type { Architecture } from '../data/architecture';
 import { type LabelKind, type Labeled, illustrative, measured, structure } from '../data/labeled';
 import { type Trace, type TraceEvent, decodeToken } from '../data/trace';
 import type { Depth } from '../ui/depth';
-import { type ComponentId, type Stream, attnId, attnMatrixId, bankId, expertId, expertPartId, gateId, ln1Id, ln2Id, routerId } from '../scene/ids';
+import { type ComponentId, type Stream, headId, attnId, attnMatrixId, bankId, expertId, expertPartId, gateId, ln1Id, ln2Id, routerId } from '../scene/ids';
 
 export type StepId =
   | 'ln1' | 'qkv' | 'rope' | 'scores' | 'softmax' | 'o_resid' | 'router' | 'top3' | 'expert' | 'moe_resid' | 'gate';
@@ -24,13 +24,19 @@ export type ViewSpec =
   /** Causal mask: allowed keys 0..position, masked keys position+1..n-1. Structure. */
   | { kind: 'mask'; label: 'structure'; position: number; size: number }
   /** 12-bar chart; `marked` are the top-3 experts. */
-  | { kind: 'bars'; label: LabelKind; title: string; values: number[]; marked: number[] }
+  | {
+    kind: 'bars'; label: LabelKind; title: string; values: number[]; marked: number[];
+    /** Bar labels (expert ids); defaults to the index. */
+    labels?: string[];
+    /** Chosen experts whose logit the A3 clamp may have changed (flag set for this token, expert 0-3). */
+    clamped?: number[];
+  }
   /** Numbers with their own labels, listed. */
   | { kind: 'readout'; items: { name: string; value: Labeled<number | string> }[] }
   /** 4x4 toy of a ternary matmul (W in {-1,0,+1}). Always illustrative. `tiles` are real weight matrices of this layer (structure). */
   | { kind: 'matmul'; label: 'illustrative'; w: number[][]; x: number[]; y: number[]; tiles: string[] }
-  /** Pairwise rotation of Q and K by position-dependent angles. Illustrative frequencies, real position. */
-  | { kind: 'rope'; label: 'illustrative'; position: number; angles: number[] };
+  /** Pairwise rotation of Q and K: angle = position * 10000^(-2i/d), d = head_dim (rotate_half pairing). */
+  | { kind: 'rope'; label: 'structure'; position: number; headDim: number; pairs: { pair: number; freq: number; angle: number }[]; pairing: string };
 
 export interface Step {
   id: StepId;
@@ -114,7 +120,9 @@ export function layerSteps(
   const s = stream === 'A' ? 'a' : 'b';
   const seed = layer * 131 + (stream === 'A' ? 1 : 2) * 17 + position;
   const fusion = a.model.fusion_layers.includes(layer);
-  const m = <V>(v: V): Labeled<V> => measured(v, (t as Trace).provenance);
+  // Fixture traces are test data: never labelled measured.
+  const isFixture = t?.provenance.mode === 'fixture';
+  const m = <V>(v: V): Labeled<V> => (isFixture ? illustrative(v) : measured(v, (t as Trace).provenance));
 
   let router: Ev<'router'> | undefined;
   const heads: Ev<'attention'>[] = [];
@@ -145,7 +153,7 @@ export function layerSteps(
         technical: 'ln1: normalise the residual stream',
         researcher: 'ln1: per-token mean/variance normalisation before attention',
       },
-      formula: 'y = (x - mean(x)) / sqrt(var(x) + eps)',
+      formula: 'y = (x - mean(x)) / sqrt(var(x) + eps) · γ + β',
       view: {
         kind: 'heat', label: 'illustrative', title: `toy ${hidden}-vector before and after (not a recorded activation)`,
         series: [{ name: 'x', values: x }, { name: 'ln1(x)', values: normalise(x) }], slice: [0, Math.min(64, hidden)],
@@ -170,19 +178,31 @@ export function layerSteps(
     highlight: (['q', 'k', 'v'] as const).map((x) => attnMatrixId(layer, stream, x)),
   });
 
-  // 3 rope: the position is real, the frequencies are a toy.
-  steps.push({
-    id: 'rope',
-    title: {
-      intuition: 'Mark where each token sits',
-      technical: 'RoPE rotates Q and K by position',
-      researcher: 'RoPE: pairwise rotation of Q and K, angle = position * frequency_i',
-    },
-    formula: 'angle_i = position * freq_i',
-    view: { kind: 'rope', label: 'illustrative', position, angles: [1, 0.1, 0.01, 0.001].map((f) => r3(position * f)) },
-    data: illustrative({ position, note: 'the position is real; the four frequencies are a toy' }),
-    caveats: [], open: attnOpen, highlight: [attnMatrixId(layer, stream, 'q'), attnMatrixId(layer, stream, 'k')],
-  });
+  // 3 rope: position, head_dim and the frequency law are structure.
+  {
+    const d = a.model.head_dim;
+    const half = d / 2;
+    const idx = [...new Set([0, 1, 2, 3, half - 1].filter((k) => k >= 0 && k < half))];
+    const pairs = idx.map((k) => {
+      const freq = 10000 ** (-(2 * k) / d);
+      return { pair: k, freq, angle: position * freq };
+    });
+    steps.push({
+      id: 'rope',
+      title: {
+        intuition: 'Mark where each token sits',
+        technical: 'RoPE rotates Q and K by position',
+        researcher: `RoPE: dimension i pairs with i+${half} (rotate_half), angle = position * 10000^(-2i/${d})`,
+      },
+      formula: `angle_i = position * 10000^(-2i/d), d = ${d}; pair (i, i + d/2)`,
+      view: {
+        kind: 'rope', label: 'structure', position, headDim: d, pairs,
+        pairing: `rotate_half: dimension i is rotated together with dimension i + ${half}`,
+      },
+      data: structure({ position, headDim: d, base: 10000 }),
+      caveats: [], open: attnOpen, highlight: [attnMatrixId(layer, stream, 'q'), attnMatrixId(layer, stream, 'k')],
+    });
+  }
 
   // 4 scores: only the causal mask is structure; pre-softmax scores are not in the trace.
   steps.push({
@@ -198,27 +218,29 @@ export function layerSteps(
     caveats: [], open: attnOpen, highlight: [attnMatrixId(layer, stream, 'q'), attnMatrixId(layer, stream, 'k')],
   });
 
-  // 5 softmax: measured rows from the trace; rows are cut to the causal keys.
+  // 5 softmax: measured rows from the trace; rows are cut to the causal keys. With attention_window W the
+  // events hold the last W query positions (row = position - (n - W)); earlier positions are truncated.
   {
     const window = t?.provenance.attention_window;
     const windowStart = window !== undefined ? Math.max(0, n - window) : 0;
     const truncated = window !== undefined && position < windowStart;
     const sorted = [...heads].sort((x, y) => x.head - y.head);
     const hasTrace = sorted.length > 0 && !truncated;
+    const base = windowStart;
     let rows: { head: number; row: number[] }[];
     let matrix: number[][];
     if (hasTrace) {
-      rows = sorted.map((h) => ({ head: h.head, row: (h.weights[position] ?? []).slice(0, position + 1) }));
-      matrix = (sorted[0]?.weights ?? []).slice(0, position + 1).map((r, i) => r.slice(0, i + 1));
+      rows = sorted.map((h) => ({ head: h.head, row: (h.weights[position - base] ?? []).slice(0, position + 1) }));
+      matrix = (sorted[0]?.weights ?? []).slice(0, position - base + 1).map((r, i) => r.slice(0, base + i + 1));
     } else {
       const count = Math.max(1, a.model.num_heads);
       rows = Array.from({ length: count }, (_, h) => ({ head: h, row: toySoftmax(seed + 7 * h, position + 1) }));
       matrix = Array.from({ length: position + 1 }, (_, i) => toySoftmax(seed + 99 + i, i + 1));
     }
-    const label = hasTrace ? 'measured' : 'illustrative';
+    const label = hasTrace && !isFixture ? 'measured' : 'illustrative';
     const note = truncated
       ? `truncated: position ${position} lies before the recorded window (positions ${windowStart}..${n - 1}); toy rows shown`
-      : hasTrace ? 'recorded attention weights of this layer and stream' : 'toy rows; no measured trace';
+      : hasTrace ? (isFixture ? 'fixture rows, not a measurement' : 'recorded attention weights of this layer and stream') : 'toy rows; no measured trace';
     steps.push({
       id: 'softmax',
       title: {
@@ -233,7 +255,7 @@ export function layerSteps(
       },
       data: hasTrace ? m({ position, heads: rows, truncated: false }) : illustrative({ position, heads: rows, truncated, note }),
       caveats: [], open: attnOpen,
-      highlight: Array.from({ length: a.model.num_heads }, (_, h) => `L${layer}.${stream}.attn.head${h}`),
+      highlight: Array.from({ length: a.model.num_heads }, (_, h) => headId(layer, stream, h)),
     });
   }
 
@@ -278,7 +300,10 @@ export function layerSteps(
       researcher: 'Router: ln2(x1) Wg gives gate logits after temperature and traffic-light modifiers',
     },
     formula: 'logits = ln2(x1) Wg',
-    view: { kind: 'bars', label: routerLabel, title: 'gate logits per expert', values: logits, marked: [...top3] },
+    view: {
+      kind: 'bars', label: routerLabel, title: 'gate logits per expert', values: logits, marked: [...top3],
+      ...(clamped ? { clamped: top3.filter((e) => e < 4) } : {}),
+    },
     data: router ? m(rd) : illustrative(rd),
     caveats: ['A5'], open: slabOpen, highlight: [ln2Id(layer, stream), routerId(layer, stream)],
   });
@@ -292,7 +317,10 @@ export function layerSteps(
       researcher: 'top-3 of the logits; softmax over those three after the A3 clamp, before the output scales',
     },
     formula: 'w = softmax(logits[top3])',
-    view: { kind: 'bars', label: routerLabel, title: 'weights of the selected experts', values: [...wts], marked: [0, 1, 2] },
+    view: {
+      kind: 'bars', label: routerLabel, title: 'weights of the selected experts', values: [...wts], marked: [0, 1, 2],
+      labels: top3.map((e) => `E${e}`), ...(clamped ? { clamped: [0, 1, 2].filter((k) => (top3[k] ?? 9) < 4) } : {}),
+    },
     data: router ? m(rd) : illustrative(rd),
     caveats: a3Involved || clamped ? ['A3'] : [], open: slabOpen,
     highlight: [bankId(layer), ...top3.map((e) => expertId(layer, e))],
@@ -300,17 +328,18 @@ export function layerSteps(
 
   // 9 expert: the choice of expert is measured, the arithmetic inside is a toy.
   {
-    const e0 = top3[0];
+    const heavy = wts.indexOf(Math.max(...wts));
+    const e0 = top3[heavy] ?? top3[0];
     steps.push({
       id: 'expert',
       title: {
         intuition: 'One expert does its work',
-        technical: `Expert ${e0}: seed_bias, c_fc, GELU, c_proj`,
+        technical: `Expert ${e0} (heaviest chosen expert): seed_bias, c_fc, GELU, c_proj`,
         researcher: `Expert ${e0}: h = GELU((x + seed_bias) Wfc) ; y = h Wproj, inner width ${inner}`,
       },
-      formula: 'y = GELU((x + seed_bias) W_fc) W_proj',
+      formula: 'y = GELU((x + seed_bias) W_fc) W_proj  (heaviest chosen expert)',
       view: toyMatmul(seed + 2, [`experts.${e0}.c_fc.weight`, `experts.${e0}.c_proj.weight`]),
-      data: router ? m({ expert: e0, weight: wts[0] }) : illustrative({ expert: e0, note: 'no trace' }),
+      data: router ? m({ expert: e0, weight: wts[heavy], note: 'heaviest chosen expert' }) : illustrative({ expert: e0, note: 'no trace' }),
       caveats: ['A4'], open: [`L${layer}`, bankId(layer), expertId(layer, e0)],
       highlight: (['seed_bias', 'c_fc', 'gelu', 'c_proj'] as const).map((p) => expertPartId(layer, e0, p)),
     });
@@ -352,7 +381,7 @@ export function layerSteps(
         technical: 'Anastomosis: each stream adds a gated share of the other',
         researcher: 'A += g_a * B ; B += g_b * A with g = sigmoid(Wg x + b), per token',
       },
-      formula: 'A\' = A + g_a * B, B\' = B + g_b * A',
+      formula: 'g = σ(W_g [h_A; h_B] + b); A\' = A + g_a * B, B\' = B + g_b * A',
       view: { kind: 'readout', items: [{ name: 'g_a', value: lv(gA, 0.5) }, { name: 'g_b', value: lv(gB, 0.5) }] },
       data: real ? m({ gA, gB }) : illustrative({ gA: 0.5, gB: 0.5, note: 'no trace; 0.5 is a placeholder' }),
       caveats: ['A1', 'A2'], open: slabOpen, highlight: [gateId(layer)],

@@ -9,7 +9,8 @@ export interface TraceProvenance {
   num_layers: number;
   tau_schedule: number[];
   ttl_rule: string;
-  mode: 'eval';
+  /** 'fixture' = test data shaped like a trace; never labelled measured. */
+  mode: 'eval' | 'fixture';
   path: 'forward_prefill';
   attention_window?: number;
   /** What the router `weights` are: softmax top-3 probabilities before traffic-light output scales. */

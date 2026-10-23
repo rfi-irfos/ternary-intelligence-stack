@@ -21,6 +21,10 @@ export type TraceEvent =
     /** Traffic-light output scale per expert (12). */
     output_scales: number[];
   }
+  /**
+   * `weights[q][k]`: full prompt = S rows (one per query position). When `provenance.attention_window = W` is set,
+   * the rows are the last W query positions only: row r belongs to position r + (S - W), and keys stay 0..S-1.
+   */
   | { type: 'attention'; layer: number; stream: Stream; head: number; weights: number[][] }
   | { type: 'gate'; layer: number; g_a: number[]; g_b: number[] }
   | { type: 'residual'; layer: number; stream: Stream; phase: 'post_attn' | 'post_moe' | 'post_gate'; norm: number[] }
@@ -70,7 +74,7 @@ export function validateTrace(t: unknown, a: Architecture): Trace {
     if (!Array.isArray(p[k])) fail(`provenance.${k}`);
   }
   if (typeof p.num_layers !== 'number') fail('provenance.num_layers');
-  if (p.mode !== 'eval' || p.path !== 'forward_prefill') fail('provenance.mode / path');
+  if ((p.mode !== 'eval' && p.mode !== 'fixture') || p.path !== 'forward_prefill') fail('provenance.mode / path');
   if (p.attention_window !== undefined && typeof p.attention_window !== 'number') fail('provenance.attention_window');
   if (p.router_weights_note !== undefined && typeof p.router_weights_note !== 'string') fail('provenance.router_weights_note');
 
@@ -95,6 +99,10 @@ export function validateTrace(t: unknown, a: Architecture): Trace {
       const key = `${layer}${e.stream}`;
       routers.set(key, (routers.get(key) ?? 0) + 1);
       if (!Array.isArray(e.output_scales)) fail('router.output_scales');
+    }
+    if (e.type === 'attention' && typeof p.attention_window === 'number'
+      && (!Array.isArray(e.weights) || e.weights.length !== p.attention_window)) {
+      fail(`attention weights need ${p.attention_window} rows (attention_window)`);
     }
   }
   for (let layer = 0; layer < p.num_layers; layer++) {

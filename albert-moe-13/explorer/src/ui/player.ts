@@ -239,6 +239,8 @@ export interface PlayerBar {
   ready: Promise<void>;
   tick(dt: number): void;
   player(): Player | null;
+  /** Prompt id and token position the player is on (null until a trace is loaded). */
+  selection(): { promptId: string; position: number } | null;
 }
 
 const TRACE_IDS = ['kjv', 'de', 'ternary'];
@@ -394,6 +396,6 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     build(promptSel.value, Number(tokenSel.value));
   })();
 
-  return { element: el, ready, tick: (dt) => { player?.tick(dt); if (player && !player.playing() && play.textContent === 'Pause') play.textContent = 'Play'; }, player: () => player };
+  return { element: el, ready, tick: (dt) => { player?.tick(dt); if (player && !player.playing() && play.textContent === 'Pause') play.textContent = 'Play'; }, player: () => player, selection: () => (traces.size > 0 ? { promptId: promptSel.value, position: Number(tokenSel.value) } : null) };
 }
 

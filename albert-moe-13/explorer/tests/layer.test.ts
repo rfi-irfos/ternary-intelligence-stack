@@ -3,12 +3,14 @@ import { describe, expect, it } from 'vitest';
 import arch from '../public/data/architecture.json';
 import { validateArchitecture } from '../src/data/architecture';
 import { validateTrace, type Trace } from '../src/data/trace';
+import * as THREE from 'three';
 import { layerSteps, STEP_IDS } from '../src/layer/steps';
-import { renderStep, renderView } from '../src/layer/views';
+import { applyHighlight, createLayerMode, renderStep, renderView, type LayerModeDeps } from '../src/layer/views';
 
 const a = validateArchitecture(arch);
 const modules = import.meta.glob('../public/data/trace/*.json', { eager: true, import: 'default' }) as Record<string, unknown>;
 const kjv: Trace = validateTrace(modules['../public/data/trace/kjv.json'], a);
+import windowed from './fixtures/fixture_windowed.json';
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const nonFusion = [0, 1, 4, 12].find((l) => !a.model.fusion_layers.includes(l)) as number;
 const fusion = a.model.fusion_layers[2] as number;
@@ -100,5 +102,179 @@ describe('layerSteps', () => {
   it('rejects out-of-range layer and position', () => {
     expect(() => layerSteps(kjv, a.model.num_layers, 'A', 0, a)).toThrow();
     expect(() => layerSteps(kjv, 0, 'A', kjv.provenance.token_ids.length, a)).toThrow();
+  });
+});
+
+describe('windowed attention fixture', () => {
+  const fx = validateTrace(windowed, a);
+  const sm = (pos: number) => layerSteps(fx, 12, 'A', pos, a).find((s) => s.id === 'softmax');
+  it('rows are indexed position - (S - W); earlier positions are truncated and labelled', () => {
+    expect(fx.provenance.mode).toBe('fixture');
+    const cut = sm(1);
+    if (cut?.view.kind !== 'attention') throw new Error('view');
+    expect(cut.view.truncated).toBe(true);
+    expect(cut.view.note).toMatch(/truncated/);
+    expect(cut.data.kind).toBe('illustrative');
+    const inWin = sm(3);
+    if (inWin?.view.kind !== 'attention') throw new Error('view');
+    expect(inWin.view.truncated).toBe(false);
+    expect(inWin.view.heads[0]?.row).toEqual([0.1, 0.2, 0.3, 0.4]);
+    const v2 = sm(2)?.view;
+    if (v2?.kind !== 'attention') throw new Error('view');
+    expect(v2.heads.every((h) => h.row.join() === '0.2,0.3,0.5')).toBe(true);
+    expect(inWin.data.kind).toBe('illustrative'); // fixtures are never measured
+  });
+  it('validateTrace checks the row count against attention_window', () => {
+    const bad = clone(windowed) as { events: { type: string; weights?: number[][] }[] };
+    const ev = bad.events.find((e) => e.type === 'attention');
+    if (ev?.weights) ev.weights.pop();
+    expect(() => validateTrace(bad, a)).toThrow(/attention_window/);
+  });
+});
+
+function fakeDeps(over: Partial<LayerModeDeps> = {}): { deps: LayerModeDeps; opened: string[][]; calls: string[] } {
+  const stack: string[] = [];
+  const opened: string[][] = [];
+  const calls: string[] = [];
+  const view = {
+    root: new THREE.Group(),
+    depth: () => stack.length,
+    current: () => stack[stack.length - 1] ?? null,
+    explode: async (id: string) => { await Promise.resolve(); calls.push(`+${id}`); stack.push(id); opened.push([...stack]); },
+    reassemble: async () => { await Promise.resolve(); calls.push(`-${stack.pop()}`); },
+  };
+  const pose = { position: new THREE.Vector3(1, 2, 3), target: new THREE.Vector3() };
+  const rig = {
+    pose: () => pose,
+    flyToPose: async () => { calls.push('back'); },
+    frame: async () => { calls.push('frame'); },
+  };
+  const deps: LayerModeDeps = {
+    arch: a, view: view as unknown as LayerModeDeps['view'], rig, slabCenter: () => new THREE.Vector3(),
+    loadWeights: () => Promise.reject(new Error('none')), load: (id) => Promise.resolve(id === 'kjv' ? kjv : kjv),
+    reducedMotion: () => true, ...over,
+  };
+  return { deps, opened, calls };
+}
+
+describe('layer mode', () => {
+  it('V1: selecting layer 2 then entering gives layer 2 and 11 steps', async () => {
+    const { deps } = fakeDeps({ selectedLayer: () => 2 });
+    const lm = createLayerMode(deps);
+    await lm.enter();
+    expect(lm.layer()).toBe(2);
+    expect(lm.steps()).toHaveLength(11);
+  });
+
+  it('V2: starts on the player prompt and position, not on "no trace"', async () => {
+    const { deps } = fakeDeps({ defaults: () => ({ promptId: 'kjv', position: 5 }) });
+    const lm = createLayerMode(deps);
+    await lm.enter(12);
+    const sel = lm.element.querySelectorAll('select');
+    expect((sel[0] as HTMLSelectElement).value).toBe('kjv');
+    expect(lm.position()).toBe(5);
+    expect(lm.steps().find((s) => s.id === 'router')?.data.kind).toBe('measured');
+  });
+
+  it('V3: token select, step data position and rendered attention agree; position 0 is one bar of 1.0', async () => {
+    const { deps } = fakeDeps({ defaults: () => ({ promptId: 'kjv', position: 3 }) });
+    const lm = createLayerMode(deps);
+    await lm.enter(12);
+    const tokenSel = lm.element.querySelector('select[aria-label="Token"]') as HTMLSelectElement;
+    for (const pos of [3, 0, 7]) {
+      tokenSel.value = String(pos);
+      tokenSel.dispatchEvent(new Event('change'));
+      await lm.idle();
+      const sm = lm.steps().find((s) => s.id === 'softmax');
+      expect((sm?.data.value as { position: number }).position).toBe(Number(tokenSel.value));
+      await lm.goto(lm.steps().findIndex((s) => s.id === 'softmax'));
+      expect(lm.element.textContent).toContain(`attention of position ${pos}`);
+    }
+    tokenSel.value = '0';
+    tokenSel.dispatchEvent(new Event('change'));
+    await lm.idle();
+    await lm.goto(lm.steps().findIndex((s) => s.id === 'softmax'));
+    const rows = lm.element.querySelectorAll('.layer-attn-row');
+    expect(rows.length).toBe(a.model.num_heads);
+    for (const r of rows) {
+      const cells = r.querySelectorAll('[data-weight]');
+      expect(cells).toHaveLength(1);
+      expect((cells[0] as HTMLElement).dataset.weight).toBe('1');
+    }
+  });
+
+  it('three rapid Next clicks land on step+3 with a consistent open level', async () => {
+    const { deps } = fakeDeps({ defaults: () => ({ promptId: 'kjv', position: 4 }) });
+    const lm = createLayerMode(deps);
+    await lm.enter(12);
+    const next = [...lm.element.querySelectorAll('button')].find((b) => b.textContent === 'Next') as HTMLButtonElement;
+    next.click();
+    next.click();
+    next.click();
+    await lm.idle();
+    expect(lm.index()).toBe(3);
+    const open = (deps.view as unknown as { depth(): number; current(): string | null });
+    const want = lm.steps()[3]?.open ?? [];
+    expect(open.depth()).toBe(want.length);
+    expect(open.current()).toBe(want[want.length - 1]);
+  });
+
+  it('skips reassemble/explode when the open path is already right; camera frames on enter and returns on leave', async () => {
+    const { deps, calls } = fakeDeps({ defaults: () => ({ promptId: 'kjv', position: 4 }) });
+    const lm = createLayerMode(deps);
+    await lm.enter(12);
+    expect(calls).toContain('frame');
+    const n = calls.length;
+    await lm.goto(0); // same path again
+    expect(calls.length).toBe(n);
+    await lm.exit();
+    expect(calls[calls.length - 1]).toBe('back');
+    expect(document.body.classList.contains('layer-mode')).toBe(false);
+  });
+
+  it('a stream change re-opens the matching level', async () => {
+    const { deps } = fakeDeps({ defaults: () => ({ promptId: 'kjv', position: 4 }) });
+    const lm = createLayerMode(deps);
+    await lm.enter(12, 'A');
+    await lm.goto(1); // attention level of stream A
+    const sel = lm.element.querySelector('select[aria-label="Stream"]') as HTMLSelectElement;
+    sel.value = 'B';
+    sel.dispatchEvent(new Event('change'));
+    await lm.idle();
+    const want = lm.steps()[1]?.open ?? [];
+    expect(want.join()).toContain('.B.');
+    const v = deps.view as unknown as { current(): string | null };
+    expect(v.current()).toBe(want[want.length - 1]);
+  });
+});
+
+describe('router chart and highlight', () => {
+  it('draws chosen and negative bars with classes, a zero line and a legend', () => {
+    const step = layerSteps(kjv, 12, 'A', 4, a).find((s) => s.id === 'router');
+    if (!step) throw new Error('no step');
+    const html = renderView(step.view);
+    expect(html.querySelector('.layer-bars-zero')).not.toBeNull();
+    expect(html.querySelectorAll('.layer-bar--chosen')).toHaveLength(3);
+    expect(html.querySelectorAll('.layer-bar-chosen')).toHaveLength(3);
+    expect(html.querySelector('.layer-legend')).not.toBeNull();
+    expect(html.innerHTML).not.toMatch(/#[0-9a-f]{6}/i);
+    const neg = a.model.num_experts;
+    expect(html.querySelectorAll('.layer-bar-fill')).toHaveLength(neg);
+  });
+
+  it('applyHighlight disposes stale outlines', () => {
+    const root = new THREE.Group();
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
+    mesh.name = 'L1.A.attn.q';
+    root.add(mesh);
+    expect(applyHighlight(root, ['L1.A.attn.q'])).toBe(1);
+    const line = mesh.children[0] as THREE.LineSegments;
+    let g = 0;
+    let m = 0;
+    line.geometry.addEventListener('dispose', () => g++);
+    (line.material as THREE.Material).addEventListener('dispose', () => m++);
+    applyHighlight(root, []);
+    expect([g, m]).toEqual([1, 1]);
+    expect(mesh.children).toHaveLength(0);
   });
 });
