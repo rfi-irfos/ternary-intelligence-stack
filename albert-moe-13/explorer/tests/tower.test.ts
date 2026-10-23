@@ -57,3 +57,26 @@ describe('tower', () => {
     expect(() => tower.anchor(gateId(4))).toThrow();
   });
 });
+
+describe('gate arc', () => {
+  it('stays outside every expert box on every fusion slab, and the gate anchor is the arc midpoint', async () => {
+    const { gateArc, EXPERT_HALF } = await import('../src/scene/tower');
+    const tower = buildTower(a);
+    const r = 0.05; // tube radius
+    for (const l of a.model.fusion_layers) {
+      const arc = gateArc(tower.slabX(l));
+      const pts = arc.getPoints(200);
+      for (let e = 0; e < a.model.num_experts; e++) {
+        const c = tower.anchor(expertId(l, e));
+        for (const p of pts) {
+          const inside =
+            Math.abs(p.x - c.x) < EXPERT_HALF + r &&
+            Math.abs(p.y - c.y) < EXPERT_HALF + r &&
+            Math.abs(p.z - c.z) < EXPERT_HALF + r;
+          expect(inside).toBe(false);
+        }
+      }
+      expect(tower.anchor(gateId(l)).distanceTo(arc.getPoint(0.5))).toBeLessThan(1e-9);
+    }
+  });
+});

@@ -20,6 +20,17 @@ export const SLAB_WIDTH = 6; // Y
 export const SLAB_HEIGHT = 4; // Z
 export const LANE_Y: Record<Stream, number> = { A: -1.8, B: 1.8 };
 export const LANE_Z = -1.2;
+/** Gate arc sits beside the expert bank in X so it never crosses an expert box. */
+export const GATE_X_OFFSET = 0.45;
+export const EXPERT_HALF = 0.2;
+export function gateArc(x: number): THREE.QuadraticBezierCurve3 {
+  const gx = x + GATE_X_OFFSET;
+  return new THREE.QuadraticBezierCurve3(
+    new THREE.Vector3(gx, LANE_Y.A, LANE_Z),
+    new THREE.Vector3(gx, 0, 2.6),
+    new THREE.Vector3(gx, LANE_Y.B, LANE_Z),
+  );
+}
 const EXPERT_COLS = 3; // along Y
 const EXPERT_ROWS = 4; // along Z
 
@@ -136,7 +147,7 @@ export function buildTower(a: Architecture): TowerScene {
       perType.ln2.push(add(ln2Id(l, s), new THREE.Vector3(x + offs.ln2, y, LANE_Z)));
       perType.router.push(add(routerId(l, s), new THREE.Vector3(x + offs.router, y, LANE_Z)));
     }
-    if (fusion.has(l)) gates.push(add(gateId(l), new THREE.Vector3(x, 0, 0.9)));
+    if (fusion.has(l)) gates.push(add(gateId(l), gateArc(x).getPoint(0.5)));
   }
 
   root.add(
@@ -149,13 +160,9 @@ export function buildTower(a: Architecture): TowerScene {
 
   // Gates: one arc between the two lanes, instanced across fusion slabs.
   if (gates.length > 0) {
-    const arc = new THREE.QuadraticBezierCurve3(
-      new THREE.Vector3(0, LANE_Y.A, LANE_Z),
-      new THREE.Vector3(0, 0, 2.6),
-      new THREE.Vector3(0, LANE_Y.B, LANE_Z),
-    );
+    const arc = gateArc(0);
     const arcGeo = new THREE.TubeGeometry(arc, 24, 0.05, 6, false);
-    const arcItems = gates.map((g) => ({ id: g.id, pos: new THREE.Vector3(g.pos.x, 0, 0) }));
+    const arcItems = gates.map((g) => ({ id: g.id, pos: new THREE.Vector3(g.pos.x - GATE_X_OFFSET, 0, 0) }));
     root.add(instanced('gates', arcGeo, arcItems, () => 0xffffff, 0.3));
   }
 
