@@ -11,6 +11,8 @@ import { pickAction } from '../src/ui/pickAction';
 import { isExplodable } from '../src/scene/hierarchy';
 import { connectionsOf, createPanel, tensorRows } from '../src/ui/panel';
 import { setDepth } from '../src/ui/depth';
+import { setMode, t } from '../src/ui/prefs';
+import { CAVEATS } from '../src/content/caveats';
 
 const a = validateArchitecture(arch);
 const tower = buildTower(a);
@@ -27,6 +29,7 @@ const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 afterEach(() => {
   document.body.innerHTML = '';
+  setMode('simple');
   setDepth('intuition');
 });
 
@@ -188,5 +191,106 @@ describe('ids and rows', () => {
         expect(tower.has(l.id) || l.id.endsWith('.bank'), `${id} -> ${l.id}`).toBe(true);
       }
     }
+  });
+});
+
+describe('codex panel layout', () => {
+  const visible = (el: Element | null): boolean => !!el && !el.closest('[hidden]');
+
+  it('Simple: header card with role chip, summary and tiles; only what + connections open', async () => {
+    const { panel } = make();
+    await panel.openPanel('L12.expert.7');
+    const head = panel.element.querySelector('.panel-head')!;
+    expect(head.querySelector('h2')?.textContent).toBe('Expert');
+    expect(head.querySelector('.role-chip')?.getAttribute('data-role')).toBe('expert');
+    expect(head.querySelector('.role-chip svg')).not.toBeNull();
+    expect(head.querySelector('.panel-summary')?.textContent).toBe(t('sum.expert'));
+    const tiles = [...head.querySelectorAll('.stat-tile')];
+    expect(tiles.length).toBeGreaterThanOrEqual(2);
+    expect(tiles.length).toBeLessThanOrEqual(4);
+    for (const x of tiles) expect(x.querySelector('.stat-value [data-kind]'), x.textContent ?? '').not.toBeNull();
+    expect(tiles[0]?.textContent).toContain('12');
+    expect(tiles[0]?.textContent).toContain('46');
+    expect(head.querySelector('.panel-tabs')).toBeNull();
+    expect(head.querySelector('.depth-switch')).toBeNull();
+    const body = (name: string) => panel.element.querySelector(`[data-section="${name}"] .sec-body`);
+    expect(visible(body('what'))).toBe(true);
+    expect(visible(body('connections'))).toBe(true);
+    for (const name of ['compute', 'tensors', 'caveats', 'source', 'visual']) expect(visible(body(name)), name).toBe(false);
+    // Opening one keeps it open.
+    panel.element.querySelector<HTMLElement>('[data-toggle="tensors"]')!.click();
+    expect(visible(body('tensors'))).toBe(true);
+    expect(panel.element.querySelector('[data-toggle="tensors"]')?.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('Advanced: the depth segment and four tabs; one tab shows at a time', async () => {
+    setMode('advanced');
+    const { panel } = make();
+    await panel.openPanel('L12.A.attn');
+    expect(panel.element.querySelector('.depth-switch')).not.toBeNull();
+    const tabs = [...panel.element.querySelectorAll<HTMLElement>('[role=tab]')];
+    expect(tabs.map((x) => x.dataset.tab)).toEqual(['overview', 'compute', 'tensors', 'notes']);
+    const sec = (name: string) => panel.element.querySelector(`[data-section="${name}"]`);
+    expect(visible(sec('what'))).toBe(true);
+    expect(visible(sec('tensors'))).toBe(false);
+    tabs[2]!.click();
+    expect(visible(sec('tensors'))).toBe(true);
+    expect(visible(sec('tensors')!.querySelector('.sec-body'))).toBe(true);
+    expect(visible(sec('what'))).toBe(false);
+    expect(tabs[2]!.getAttribute('aria-selected')).toBe('true');
+    tabs[1]!.click();
+    expect(visible(sec('compute')!.querySelector('.formula'))).toBe(true);
+  });
+
+  it('tensor rows show the short name; the full path is the tooltip and the sub-line', async () => {
+    const { panel } = make();
+    await panel.openPanel('L12.expert.7');
+    const row = panel.element.querySelector<HTMLElement>('tr[data-tensor="blocks.12.experts.7.c_fc.weight"]')!;
+    const name = row.querySelector<HTMLElement>('.t-namebox')!;
+    expect(name.querySelector('.lv-v')?.textContent).toBe('c_fc.weight');
+    expect(name.title).toBe('blocks.12.experts.7.c_fc.weight');
+    expect(name.querySelector('.t-path')?.textContent).toBe('blocks.12.experts.7.c_fc.weight');
+    expect(row.querySelector('.dtype--ternary')?.textContent).toBe('ternary');
+    expect(row.querySelector('.t-params')?.textContent).toBe('262,144');
+  });
+
+  it('the expert bank groups its per-expert tensors under one "× 12 experts" header', async () => {
+    const { panel } = make();
+    await panel.openPanel('L12.bank');
+    const group = panel.element.querySelector('tr.t-group')!;
+    expect(group.textContent).toMatch(/× 12 experts/);
+    const grouped = [...panel.element.querySelectorAll<HTMLElement>('tr[data-group="experts"]')];
+    expect(grouped.length).toBe(5);
+    expect(grouped.every((r) => r.dataset.tensor?.includes('experts.{e}.'))).toBe(true);
+    // Every grouped row comes after the header.
+    expect(group.compareDocumentPosition(grouped[0]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('caveats are compact rows: code chip and title, body collapsed until clicked', async () => {
+    const { panel } = make();
+    await panel.openPanel('L12');
+    const rows = [...panel.element.querySelectorAll<HTMLDetailsElement>('details[data-caveat]')];
+    expect(rows.map((d) => d.dataset.caveat)).toEqual(['A6', 'A7', 'A8']);
+    for (const d of rows) {
+      expect(d.open).toBe(false);
+      expect(d.querySelector('summary .code-chip')?.textContent).toBe(d.dataset.caveat);
+      expect(d.querySelector('summary .cv-title')?.textContent).toBe(CAVEATS[d.dataset.caveat as 'A6'].title);
+    }
+    const a6 = rows[0]!;
+    expect(a6.querySelector('.cv-table')?.querySelectorAll('tbody tr')).toHaveLength(4);
+    expect(a6.querySelector('.tag--measured')?.textContent).toContain('albert_watch_log.md');
+  });
+
+  it('"Step inside" sits on the card of anything in a layer and hands the id to the app', async () => {
+    const onStepInside = vi.fn();
+    const panel = createPanel({ arch: a, tower, rig: { flyTo: vi.fn(() => Promise.resolve()) }, loadWeights, onStepInside });
+    document.body.appendChild(panel.element);
+    await panel.openPanel('L20');
+    const btn = panel.element.querySelector<HTMLElement>('[data-action="step-inside"]')!;
+    expect(btn.textContent).toBe(t('nav.enter'));
+    btn.click();
+    expect(onStepInside).toHaveBeenCalledWith('L20');
+    await panel.openPanel('embed');
+    expect(panel.element.querySelector('[data-action="step-inside"]')).toBeNull();
   });
 });

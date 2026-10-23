@@ -34,9 +34,18 @@ Evidence: moe.rs:240-250, 346
 
 ## A6. Config says 38 layers, the checkpoint has 46
 
-Surgeries S30-S33 (42 to 46 layers) are undocumented. The explorer reads the checkpoint; the config is not used for counts.
+42 layers is the officially documented state: the TIS session_log and convergence_log record the depth up to the 36→42 surgeries of 19 Sep 2026. Layers 43-46 (numbered 42-45 in the explorer, which counts from 0) grew afterwards, in the four depth surgeries 42→46 on 19 and 20 Sep 2026, and so far only the training watch log records them, by tensor count (+78 tensors per layer). The explorer shows all 46 real layers: it reads the depth from the checkpoint, not the config.
 
-Evidence: models/albert_v3.0.config.json
+| Change | First seen (UTC) | Epoch | tns |
+|---|---|---|---|
+| 42 → 43 layers | 2026-09-19T14:00Z | ep8938 | 3372 |
+| 43 → 44 | 2026-09-19T15:05Z | ep8942 | 3450 |
+| 44 → 45 | 2026-09-19T18:55Z | ep8958 | 3528 |
+| 45 → 46 | 2026-09-20T01:10Z | ep8987 | 3606 |
+
+Label: measured (log): ~/.albert/albert_watch_log.md
+
+Evidence: models/albert_v3.0.config.json; Colony ~/.albert/albert_watch_log.md (tns per 5-minute sample)
 
 ## A7. The explorer shows the 2026-09-23 checkpoint
 

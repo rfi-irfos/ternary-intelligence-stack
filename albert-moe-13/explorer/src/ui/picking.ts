@@ -18,15 +18,32 @@ export interface PickingHandlers {
 /** A press longer than this is a hold, not a click. */
 export const CLICK_MS = 1000;
 
+/** Runs `cb` on the next animation frame (or at once where there is none). */
+export const nextFrame = (cb: () => void): void => {
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => cb());
+  else cb();
+};
+
 /**
+ * Hover raycasts are throttled to one per animation frame (`schedule`): a burst of pointermoves
+ * between two frames costs one pick, at the last pointer position.
+ *
  * Click = pointerdown AND pointerup on the canvas, same pointer, primary button, moved <= 4 px,
  * within CLICK_MS. A pointerup without a preceding canvas pointerdown never picks (tab activation,
  * focus clicks, a press that started elsewhere); the pending press is dropped on pointercancel,
  * window blur and when the page is hidden. Hover is evaluated only while no button is held.
  */
-export function attachPicking(dom: HTMLElement, h: PickingHandlers, now: () => number = () => performance.now()): () => void {
+export function attachPicking(
+  dom: HTMLElement,
+  h: PickingHandlers,
+  now: () => number = () => performance.now(),
+  schedule: (cb: () => void) => void = nextFrame,
+): () => void {
   let down: { x: number; y: number; id: number | undefined; t: number } | null = null;
   let hovered: ComponentId | null = null;
+  let move: { x: number; y: number; buttons: number } | null = null;
+  let pending = false;
+  let detached = false;
   const pid = (e: MouseEvent): number | undefined => (e as PointerEvent).pointerId;
   const onDown = (e: MouseEvent): void => {
     down = e.button === 0 && (e as PointerEvent).isPrimary !== false
@@ -48,15 +65,33 @@ export function attachPicking(dom: HTMLElement, h: PickingHandlers, now: () => n
   const onVisibility = (): void => {
     if (dom.ownerDocument.hidden) down = null;
   };
-  const onMove = (e: MouseEvent): void => {
-    if (!h.onHover || e.buttons !== 0) return;
-    const id = h.pickAt(e.clientX, e.clientY);
+  const hoverNow = (): void => {
+    pending = false;
+    const m = move;
+    move = null;
+    if (detached || !m || !h.onHover || m.buttons !== 0) return;
+    const id = h.pickAt(m.x, m.y);
     if (id !== hovered) {
       hovered = id;
       h.onHover(id);
     }
   };
+  const onMove = (e: MouseEvent): void => {
+    if (!h.onHover || e.buttons !== 0) return;
+    move = { x: e.clientX, y: e.clientY, buttons: e.buttons };
+    if (pending) return;
+    pending = true;
+    schedule(hoverNow);
+  };
+  const onLeave = (): void => {
+    move = null;
+    if (hovered !== null && h.onHover) {
+      hovered = null;
+      h.onHover(null);
+    }
+  };
   const win = dom.ownerDocument.defaultView;
+  dom.addEventListener('pointerleave', onLeave);
   dom.addEventListener('pointerdown', onDown);
   dom.addEventListener('pointerup', onUp);
   dom.addEventListener('pointercancel', cancel);
@@ -64,6 +99,8 @@ export function attachPicking(dom: HTMLElement, h: PickingHandlers, now: () => n
   win?.addEventListener('blur', cancel);
   dom.ownerDocument.addEventListener('visibilitychange', onVisibility);
   return () => {
+    detached = true;
+    dom.removeEventListener('pointerleave', onLeave);
     dom.removeEventListener('pointerdown', onDown);
     dom.removeEventListener('pointerup', onUp);
     dom.removeEventListener('pointercancel', cancel);

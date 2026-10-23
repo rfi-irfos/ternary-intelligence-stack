@@ -21,6 +21,11 @@ export interface ChildSpec {
 /** Lane depth (y) matches the row: A in front, B behind. B is also lifted so both stay visible. */
 const SLAB_X = { ln1: -6.6, attn: -4.4, ln2: -2.2, router: 0, bank: 3.4 } as const;
 const SLAB_Z: Record<Stream, number> = { A: -1.0, B: 1.4 };
+/**
+ * Vertical pitch of the expert grid inside an opened bank. Expert cubes are 0.9 tall and their
+ * caption (0.5 tall) sits 0.8 below the centre, so 2.3 leaves a clear 0.8 gap to the next row's cube.
+ */
+export const BANK_ROW_PITCH = 2.3;
 
 function slabChildren(layer: number): ChildSpec[] {
   const out: ChildSpec[] = [];
@@ -68,7 +73,7 @@ export function childrenOf(id: ComponentId, a: Architecture): ChildSpec[] {
       const rows = Math.ceil(n / cols);
       return Array.from({ length: n }, (_, e) => ({
         id: expertId(p.layer, e), label: `Expert ${e}`, kind: 'expert' as const, stream: 'shared' as const,
-        pos: [(e % cols - (cols - 1) / 2) * 1.8, 0, ((rows - 1) / 2 - Math.floor(e / cols)) * 1.8] as [number, number, number],
+        pos: [(e % cols - (cols - 1) / 2) * 1.8, 0, ((rows - 1) / 2 - Math.floor(e / cols)) * BANK_ROW_PITCH] as [number, number, number],
       }));
     }
     case 'expert':

@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import './style/tokens.css';
+import './style/ui.css';
 import { createControls } from './camera/controls';
 import { createSlabRail } from './ui/slabRail';
 import { loadArchitecture } from './data/architecture';
@@ -7,24 +9,46 @@ import { loadModules } from './scene/modules';
 import { createWeightsLoader } from './data/weights';
 import { createExplode } from './scene/explode';
 import { isExplodable } from './scene/hierarchy';
-import { slabId } from './scene/ids';
+import { parseId, slabId } from './scene/ids';
 import { createPanel, PANEL_CSS } from './ui/panel';
 import { attachDepthKeys } from './ui/depth';
 import { pickAction } from './ui/pickAction';
 import { APP_NAME } from './content/brand';
-import { PALETTE, cssHex } from './scene/palette';
+import { PALETTE } from './scene/palette';
+import { FONT } from './style/theme';
 import { type Probe, type Quality, createLook, createProbe, loadOverride, resolveQuality } from './scene/look';
 import { QUALITY_MENU_CSS, createQualityMenu } from './ui/qualityMenu';
 import { LABEL_CSS } from './data/labeled';
 import { createAnimator } from './flow/animate';
 import { LAYER_CSS, createLayerMode, layerOfId } from './layer/views';
-import { PLAYER_CSS, createPlayerBar } from './ui/player';
+import { createPlayerBar } from './ui/player';
 import { attachPicking, createHover, createRaycastPicker } from './ui/picking';
+import { createTopBar } from './ui/topbar';
+import { createLegend } from './ui/legend';
+import { createHighlighter } from './ui/highlight';
+import { matchesRole } from './ui/roles';
+import { createHoverTip } from './ui/tooltip';
+import { createSelection } from './ui/selection';
+import { onPrefsChange } from './ui/prefs';
+import { createCoachMarks } from './ui/coach';
+
+/** Waits (at most `ms`) for the display face, so the canvas labels of the scene draw in it. */
+async function fontsReady(ms = 1500): Promise<void> {
+  if (typeof document === 'undefined' || !document.fonts) return;
+  const load = Promise.all([
+    document.fonts.load(`500 30px ${FONT.display}`),
+    document.fonts.load(`400 14px ${FONT.ui}`),
+  ]).then(() => undefined, () => undefined);
+  await Promise.race([load, new Promise<void>((r) => setTimeout(r, ms))]);
+}
 
 async function main(): Promise<void> {
   document.title = APP_NAME;
   const heading = document.getElementById('app-name');
   if (heading) heading.textContent = APP_NAME;
+  const top = createTopBar(heading);
+  document.body.appendChild(top.element);
+  await fontsReady();
   const arch = await loadArchitecture();
   const tower = buildTower(arch, await loadModules());
 
@@ -49,28 +73,16 @@ async function main(): Promise<void> {
   const rig = createControls(camera, renderer.domElement, tower.rowExtent);
   void rig.overview(0);
 
+  // Functional layout rules that live with their modules; the look comes from src/style/*.css.
   const style = document.createElement('style');
-  style.textContent = `
-    .slab-rail { position: fixed; left: 50%; bottom: 10px; transform: translateX(-50%); display: flex; gap: 2px;
-      max-width: 96vw; overflow-x: auto; padding: 4px; background: rgba(0,0,0,0.55); border-radius: 6px; }
-    .slab-rail-item { font: 10px monospace; min-width: 20px; padding: 3px 0; color: #cfd8e8; background: #14161b;
-      border: 1px solid #333a46; border-radius: 3px; cursor: pointer; }
-    .slab-rail-item.fusion { border-color: ${cssHex(PALETTE.gate)}; color: ${cssHex(PALETTE.gate)}; }
-    .slab-rail-item.active { background: ${cssHex(PALETTE.accent)}; color: #000; }
-    ${PANEL_CSS}
-    ${LABEL_CSS}
-    ${PLAYER_CSS}
-    ${LAYER_CSS}
-    ${QUALITY_MENU_CSS}
-    .overview-btn { position: fixed; top: 56px; left: 14px; font: 12px monospace; padding: 6px 10px; color: #fff;
-      background: #14161b; border: 1px solid #333a46; border-radius: 4px; cursor: pointer; }`;
+  style.textContent = `${PANEL_CSS}\n${LABEL_CSS}\n${LAYER_CSS}\n${QUALITY_MENU_CSS}`;
   document.head.appendChild(style);
+  const selection = createSelection();
   const loadWeights = createWeightsLoader();
-  // The slab the user last selected (rail, scene click or panel); Enter layer starts there.
-  let selectedLayer: number | null = null;
+  // The component the user last selected (rail, scene click or panel): the rail follows it and
+  // Enter layer starts at its layer.
   const note = (id: string | null): void => {
-    const l = layerOfId(id);
-    if (l !== null) selectedLayer = l;
+    if (id) selection.set(id);
   };
   // Declared before use: the panel reassembles an open explosion before a connection link flies.
   let view: ReturnType<typeof createExplode>;
@@ -78,6 +90,12 @@ async function main(): Promise<void> {
     arch, tower, rig, loadWeights,
     beforeNavigate: async () => {
       while (view.depth() > 0) await view.reassemble();
+    },
+    // Contextual "Step inside" on the selection card replaces the old Enter layer button.
+    onStepInside: (id) => {
+      const p = parseId(id);
+      const stream = p && 'stream' in p && p.stream ? p.stream : undefined;
+      void layerMode.enter(layerOfId(id) ?? undefined, stream);
     },
   });
   document.body.appendChild(panel.element);
@@ -92,42 +110,80 @@ async function main(): Promise<void> {
   scene.add(view.root);
   attachDepthKeys();
   const rail = createSlabRail(tower, rig, (l) => {
-    selectedLayer = l;
+    selection.set(slabId(l));
     void panel.openPanel(slabId(l));
-  });
-  document.body.appendChild(rail.element);
+  }, selection);
   const animator = createAnimator(tower);
   scene.add(animator.root);
   const bar = createPlayerBar({ arch, tower, rig, animator });
-  document.body.appendChild(bar.element);
-  const ov = document.createElement('button');
-  ov.className = 'overview-btn';
-  ov.textContent = 'Overview (Esc)';
-  ov.addEventListener('click', () => void rig.overview());
-  document.body.appendChild(ov);
+  const dock = document.createElement('div');
+  dock.className = 'dock';
+  dock.append(bar.element, rail.element);
+  // The rail doubles as the run's progress: a marker on the layer the word is in, a line under it.
+  bar.onOp((op, i, n) => rail.flow(op.layer ?? null, n > 1 ? i / (n - 1) : 0));
+  document.body.appendChild(dock);
   const layerMode = createLayerMode({
     arch, view, rig, loadWeights,
     slabCenter: (l) => new THREE.Vector3(tower.slabX(l), 0, 0),
-    selectedLayer: () => selectedLayer ?? rail.selected() ?? layerOfId(panel.current()),
+    selectedLayer: () => selection.layer() ?? rail.selected() ?? layerOfId(panel.current()),
     defaults: () => bar.selection(),
   });
   document.body.appendChild(layerMode.element);
-  const enterBtn = document.createElement('button');
-  enterBtn.className = 'overview-btn';
-  enterBtn.style.top = '96px';
-  enterBtn.textContent = 'Enter layer';
-  // A user click opens the exploded slab and frames it; nothing moves on its own.
-  enterBtn.addEventListener('click', () => void layerMode.enter());
-  document.body.appendChild(enterBtn);
+
+  // Home (overview) closes every open level at once (Esc closes one), leaves layer mode, then flies
+  // to the overview: all on the user's click.
+  top.home.addEventListener('click', () => {
+    void (async () => {
+      await layerMode.exit();
+      while (view.depth() > 0) await view.reassemble();
+      await rig.overview();
+    })();
+  });
+
+  // The side column (inspection panel or layer steps) and the dock never overlap: the dock moves left.
+  const syncSide = (): void => {
+    document.body.classList.toggle('side-open', !panel.element.hidden || !layerMode.element.hidden);
+  };
+  const sideObserver = new MutationObserver(syncSide);
+  sideObserver.observe(panel.element, { attributes: true, attributeFilter: ['hidden'] });
+  sideObserver.observe(layerMode.element, { attributes: true, attributeFilter: ['hidden'] });
+  syncSide();
+
+  // Highlights: a legend role (hover previews, click pins) or a panel row under the pointer.
+  const highlighter = createHighlighter(() => [tower.root, view.root]);
+  const legend = createLegend({
+    onHighlight: (role) => highlighter.show(role ? (id) => matchesRole(id, role) : null),
+  });
+  document.body.appendChild(legend.element);
+  panel.element.addEventListener('pointerover', (e) => {
+    const link = (e.target as HTMLElement).closest<HTMLElement>('[data-link]');
+    if (link?.dataset.link) {
+      const want = link.dataset.link;
+      highlighter.show((id) => id === want || id.startsWith(`${want}.`));
+    }
+  });
+  panel.element.addEventListener('pointerout', (e) => {
+    const from = (e.target as HTMLElement).closest('[data-link]');
+    const to = (e.relatedTarget as HTMLElement | null)?.closest?.('[data-link]');
+    if (from && from !== to) {
+      const role = legend.pinned();
+      highlighter.show(role ? (id) => matchesRole(id, role) : null);
+    }
+  });
 
   const rayAt = createRaycastPicker(camera, renderer.domElement, () => view.pickRoot(),
     (hit) => (view.depth() > 0 ? view.pick(hit) : tower.pick(hit)));
   let lastX = 0;
   let lastY = 0;
+  const tip = createHoverTip();
+  document.body.appendChild(tip.element);
+  // The tip follows the pointer every move (cheap); the raycast itself runs once per frame.
   renderer.domElement.addEventListener('pointermove', (e) => {
     lastX = e.clientX;
     lastY = e.clientY;
+    if (tip.current()) tip.move(lastX, lastY);
   });
+  onPrefsChange(() => tip.refresh());
   const hover = createHover(scene);
   attachPicking(renderer.domElement, {
     pickAt: (x, y) => rayAt(x, y)?.id ?? null,
@@ -143,7 +199,11 @@ async function main(): Promise<void> {
       if (view.depth() > 0) void view.reassemble();
       else panel.close();
     },
-    onHover: (id) => hover.show(id ? rayAt(lastX, lastY) : null),
+    onHover: (id) => {
+      hover.show(id ? rayAt(lastX, lastY) : null);
+      tip.show(id);
+      if (id) tip.move(lastX, lastY);
+    },
   });
 
   // Look and quality: a persisted choice wins; otherwise the first frames run at High and a
@@ -182,7 +242,19 @@ async function main(): Promise<void> {
       startProbe();
     }
   });
-  document.body.appendChild(menu.element);
+  top.settings.append(menu.element);
+
+  // First visit only: three short hints (Play, the tours, click anything), then never again.
+  const coach = createCoachMarks([
+    // The whole dock: a bubble above it never covers the bar's own headline.
+    { key: 'coach.play', target: () => dock },
+    { key: 'coach.tours', target: () => top.toursButton },
+    { key: 'coach.click', target: () => null },
+  ]);
+  if (coach.element) {
+    document.body.appendChild(coach.element);
+    void bar.ready.then(() => requestAnimationFrame(() => coach.refresh()));
+  }
 
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;

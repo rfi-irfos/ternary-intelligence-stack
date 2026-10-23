@@ -8,6 +8,7 @@ import { buildTile, CELL, tileCaption } from './tile';
 import type { LabelKind } from '../data/labeled';
 import { type RowExtent, type SlotKey, type TowerScene } from './tower';
 import { PALETTE, streamColor } from './palette';
+import { FONT } from '../style/theme';
 
 export interface TileInfo {
   id: ComponentId;
@@ -139,7 +140,7 @@ export function defaultLabel(text: string, kind: LabelKind = 'structure'): THREE
   const ctx = canvas.getContext('2d');
   if (!ctx) return new THREE.Object3D();
   ctx.fillStyle = '#ffffff';
-  const font = (px: number): string => `italic ${px}px "Times New Roman", Georgia, serif`;
+  const font = (px: number): string => `500 ${px}px ${FONT.display}`;
   ctx.font = font(fitFontPx((px) => { ctx.font = font(px); return ctx.measureText(text).width; }, LABEL_W - 16));
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -557,7 +558,9 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
       mesh.position.copy(start());
       const text = label(c.label, 'structure');
       text.userData.label = true;
-      text.position.set(0, -0.2, -(c.kind === 'bank' ? 1.6 : 0.95));
+      // Just under the part; experts sit closer (and their grid rows further apart, hierarchy.ts) so no
+      // caption hides under the cube of the next row.
+      text.position.set(0, -0.2, -(c.kind === 'bank' ? 1.6 : c.kind === 'expert' ? 0.8 : 0.95));
       mesh.add(text);
       group.add(mesh);
       parts.set(c.id, mesh);

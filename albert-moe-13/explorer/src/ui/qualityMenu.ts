@@ -1,3 +1,4 @@
+import { onPrefsChange, t } from './prefs';
 import { type KeyValueStore, type Quality, QUALITIES, loadOverride, saveOverride } from '../scene/look';
 
 export interface QualityMenu {
@@ -15,11 +16,19 @@ const LABEL: Record<Quality, string> = { high: 'High', medium: 'Medium', low: 'L
  */
 export function createQualityMenu(onChange: (q: Quality | null) => void, store?: KeyValueStore | null): QualityMenu {
   const wrap = document.createElement('label');
-  wrap.className = 'quality-menu';
-  wrap.append('Quality ');
+  wrap.className = 'hud-field quality-menu';
+  const name = document.createElement('span');
+  name.className = 'hud-field-label';
+  wrap.append(name);
   const sel = document.createElement('select');
-  sel.setAttribute('aria-label', 'Rendering quality');
+  sel.className = 'hud-select';
   const auto = new Option('Auto', '');
+  let autoPick: Quality | null = null;
+  const paint = (): void => {
+    name.textContent = t('quality.label');
+    sel.setAttribute('aria-label', t('quality.label'));
+    auto.text = autoPick ? `${t('quality.auto')} (${LABEL[autoPick]})` : t('quality.auto');
+  };
   sel.append(auto, ...QUALITIES.map((q) => new Option(LABEL[q], q)));
   sel.value = (store === undefined ? loadOverride() : loadOverride(store)) ?? '';
   sel.addEventListener('change', () => {
@@ -29,15 +38,16 @@ export function createQualityMenu(onChange: (q: Quality | null) => void, store?:
     onChange(q);
   });
   wrap.append(sel);
+  paint();
+  onPrefsChange(paint);
   return {
     element: wrap,
     setAuto(q) {
-      auto.text = q ? `Auto (${LABEL[q]})` : 'Auto';
+      autoPick = q;
+      paint();
     },
   };
 }
 
-export const QUALITY_MENU_CSS = `
-.quality-menu { position: fixed; top: 136px; left: 14px; font: 12px monospace; color: #cfd8e8; }
-.quality-menu select { font: 12px monospace; color: #fff; background: #14161b; border: 1px solid #333a46;
-  border-radius: 3px; padding: 3px 6px; margin-left: 4px; }`;
+/** The look lives in src/style/ui.css. */
+export const QUALITY_MENU_CSS = '';

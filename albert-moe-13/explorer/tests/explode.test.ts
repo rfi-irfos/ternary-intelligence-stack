@@ -293,7 +293,7 @@ describe('click picking', () => {
   function rigUp() {
     const dom = document.createElement('canvas');
     const h = { pickAt: vi.fn(() => 'L1.expert.0' as string | null), onPick: vi.fn(), onEmpty: vi.fn(), onHover: vi.fn() };
-    cleanup.push(attachPicking(dom, h));
+    cleanup.push(attachPicking(dom, h, undefined, (cb) => cb()));
     const fire = (type: string, x: number, y: number, buttons = 0) =>
       dom.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, button: 0, buttons }));
     return { h, fire };

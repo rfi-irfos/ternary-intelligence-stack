@@ -10,7 +10,11 @@ import {
 } from '../scene/ids';
 import type { TowerScene } from '../scene/tower';
 import { PALETTE, cssHex } from '../scene/palette';
-import { DEPTHS, DEPTH_LABEL, getDepth, onDepthChange, setDepth } from './depth';
+import { DEPTHS, getDepth, onDepthChange, setDepth } from './depth';
+import { ICONS, typeIcon } from './icons';
+import { getMode, onPrefsChange, t } from './prefs';
+import { ROLE_VAR, componentName, roleOf } from './roles';
+import type { StringKey } from './strings';
 
 export interface PanelDeps {
   arch: Architecture;
@@ -24,6 +28,8 @@ export interface PanelDeps {
    * anchors are hidden, so the app reassembles here and the camera never flies to a hidden anchor.
    */
   beforeNavigate?: () => Promise<void>;
+  /** "Step inside" on the card of anything inside a layer: the app opens that layer step by step. */
+  onStepInside?: (id: ComponentId) => void;
 }
 
 export interface Panel {
@@ -150,11 +156,11 @@ export function connectionsOf(id: ComponentId, a: Architecture): Link[] {
 }
 
 function location(p: ParsedId, a: Architecture): string {
-  const layer = 'layer' in p ? `Layer ${p.layer} of ${a.model.num_layers}` : '';
-  const stream = 'stream' in p && p.stream ? ` · stream ${p.stream}` : '';
-  const expert = 'expert' in p && p.expert !== undefined ? ` · expert ${p.expert}` : '';
+  const layer = 'layer' in p ? t('loc.layer', { l: p.layer, n: a.model.num_layers }) : '';
+  const stream = 'stream' in p && p.stream ? ` · ${t('loc.stream', { s: p.stream })}` : '';
+  const expert = 'expert' in p && p.expert !== undefined ? ` · ${t('loc.expert', { e: p.expert })}` : '';
   if (layer) return layer + stream + expert;
-  return p.type === 'shaft' ? `stream ${p.stream}` : 'ends of the row';
+  return p.type === 'shaft' ? t('loc.stream', { s: p.stream }) : t('loc.ends');
 }
 
 /** Small schematic of the maths; carries no checkpoint numbers. */
@@ -226,55 +232,156 @@ export function createPanel(deps: PanelDeps): Panel {
     return `<p class="schematic-note">Top ${top.outerHTML} of ${n.outerHTML} experts lit per stream.</p>`;
   }
 
+  /** One stat tile ("readout"): a small label over a large tabular value that carries its kind. */
+  const tile = (label: StringKey, value: HTMLElement, sub = ''): string =>
+    `<div class="stat-tile"><span class="stat-label">${esc(t(label))}</span><span class="stat-value">${value.outerHTML}</span>` +
+    `${sub ? `<span class="stat-sub">${sub}</span>` : ''}</div>`;
+
+  function tiles(p: ParsedId, rows: TensorRow[]): string {
+    const out: string[] = [];
+    if ('layer' in p) out.push(tile('tile.layer', fmt(structure(p.layer)), richHtml(t('tile.of', { n: arch.model.num_layers }))));
+    if (rows.length > 0) {
+      // Per-expert rows ({e} still in the name) exist once per expert.
+      const total = rows.reduce((sum, r) => sum + r.params * (r.name.includes('{e}') ? arch.model.num_experts : 1), 0);
+      out.push(tile('tile.params', fmt(structure(total))));
+      out.push(rows.length === 1 ? tile('tile.shape', fmt(structure(rows[0]!.shape))) : tile('tile.tensors', fmt(structure(rows.length))));
+      const tern = rows.some((r) => r.ternary);
+      const f32 = rows.some((r) => !r.ternary);
+      out.push(tile('tile.weights', fmt(structure(t(tern && f32 ? 'tile.mixed' : tern ? 'tile.ternary' : 'tile.f32')))));
+    } else {
+      out.push(tile('tile.weights', fmt(structure(t('tile.none')))));
+    }
+    return `<div class="stat-tiles">${out.slice(0, 4).join('')}</div>`;
+  }
+
+  /** Short tensor name for the table (the full path is the tooltip and a truncated sub-line). */
+  const shortName = (full: string): string => {
+    const seg = full.split('.');
+    return seg.length >= 2 && /^(weight|bias)$/.test(seg[seg.length - 1]!) ? seg.slice(-2).join('.') : seg[seg.length - 1]!;
+  };
+
+  function tensorTable(rows: TensorRow[]): string {
+    if (rows.length === 0) return `<p>${esc(t('panel.noTensors'))}</p>`;
+    const row = (r: TensorRow, group: boolean): string => {
+      const name = fmt(structure(shortName(r.name)));
+      name.classList.add('t-namebox');
+      name.title = r.name;
+      const path = document.createElement('span');
+      path.className = 't-path';
+      path.textContent = r.name;
+      name.insertBefore(path, name.lastElementChild);
+      const dtype = r.ternary ? 'ternary' : 'F32';
+      return `<tr data-tensor="${esc(r.name)}" data-dtype="${dtype}"${group ? ' data-group="experts"' : ''}>` +
+        `<td class="t-name">${name.outerHTML}</td><td class="t-shape">${fmt(structure(r.shape)).outerHTML}</td>` +
+        `<td class="t-dtype"><span class="dtype dtype--${r.ternary ? 'ternary' : 'f32'}">${dtype}</span></td>` +
+        `<td class="t-params">${fmt(structure(r.params)).outerHTML}</td></tr>`;
+    };
+    const single = rows.filter((r) => !r.name.includes('{e}'));
+    const perExpert = rows.filter((r) => r.name.includes('{e}'));
+    const head = `<thead><tr><th class="t-name">${esc(t('col.name'))}</th><th class="t-shape">${esc(t('col.shape'))}</th>` +
+      `<th class="t-dtype">${esc(t('col.dtype'))}</th><th class="t-params">${esc(t('col.params'))}</th></tr></thead>`;
+    const group = perExpert.length === 0 ? '' :
+      `<tr class="t-group"><td colspan="4">${ICONS.cubes}<span>${richHtml(t('panel.expertsGroup', { n: arch.model.num_experts }))}</span></td></tr>` +
+      perExpert.map((r) => row(r, true)).join('');
+    return `<table class="tensor-table">${head}<tbody>${single.map((r) => row(r, false)).join('')}${group}</tbody></table>`;
+  }
+
+  // Advanced shows one tab at a time; the choice is kept while the visitor moves between components.
+  type Tab = 'overview' | 'compute' | 'tensors' | 'notes';
+  const TABS: Tab[] = ['overview', 'compute', 'tensors', 'notes'];
+  const TAB_OF: Record<string, Tab> = {
+    what: 'overview', connections: 'overview', visual: 'overview', tour: 'overview',
+    compute: 'compute', tensors: 'tensors', caveats: 'notes', source: 'notes',
+  };
+  const SEC_ICON: Record<string, string> = {
+    what: ICONS.info, tensors: ICONS.grid, compute: ICONS.sigma, connections: ICONS.link,
+    visual: ICONS.sketch, caveats: ICONS.warning, source: ICONS.doc, tour: ICONS.tour,
+  };
+  /** Sections Simple keeps closed until the visitor opens them. */
+  const COLLAPSIBLE = new Set(['tensors', 'compute', 'visual', 'caveats', 'source']);
+  let tab: Tab = 'overview';
+  const opened = new Set<string>();
+
   function html(id: ComponentId, type: ComponentType, p: ParsedId): string {
     const c = COMPONENTS[type];
     const rc = contentFor(type, arch);
+    const simple = getMode() === 'simple';
     // Caveat numbers are findings of the cited investigation; only architecture facts keep the default tooltip.
     const facts = new Set([String(arch.model.num_layers), String(arch.model.fusion_layers.length)]);
-    const cited = (t: string): string => richHtml(t, { note: CITED_NOTE, plain: facts });
+    const cited = (s: string): string => richHtml(s, { note: CITED_NOTE, plain: facts });
     const depth = getDepth();
     const rows = tensorRows(id, arch);
     const tau = 'layer' in p ? arch.layers[p.layer]?.tau : undefined;
     const links = connectionsOf(id, arch);
-    const depthButtons = DEPTHS.map((d, i) =>
-      `<button type="button" class="depth-btn${d === depth ? ' active' : ''}" data-depth="${d}" title="key ${i + 1}">${DEPTH_LABEL[d]}</button>`).join('');
-    const tensors = rows.length === 0
-      ? '<p>No tensors of its own.</p>'
-      : `<table><tbody>${rows.map((r) =>
-        `<tr data-tensor="${esc(r.name)}" data-dtype="${r.ternary ? 'ternary' : 'F32'}"><td class="t-name">${fmt(structure(r.name)).outerHTML}</td>` +
-        `<td class="t-shape">${fmt(structure(r.shape)).outerHTML}</td><td class="t-dtype">${r.ternary ? 'ternary' : 'F32'}</td>` +
-        `<td class="t-params">${fmt(structure(r.params)).outerHTML}</td></tr>`).join('')}</tbody></table>`;
+    const role = roleOf(id);
+    // Depth is part of the view mode: Simple reads at Intuition, so only Advanced offers the switch.
+    const depthButtons = simple ? '' : `<div class="depth-switch hud-segment" role="group" aria-label="${esc(t('panel.depth'))}">${DEPTHS.map((d, i) =>
+      `<button type="button" class="depth-btn${d === depth ? ' active' : ''}" aria-pressed="${d === depth}" data-depth="${d}" title="${esc(t(`depth.${d}` as StringKey))} (${i + 1})">${esc(t(`depth.${d}` as StringKey))}</button>`).join('')}</div>`;
+    const tabs = simple ? '' : `<div class="panel-tabs" role="tablist" aria-label="${esc(t('tabs.label'))}">${TABS.map((k) =>
+      `<button type="button" role="tab" class="panel-tab${k === tab ? ' active' : ''}" aria-selected="${k === tab}" data-tab="${k}">${esc(t(`tab.${k}` as StringKey))}</button>`).join('')}</div>`;
+    const stepInside = deps.onStepInside && 'layer' in p
+      ? `<button type="button" class="hud-btn step-inside" data-action="step-inside" title="${esc(t('nav.enterTip'))}">${ICONS.enter}<span>${esc(t('nav.enter'))}</span></button>` : '';
     const caveats = c.caveats.length === 0
-      ? '<p>None recorded for this component.</p>'
-      : c.caveats.map((cid) => {
+      ? `<p>${esc(t('panel.noCaveats'))}</p>`
+      : `<ul class="caveat-list">${c.caveats.map((cid) => {
         const cv = CAVEATS[cid];
-        return `<details open data-caveat="${cid}"><summary>${cid} · ${cited(cv.title)}</summary><p>${cited(cv.body)}</p>` +
-          (depth === 'intuition' ? '' : `<p class="evidence">Evidence: ${cited(cv.evidence)}</p>`) + '</details>';
-      }).join('');
+        const table = cv.table
+          ? `<div class="cv-table-wrap" data-kind="structure" title="${esc(CITED_NOTE)}"><table class="cv-table"><thead><tr>${cv.table.head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>` +
+            `<tbody>${cv.table.rows.map((r) => `<tr>${r.map((x) => `<td>${esc(x)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '';
+        const label = cv.label ? `<p class="cv-label"><span class="tag tag--measured">${esc(cv.label)}</span></p>` : '';
+        return `<li><details data-caveat="${cid}"><summary><span class="code-chip">${cid}</span><span class="cv-title">${cited(cv.title)}</span>${ICONS.chevron}</summary>` +
+          `<div class="cv-body"><p>${cited(cv.body)}</p>${table}${label}` +
+          (depth === 'intuition' ? '' : `<p class="evidence">Evidence: ${cited(cv.evidence)}</p>`) + '</div></details></li>';
+      }).join('')}</ul>`;
     const sources = c.source.map((s) =>
-      `<li><a href="${esc(sourceUrl(s.file, s.lines))}" target="_blank" rel="noopener noreferrer">${richHtml(`${s.file}:${s.lines}`)}</a></li>`).join('');
+      `<li><a href="${esc(sourceUrl(s.file, s.lines))}" target="_blank" rel="noopener noreferrer">${ICONS.doc}<span>${richHtml(`${s.file}:${s.lines}`)}</span></a></li>`).join('');
+    const sec = (name: string, label: StringKey, body: string): string => {
+      const collapsible = simple && COLLAPSIBLE.has(name);
+      const open = !collapsible || opened.has(name);
+      const shown = simple || TAB_OF[name] === tab;
+      const head = `${SEC_ICON[name] ?? ''}<span class="sec-label">${esc(t(label))}</span>`;
+      return `<section data-section="${name}" data-tab="${TAB_OF[name]}" class="panel-sec${collapsible ? ' collapsible' : ''}"${shown ? '' : ' hidden'} data-open="${open}">` +
+        (collapsible
+          ? `<h3 class="sec-head"><button type="button" class="sec-toggle" aria-expanded="${open}" data-toggle="${name}">${head}${ICONS.chevron}</button></h3>`
+          : `<h3 class="sec-head">${head}</h3>`) +
+        `<div class="sec-body"${open ? '' : ' hidden'}>${body}</div></section>`;
+    };
     return `
-      <header><h2>${richHtml(rc.title)}</h2><button type="button" class="panel-close" aria-label="Close">×</button>
-        <div class="depth-switch">${depthButtons}</div></header>
-      <section data-section="what"><h3>What it is</h3><p>${richHtml(rc.text[depth])}</p>
-        <p class="where">${richHtml(location(p, arch))}${tau !== undefined ? ` · τ ${fmt(structure(tau)).outerHTML}` : ''}</p></section>
-      <section data-section="tensors"><h3>Real tensors</h3>${tensors}<div class="weights"></div></section>
-      <section data-section="compute"><h3>In → computation → out</h3>
-        <p><b>In:</b> ${richHtml(rc.inputs)}</p><p class="formula">${richHtml(rc.formula)}</p><p><b>Out:</b> ${richHtml(rc.outputs)}</p></section>
-      <section data-section="connections"><h3>Connections</h3>${links.length === 0 ? '<p>None.</p>' :
-        `<ul>${links.map((l) => `<li><a href="#" data-link="${esc(l.id)}">${richHtml(l.label)}</a></li>`).join('')}</ul>`}</section>
-      <section data-section="visual"><h3>The maths, schematic</h3>${labelBlock('illustrative', visual(type, arch, id, rc)).outerHTML}${type === 'router' ? routerCaption() : ''}</section>
-      <section data-section="caveats"><h3>Caveats</h3>${caveats}</section>
-      <section data-section="source"><h3>Source</h3><ul>${sources}</ul></section>
-      <section data-section="tour"><h3>Walkthrough</h3>${c.tour
-        ? `<a href="#" data-tour="${c.tour}">Start the walkthrough about this</a>` : '<p>No walkthrough for this component yet.</p>'}</section>`;
+      <div class="panel-head">
+        <header>
+          <span class="role-chip" data-role="${role ?? 'neutral'}" style="--role: ${role ? ROLE_VAR[role] : 'var(--c-neutral)'}">${typeIcon(type)}<span>${esc(role ? t(`role.${role}` as StringKey) : t('role.none'))}</span></span>
+          <h2>${richHtml(rc.title)}</h2>
+          <button type="button" class="panel-close hud-icon hud-icon--small" aria-label="${esc(t('panel.close'))}" title="${esc(t('panel.close'))}">${ICONS.close}</button>
+        </header>
+        <p class="panel-summary">${esc(t(`sum.${type}` as StringKey))}</p>
+        ${tiles(p, rows)}
+        ${stepInside}
+        ${depthButtons}
+        ${tabs}
+      </div>
+      <div class="panel-body" data-mode="${simple ? 'simple' : 'advanced'}">
+      ${sec('what', 'sec.what', `<p>${richHtml(rc.text[depth])}</p>
+        <p class="where">${richHtml(location(p, arch))}${tau !== undefined ? ` · τ ${fmt(structure(tau)).outerHTML}` : ''}</p>`)}
+      ${sec('tensors', 'sec.tensors', `${tensorTable(rows)}<div class="weights"></div>`)}
+      ${sec('compute', 'sec.compute', `<p class="io"><b>${esc(t('panel.in'))}</b> ${richHtml(rc.inputs)}</p><p class="formula">${richHtml(rc.formula)}</p><p class="io"><b>${esc(t('panel.out'))}</b> ${richHtml(rc.outputs)}</p>`)}
+      ${sec('connections', 'sec.connections', links.length === 0 ? `<p>${esc(t('panel.none'))}</p>` :
+        `<ul class="panel-links">${links.map((l) => {
+          const r = roleOf(l.id);
+          return `<li><a href="#" class="link-chip" data-link="${esc(l.id)}" style="--role: ${r ? ROLE_VAR[r] : 'var(--c-neutral)'}">${typeIcon(componentTypeOf(l.id) ?? '')}<span>${richHtml(componentName(l.id))}</span></a></li>`;
+        }).join('')}</ul>`)}
+      ${sec('visual', 'sec.visual', `${labelBlock('illustrative', visual(type, arch, id, rc)).outerHTML}${type === 'router' ? routerCaption() : ''}`)}
+      ${sec('caveats', 'sec.caveats', caveats)}
+      ${sec('source', 'sec.source', `<ul class="source-list">${sources}</ul>`)}
+      ${sec('tour', 'sec.tour', c.tour
+        ? `<a href="#" class="tour-link" data-tour="${c.tour}">${ICONS.tour}<span>${esc(t('panel.tourStart'))}</span></a>` : `<p>${esc(t('panel.noTour'))}</p>`)}
+      </div>`;
   }
 
   async function fillWeights(id: ComponentId, p: ParsedId, mine: number): Promise<void> {
     const key = weightKey(p);
     const box = el.querySelector<HTMLElement>('.weights');
     if (!key || !box || !('layer' in p)) return;
-    box.textContent = 'Loading weights…';
+    box.textContent = t('panel.loadingWeights');
     try {
       const w = await loadWeights(p.layer);
       if (mine !== token) return;
@@ -309,6 +416,8 @@ export function createPanel(deps: PanelDeps): Panel {
     el.hidden = false;
     el.dataset.id = id;
     el.dataset.type = type;
+    const role = roleOf(id);
+    el.style.setProperty('--role-panel', role ? ROLE_VAR[role] : 'var(--c-accent)');
     el.innerHTML = html(id, type, p);
     return fillWeights(id, p, token);
   }
@@ -331,6 +440,35 @@ export function createPanel(deps: PanelDeps): Panel {
       })();
       return;
     }
+    const toggle = t.closest<HTMLElement>('[data-toggle]');
+    if (toggle?.dataset.toggle) {
+      const name = toggle.dataset.toggle;
+      const secEl = toggle.closest('section');
+      const body = secEl?.querySelector<HTMLElement>('.sec-body');
+      const open = !!body?.hidden;
+      if (open) opened.add(name);
+      else opened.delete(name);
+      if (body) body.hidden = !open;
+      secEl?.setAttribute('data-open', String(open));
+      toggle.setAttribute('aria-expanded', String(open));
+      return;
+    }
+    const tabBtn = t.closest<HTMLElement>('[role=tab][data-tab]');
+    if (tabBtn?.dataset.tab) {
+      tab = tabBtn.dataset.tab as Tab;
+      for (const b of el.querySelectorAll<HTMLElement>('[role=tab]')) {
+        const on = b.dataset.tab === tab;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-selected', String(on));
+      }
+      for (const x of el.querySelectorAll<HTMLElement>('section[data-tab]')) x.hidden = x.dataset.tab !== tab;
+      el.querySelector('.panel-body')?.scrollTo?.({ top: 0 });
+      return;
+    }
+    if (t.closest('[data-action="step-inside"]') && currentId) {
+      deps.onStepInside?.(currentId);
+      return;
+    }
     const depthBtn = t.closest<HTMLElement>('[data-depth]');
     if (depthBtn?.dataset.depth) {
       setDepth(depthBtn.dataset.depth as (typeof DEPTHS)[number]);
@@ -348,6 +486,9 @@ export function createPanel(deps: PanelDeps): Panel {
   const offDepth = onDepthChange(() => {
     if (currentId) void render(currentId);
   });
+  const offPrefs = onPrefsChange(() => {
+    if (currentId) void render(currentId);
+  });
 
   const panel: Panel = {
     element: el,
@@ -361,33 +502,21 @@ export function createPanel(deps: PanelDeps): Panel {
     current: () => currentId,
     dispose() {
       offDepth();
+      offPrefs();
       el.remove();
     },
   };
   return panel;
 }
 
+/** Table layout rules of the panel (the look lives in src/style/ui.css). */
 export const PANEL_CSS = `
-.inspect-panel { position: fixed; right: 12px; top: 12px; bottom: 56px; width: 340px; overflow-y: auto;
-  padding: 12px 14px; color: #e8eef9; background: rgba(10,12,18,0.82); border: 1px solid rgba(255,255,255,0.35);
-  border-radius: 4px; font: 13px/1.45 Georgia, 'Times New Roman', serif; backdrop-filter: blur(6px); }
-.inspect-panel h2 { margin: 0 0 6px; font-weight: normal; font-style: italic; font-size: 20px; }
-.inspect-panel h3 { margin: 12px 0 4px; font: 11px monospace; letter-spacing: 0.08em; text-transform: uppercase; color: #cfd8e8; }
-.inspect-panel table { width: 100%; table-layout: fixed; border-collapse: collapse; font: 11px monospace; }
-.inspect-panel td { padding: 2px 4px; border-bottom: 1px solid rgba(255,255,255,0.12); vertical-align: top; }
-.inspect-panel td.t-name { overflow-wrap: anywhere; }
-.inspect-panel td.t-name .lv { white-space: normal; }
+.inspect-panel table.tensor-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.inspect-panel td.t-name { overflow: hidden; }
+.inspect-panel td.t-name .lv { white-space: normal; display: block; min-width: 0; }
+.inspect-panel .t-namebox .lv-v, .inspect-panel .t-path { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .inspect-panel td.t-shape, .inspect-panel td.t-dtype, .inspect-panel td.t-params { white-space: nowrap; }
-.inspect-panel td.t-shape { width: 26%; }
-.inspect-panel td.t-dtype { width: 15%; }
-.inspect-panel td.t-params { width: 20%; text-align: right; }
-.inspect-panel { overflow-x: hidden; }
-.inspect-panel .formula { font-style: italic; }
-.inspect-panel a { color: ${cssHex(PALETTE.accent)}; text-decoration: underline; }
-.inspect-panel .panel-close { position: absolute; right: 10px; top: 8px; background: none; border: 0; color: #fff; font-size: 20px; cursor: pointer; }
-.inspect-panel .depth-btn { font: 11px monospace; margin-right: 4px; padding: 2px 6px; color: #cfd8e8; background: #14161b; border: 1px solid #333a46; border-radius: 3px; cursor: pointer; }
-.inspect-panel .depth-btn.active { background: ${cssHex(PALETTE.accent)}; color: #000; }
-.inspect-panel svg { width: 100%; height: 56px; }
-.inspect-panel svg text { fill: #e8eef9; }
-.inspect-panel .evidence { font: 11px monospace; color: #cfd8e8; }
+.inspect-panel .t-shape { width: 30%; }
+.inspect-panel .t-dtype { width: 19%; }
+.inspect-panel .t-params { width: 21%; text-align: right; }
 `;

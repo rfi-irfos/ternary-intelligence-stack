@@ -1,0 +1,97 @@
+/*
+ * Design tokens of Xperience albert. Colours mirror src/scene/palette.ts (scene roles) and
+ * src/style/theme.ts (UI neutrals) exactly; tests/tokens.test.ts parses this file and compares.
+ * Naming: --c-<palette key in kebab case>.
+ */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/inter/Inter-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/inter/Inter-Medium.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/inter/Inter-SemiBold.woff2") format("woff2");
+}
+@font-face {
+  font-family: "STIX Two Text";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/stix-two/STIXTwoText-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/space-grotesk/SpaceGrotesk-Medium.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/space-grotesk/SpaceGrotesk-Bold.woff2") format("woff2");
+}
+
+:root {
+  /* scene roles (palette.ts) */
+  --c-background: #000000;
+  --c-stream-a: #2fd9f2;
+  --c-stream-b: #ffb22e;
+  --c-expert: #4fdc7a;
+  --c-router: #a98bff;
+  --c-gate: #ff4d5e;
+  --c-ternary-plus: #f4a582;
+  --c-ternary-minus: #6ab0e8;
+  --c-ternary-zero: #1a1c21;
+  --c-edge: #ffffff;
+  --c-glass: #9fb8d9;
+  --c-neutral: #dfe6f2;
+  --c-accent: #f3f0e8;
+
+  /* UI neutrals (theme.ts) */
+  --c-text: #f3f0e8;
+  --c-text-muted: #c3cad6;
+  --c-surface: #0d0f14;
+  --c-raised: #1b1f28;
+  --c-hairline: #4a5262;
+  --c-glass-panel: rgba(13, 15, 20, 0.82);
+
+  /* type */
+  --font-ui: "Inter", system-ui, sans-serif;
+  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --font-math: "STIX Two Text", "Times New Roman", serif;
+  --fs-small: 13px;
+  --fs-base: 14px;
+  --fs-large: 16px;
+  --fs-h2: 22px;
+  --fs-title: 28px;
+
+  /* shape and space */
+  --r-control: 6px;
+  --r-panel: 10px;
+  --gap: 8px;
+  --edge-pad: 16px;
+  --top-h: 64px;
+  --side-w: 380px;
+  --control-h: 32px;
+
+  /* motion */
+  --t-fast: 150ms;
+  --t-base: 200ms;
+  --t-slow: 250ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}

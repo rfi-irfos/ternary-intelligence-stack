@@ -4,11 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Xperience albert.</title>
+    <!-- The title, headings and scene labels use Space Grotesk, the UI uses Inter, formulas the math
+         serif STIX Two Text: all self-hosted under public/fonts (see README), declared in
+         src/style/tokens.css. -->
+    <link rel="preload" href="/fonts/space-grotesk/SpaceGrotesk-Bold.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/inter/Inter-Regular.woff2" as="font" type="font/woff2" crossorigin />
     <style>
       html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
       canvas { display: block; }
-      #app-name { position: fixed; top: 10px; left: 14px; margin: 0; z-index: 2; pointer-events: none;
-        font: italic 400 28px "FreeSerif", "Times New Roman", serif; color: #fff; }
+      #app-name { margin: 0; font: 700 28px "Space Grotesk", "Inter", system-ui, sans-serif; color: #f3f0e8; }
     </style>
   </head>
   <body>

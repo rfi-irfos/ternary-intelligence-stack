@@ -7,6 +7,7 @@ import { attachDepthKeys, getDepth, setDepth } from '../src/ui/depth';
 import { buildTimeline } from '../src/flow/timeline';
 import { buildTower } from '../src/scene/tower';
 import { NO_TRACE_TEXT, OP_SECONDS, createPlayer, createPlayerBar } from '../src/ui/player';
+import { setMode } from '../src/ui/prefs';
 
 const a = validateArchitecture(arch);
 const tower = buildTower(a);
@@ -14,7 +15,11 @@ const modules = import.meta.glob('../public/data/trace/*.json', { eager: true, i
 const trace = (id: string) => validateTrace(modules[`../public/data/trace/${id}.json`], a);
 const ops = buildTimeline(trace('kjv'), a, 3);
 
-afterEach(() => { document.body.innerHTML = ''; });
+afterEach(() => {
+  document.body.innerHTML = '';
+  setMode('simple');
+  localStorage.clear();
+});
 
 /** tick() clamps dt to 0.1 s, so advance in frames of that size. */
 const run = (p: ReturnType<typeof createPlayer>, seconds: number): void => {
@@ -102,6 +107,7 @@ describe('player bar', () => {
   });
 
   it('lists the three prompts, decoded tokens, and labels measured numbers', async () => {
+    setMode('advanced');
     const show = vi.fn();
     const flyTo = vi.fn(() => Promise.resolve());
     const bar = createPlayerBar({
@@ -132,12 +138,12 @@ describe('player bar', () => {
     document.body.appendChild(bar.element);
     return { bar, flyTo, overview };
   }
-  const click = (bar: { element: HTMLElement }, text: string): void => {
-    const b = [...bar.element.querySelectorAll('button')].find((x) => x.textContent === text);
-    b?.click();
+  const click = (bar: { element: HTMLElement }, action: string): void => {
+    bar.element.querySelector<HTMLButtonElement>(`button[data-action="${action}"]`)?.click();
   };
 
   it('text rows read cleanly (embed row, experts row)', async () => {
+    setMode('advanced');
     const { bar } = make();
     await bar.ready;
     const p = bar.player();
@@ -159,21 +165,20 @@ describe('player bar', () => {
     expect(flyTo).not.toHaveBeenCalled();
     expect(overview).not.toHaveBeenCalled();
     // user steps while free: still no flight
-    click(bar, 'Next');
+    click(bar, 'next');
     expect(flyTo).not.toHaveBeenCalled();
   });
 
   it('flies on Play, Step and scrub only in follow mode', async () => {
     const { bar, flyTo } = make();
     await bar.ready;
-    const sels = bar.element.querySelectorAll('select');
-    const cam = [...sels].find((x) => x.getAttribute('aria-label') === 'Camera') as HTMLSelectElement;
+    const cam = bar.element.querySelector('select.player-camera') as HTMLSelectElement;
     cam.value = 'follow';
     cam.dispatchEvent(new Event('change'));
     flyTo.mockClear();
     bar.player()?.scrub(0); // programmatic, not a user action
     expect(flyTo).not.toHaveBeenCalled();
-    click(bar, 'Next');
+    click(bar, 'next');
     const range = bar.element.querySelector('input[type=range]') as HTMLInputElement;
     range.value = '40';
     range.dispatchEvent(new Event('input'));

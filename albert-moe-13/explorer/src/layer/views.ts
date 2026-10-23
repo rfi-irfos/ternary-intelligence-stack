@@ -9,7 +9,10 @@ import type { CameraPose, CameraRig } from '../camera/controls';
 import { type ComponentId, type Stream, parseId } from '../scene/ids';
 import { divergingColor, ternaryColor } from '../scene/tile';
 import { PALETTE, cssHex } from '../scene/palette';
-import { DEPTHS, DEPTH_LABEL, type Depth, getDepth, onDepthChange } from '../ui/depth';
+import { DEPTHS, type Depth, getDepth, onDepthChange, setDepth } from '../ui/depth';
+import { ICONS } from '../ui/icons';
+import { getMode, onPrefsChange, t } from '../ui/prefs';
+import type { StringKey } from '../ui/strings';
 import { type Step, type ViewSpec, layerSteps } from './steps';
 
 const hex = cssHex;
@@ -236,7 +239,8 @@ export function renderView(v: ViewSpec, weights: LayerWeights | null = null): HT
 export function renderStep(step: Step, depth: Depth, weights: LayerWeights | null = null): HTMLElement {
   const box = el('div', 'layer-step');
   box.dataset.step = step.id;
-  box.append(el('h3', 'layer-step-title', step.title[depth]));
+  // The Intuition title is UI text (strings.ts, both languages); Technical and Researcher stay technical English.
+  box.append(el('h3', 'layer-step-title', depth === 'intuition' ? t(`step.${step.id}` as StringKey) : step.title[depth]));
   const f = el('code', 'layer-formula', step.formula);
   box.append(f, renderView(step.view, weights));
   const foot = el('div', 'layer-step-foot');
@@ -285,42 +289,45 @@ export function applyHighlight(root: THREE.Object3D, ids: ComponentId[]): number
 }
 
 export const LAYER_CSS = `
-.layer-panel { position: fixed; right: 12px; top: 12px; width: 340px; max-height: calc(100vh - 220px); overflow-y: auto;
-  box-sizing: border-box; padding: 10px; font: 12px monospace; color: #cfd8e8; background: #0a0c12;
-  border: 1px solid #333a46; border-radius: 6px; z-index: 5; }
+.layer-panel { position: fixed; right: var(--edge-pad); top: calc(var(--top-h) + var(--edge-pad)); bottom: var(--edge-pad);
+  width: var(--side-w); overflow-y: auto; box-sizing: border-box; padding: 16px 18px; z-index: 5;
+  font: 400 var(--fs-base)/1.45 var(--font-ui); color: var(--c-text); }
 .layer-mode .inspect-panel { display: none; }
 .layer-panel[hidden] { display: none; }
-.layer-panel button, .layer-panel select, .layer-panel input[type=number] { font: 12px monospace; color: #fff;
-  background: #14161b; border: 1px solid #333a46; border-radius: 3px; padding: 3px 6px; cursor: pointer; }
-.layer-ctl { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-.layer-step-title { margin: 6px 0; font-size: 14px; color: #fff; }
-.layer-formula { display: block; margin-bottom: 6px; color: ${cssHex(PALETTE.accent)}; }
-.layer-view { margin: 6px 0; }
+.layer-nav { display: flex; gap: var(--gap); margin-bottom: 10px; }
+.layer-nav .layer-leave { margin-left: auto; }
+.layer-ctl { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.layer-ctl .hud-select { flex: 1 1 140px; min-width: 0; }
+.layer-where { color: var(--c-text-muted); font-size: var(--fs-small); font-feature-settings: "tnum"; }
+.layer-step-title { margin: 10px 0 6px; font: 700 var(--fs-h2)/1.2 var(--font-display); color: var(--c-text); }
+.layer-formula { display: block; margin-bottom: 8px; font: 400 var(--fs-large)/1.4 var(--font-math); color: var(--c-accent); }
+.layer-view { margin: 8px 0; font-size: var(--fs-small); font-feature-settings: "tnum"; }
 .layer-view-title { margin-bottom: 4px; }
 .layer-heat, .layer-attn-mrow { display: flex; flex-wrap: nowrap; }
 .layer-heat-cell { display: inline-block; width: 6px; height: 12px; }
 .layer-heat-row, .layer-attn-row { display: flex; gap: 6px; align-items: center; margin: 2px 0; }
 .layer-heat-name { min-width: 3.5em; }
 .layer-bars { position: relative; display: flex; gap: 3px; height: 130px; }
-.layer-bars-zero { position: absolute; left: 0; right: 0; top: 50px; border-top: 1px solid #cfd8e8; }
+.layer-bars-zero { position: absolute; left: 0; right: 0; top: 50px; border-top: 1px solid var(--c-text-muted); }
 .layer-bar { position: relative; flex: 1 1 0; height: 100%; }
 .layer-bar-fill { position: absolute; left: 20%; width: 60%; }
-.layer-bar-fill.layer-bar--pos { bottom: 80px; background: ${cssHex(PALETTE.ternaryPlus)}; }
-.layer-bar-fill.layer-bar--neg { top: 50px; background: ${cssHex(PALETTE.ternaryMinus)}; }
-.layer-bar--chosen { outline: 2px solid ${cssHex(PALETTE.accent)}; outline-offset: -1px; }
-.layer-bar-chosen { position: absolute; top: 106px; left: 0; right: 0; text-align: center; font-size: 8px; color: ${cssHex(PALETTE.accent)}; }
-.layer-bar-a3 { position: absolute; top: 96px; left: 0; right: 0; text-align: center; font-size: 8px; color: ${cssHex(PALETTE.accent)}; }
-.layer-bar-label { position: absolute; bottom: 0; left: 0; right: 0; text-align: center; font-size: 9px; }
-.layer-legend { margin-top: 4px; font-size: 10px; }
-.layer-kind { display: inline-block; padding: 0 5px; border-radius: 3px; border: 1px solid #cfd8e8; }
-.layer-kind--measured { border-color: ${cssHex(PALETTE.accent)}; color: ${cssHex(PALETTE.accent)}; border-style: solid; }
-.layer-kind--illustrative { background: repeating-linear-gradient(45deg, #333a46 0 2px, transparent 2px 4px); }
-.layer-caveat { display: inline-block; padding: 0 5px; border: 1px solid ${cssHex(PALETTE.accent)}; color: ${cssHex(PALETTE.accent)}; border-radius: 3px; }
-.layer-truncated { color: #fff; border: 1px dashed ${cssHex(PALETTE.accent)}; padding: 3px; margin: 4px 0; }
+.layer-bar-fill.layer-bar--pos { bottom: 80px; background: var(--c-ternary-plus); }
+.layer-bar-fill.layer-bar--neg { top: 50px; background: var(--c-ternary-minus); }
+.layer-bar--chosen { outline: 2px solid var(--c-accent); outline-offset: -1px; }
+.layer-bar-chosen { position: absolute; top: 106px; left: 0; right: 0; text-align: center; font-size: 9px; color: var(--c-accent); }
+.layer-bar-a3 { position: absolute; top: 96px; left: 0; right: 0; text-align: center; font-size: 9px; color: var(--c-accent); }
+.layer-bar-label { position: absolute; bottom: 0; left: 0; right: 0; text-align: center; font-size: 10px; }
+.layer-legend { margin-top: 4px; font-size: 12px; color: var(--c-text-muted); }
+.layer-kind { display: inline-block; padding: 0 6px; border-radius: 999px; border: 1px solid var(--c-text-muted); font-size: 12px; }
+.layer-kind--measured { border-color: var(--c-accent); color: var(--c-accent); border-style: solid; }
+.layer-kind--illustrative { background: repeating-linear-gradient(45deg, var(--c-hairline) 0 2px, transparent 2px 4px); }
+.layer-caveat { display: inline-block; padding: 0 6px; border: 1px solid var(--c-accent); color: var(--c-accent); border-radius: 999px; font-size: 12px; }
+.layer-truncated { color: var(--c-text); border: 1px dashed var(--c-accent); padding: 3px; margin: 4px 0; }
 .layer-matmul { display: flex; gap: 8px; align-items: center; }
 .layer-mm-w { display: grid; grid-template-columns: repeat(4, 22px); }
 .layer-mm-v { display: grid; grid-template-columns: 38px; }
 .layer-mm-cell { display: block; text-align: center; padding: 2px 0; color: #fff; }
+.layer-step-foot { margin-top: 8px; font-size: var(--fs-small); color: var(--c-text-muted); }
 `;
 
 export interface LayerModeDeps {
@@ -379,27 +386,44 @@ export function createLayerMode(deps: LayerModeDeps): LayerMode {
   const root = el('div', 'layer-panel');
   root.hidden = true;
   root.setAttribute('role', 'region');
-  root.setAttribute('aria-label', 'Layer steps');
-  const prompt = el('select');
+  const prompt = el('select', 'hud-select');
   prompt.setAttribute('aria-label', 'Prompt');
-  prompt.append(new Option('no trace (illustrative)', ''), ...ids.map((i) => new Option(i, i)));
-  const tokenSel = el('select');
+  prompt.append(new Option('', ''), ...ids.map((i) => new Option(i, i)));
+  const tokenSel = el('select', 'hud-select');
   tokenSel.setAttribute('aria-label', 'Token');
-  const streamSel = el('select');
+  const streamSel = el('select', 'hud-select');
   streamSel.setAttribute('aria-label', 'Stream');
-  streamSel.append(new Option('stream A', 'A'), new Option('stream B', 'B'));
-  const depthSel = el('select');
+  streamSel.append(new Option('', 'A'), new Option('', 'B'));
+  const depthSel = el('select', 'hud-select');
   depthSel.setAttribute('aria-label', 'Depth');
-  for (const d of DEPTHS) depthSel.append(new Option(DEPTH_LABEL[d], d));
-  const prev = el('button', undefined, 'Prev');
-  const next = el('button', undefined, 'Next');
-  const close = el('button', undefined, 'Leave layer');
+  depthSel.dataset.adv = 'true';
+  for (const d of DEPTHS) depthSel.append(new Option(d, d));
+  const prev = el('button', 'hud-btn');
+  const next = el('button', 'hud-btn');
+  const close = el('button', 'hud-btn layer-leave');
   for (const b of [prev, next, close]) b.type = 'button';
   const where = el('div', 'layer-where');
   const body = el('div');
   const ctl = el('div', 'layer-ctl');
-  ctl.append(prompt, tokenSel, streamSel, depthSel, prev, next, close);
-  root.append(ctl, where, body);
+  const nav = el('div', 'layer-nav');
+  nav.append(prev, next, close);
+  ctl.append(prompt, tokenSel, streamSel, depthSel);
+  root.append(nav, ctl, where, body);
+  /** Labels of the current language and mode (values and the open step stay). */
+  const paintChrome = (): void => {
+    root.setAttribute('aria-label', t('layer.region'));
+    (prompt.options[0] as HTMLOptionElement).text = t('layer.noTrace');
+    (streamSel.options[0] as HTMLOptionElement).text = t('layer.streamA');
+    (streamSel.options[1] as HTMLOptionElement).text = t('layer.streamB');
+    for (const o of depthSel.options) o.text = t(`depth.${o.value}` as StringKey);
+    depthSel.hidden = getMode() === 'simple';
+    prev.textContent = t('layer.prev');
+    next.textContent = t('layer.next');
+    close.replaceChildren();
+    close.insertAdjacentHTML('afterbegin', ICONS.close);
+    close.append(t('layer.leave'));
+  };
+  paintChrome();
 
   let layer = 0;
   let trace: Trace | null = null;
@@ -492,7 +516,7 @@ export function createLayerMode(deps: LayerModeDeps): LayerMode {
     const step = stepList[i];
     if (!step) return;
     body.replaceChildren(renderStep(step, getDepth(), weights));
-    where.textContent = `layer ${layer}, stream ${streamSel.value}, token ${position()}, step ${i + 1} of ${stepList.length}`;
+    where.textContent = t('layer.where', { l: layer, s: streamSel.value, p: position(), i: i + 1, n: stepList.length });
   };
   const draw = async (): Promise<void> => {
     const step = stepList[i];
@@ -520,8 +544,10 @@ export function createLayerMode(deps: LayerModeDeps): LayerMode {
   prompt.addEventListener('change', () => { void (async () => { tokenSel.value = '0'; await reload(); })(); });
   tokenSel.addEventListener('change', () => { void reload(); });
   streamSel.addEventListener('change', () => { void reload(); });
-  depthSel.addEventListener('change', () => { show(); });
+  // The depth select is the global depth (one concept with the panel and the Simple/Advanced mode).
+  depthSel.addEventListener('change', () => { setDepth(depthSel.value as Depth); show(); });
   onDepthChange((d) => { depthSel.value = d; if (active) show(); });
+  onPrefsChange(() => { paintChrome(); if (active) show(); });
   prev.addEventListener('click', () => void go(target - 1));
   next.addEventListener('click', () => void go(target + 1));
   close.addEventListener('click', () => void api.exit());

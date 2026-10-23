@@ -13,6 +13,7 @@ import { buildTower } from '../src/scene/tower';
 import { PANEL_CSS, createPanel } from '../src/ui/panel';
 import { CITED_NOTE, LABEL_CSS } from '../src/data/labeled';
 import { DEPTHS, setDepth } from '../src/ui/depth';
+import { setMode } from '../src/ui/prefs';
 
 const a = validateArchitecture(arch);
 const tower = buildTower(a);
@@ -26,6 +27,7 @@ const prov: TraceProvenance = {
 
 afterEach(() => {
   document.body.innerHTML = '';
+  setMode('simple');
   setDepth('intuition');
 });
 
@@ -135,7 +137,9 @@ describe('app name', () => {
     expect(APP_NAME).toBe('Xperience albert.');
     expect(doc.title).toBe(APP_NAME);
     expect(doc.getElementById('app-name')?.textContent).toBe(APP_NAME);
-    expect(indexHtml).toMatch(/FreeSerif/);
+    expect(indexHtml).toMatch(/Space Grotesk/);
+    expect(indexHtml).not.toMatch(/italic/);
+    expect(indexHtml).not.toMatch(/FreeSerif/);
   });
 });
 

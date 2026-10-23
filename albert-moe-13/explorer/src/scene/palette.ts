@@ -1,6 +1,8 @@
+import { ACCENT, cssHex } from '../style/theme';
+
 /**
- * Role colours (spec §5, look per §4.2b). The single source of every scene colour; Task 11b
- * mirrors these values into CSS tokens. Plain 0xRRGGBB numbers (sRGB).
+ * Role colours (spec §5, look per §4.2b). The single source of every scene colour; the UI reads the
+ * same values from src/style/tokens.css (tests/tokens.test.ts keeps both equal). Plain 0xRRGGBB (sRGB).
  *
  * Colour is never the only signal: each role also has its own shape (lanes = lines, experts =
  * boxes, routers = octahedra, gate = arc, ternary values = labelled cells).
@@ -30,20 +32,13 @@ export const PALETTE = {
   glass: 0x9fb8d9,
   /** Neutral parts without a role (embed, ln_f, lm_head, weight matrices). */
   neutral: 0xdfe6f2,
-  /**
-   * UI accent for "measured" badges, caveat chips, formulas, chosen bars, links and active buttons.
-   * Near-white (contrast about 17:1 on the dark panels) and used with a solid border, so it never
-   * reads as a role colour (the old yellow accent read as stream B amber). Not a scene colour.
-   */
-  accent: 0xf3f0e8,
+  /** UI accent (not a scene colour); defined in src/style/theme.ts, kept here for compatibility. */
+  accent: ACCENT,
 } as const;
 
 export type PaletteRole = keyof typeof PALETTE;
 
-/** `#rrggbb` for CSS / SVG use. */
-export function cssHex(c: number): string {
-  return `#${c.toString(16).padStart(6, '0')}`;
-}
+export { cssHex };
 
 /** Lane colour of a residual stream. */
 export function streamColor(s: 'A' | 'B'): number {

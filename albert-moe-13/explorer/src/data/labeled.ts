@@ -139,12 +139,17 @@ export function richHtml(text: string, o: RichOptions = {}): string {
   return out + escHtml(text.slice(last));
 }
 
+/**
+ * Badge look. structure: no mark (the default kind of every number); measured: a solid accent dot
+ * with a ring; illustrative: a hatched square. Shape differs per kind, not only colour.
+ */
 export const LABEL_CSS = `
 .lv { white-space: nowrap; }
-.badge { display: none; width: 0.7em; height: 0.7em; margin-left: 0.2em; border-radius: 50%; vertical-align: baseline; }
-.badge--measured { display: inline-block; background: ${cssHex(PALETTE.accent)}; border: 1px solid ${cssHex(PALETTE.accent)}; }
-.badge--illustrative { display: inline-block; border: 1px solid #cfd8e8;
-  background: repeating-linear-gradient(45deg, #cfd8e8 0 2px, transparent 2px 4px); }
+.badge { display: none; width: 0.62em; height: 0.62em; margin-left: 0.25em; vertical-align: 0.05em; }
+.badge--measured { display: inline-block; border-radius: 50%; background: var(--c-accent, ${cssHex(PALETTE.accent)});
+  box-shadow: 0 0 0 1.5px rgba(0,0,0,0.9), 0 0 0 2.5px var(--c-accent, ${cssHex(PALETTE.accent)}); }
+.badge--illustrative { display: inline-block; border-radius: 1px; border: 1px solid var(--c-text-muted, #c3cad6);
+  background: repeating-linear-gradient(45deg, var(--c-text-muted, #c3cad6) 0 1.5px, transparent 1.5px 3.5px); }
 .lv-block { position: relative; }
 .lv-block > .badge { position: absolute; right: 2px; top: 2px; }
 `;
