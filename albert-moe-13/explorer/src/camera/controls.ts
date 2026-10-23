@@ -15,6 +15,11 @@ export interface CameraRig {
   /** dt in seconds. */
   update(dt: number): void;
   isFlying(): boolean;
+  /**
+   * When set and returning true, Esc is left to another owner (the explode view reassembles one
+   * level); the rig only flies to overview on Esc when this is unset or returns false.
+   */
+  escapeGuard: (() => boolean) | null;
   dispose(): void;
 }
 
@@ -116,6 +121,7 @@ export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement
       controls.update();
     },
     isFlying: () => flight !== null,
+    escapeGuard: null,
     dispose() {
       dom.ownerDocument.removeEventListener('keydown', onKey);
       controls.dispose();
@@ -123,7 +129,7 @@ export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement
   };
 
   const onKey = (e: KeyboardEvent): void => {
-    if (e.key === 'Escape') void rig.overview();
+    if (e.key === 'Escape' && !rig.escapeGuard?.()) void rig.overview();
   };
   dom.ownerDocument.addEventListener('keydown', onKey);
   return rig;

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Architecture } from '../data/architecture';
 import {
   type ComponentId, type Stream,
-  attnId, embedId, expertId, gateId, ln1Id, ln2Id, lmHeadId, lnFId, parseId, routerId, shaftId,
+  attnId, embedId, expertId, gateId, ln1Id, ln2Id, lmHeadId, lnFId, parseId, routerId, shaftId, slabId,
 } from './ids';
 
 /** Look constants (spec 4.2b). Row runs along +X; slabs are YZ planes. */
@@ -111,6 +111,7 @@ export function buildTower(a: Architecture): TowerScene {
   slabGeo.rotateY(Math.PI / 2); // plane normal along X; local (x,y,z) -> (0, width, height)
   const slabs = new THREE.InstancedMesh(slabGeo, slabMat, n);
   slabs.name = 'slabs';
+  slabs.userData.ids = Array.from({ length: n }, (_, l) => slabId(l));
   const hw = SLAB_WIDTH / 2;
   const hh = SLAB_HEIGHT / 2;
   const edgePts: number[] = [];
@@ -119,6 +120,7 @@ export function buildTower(a: Architecture): TowerScene {
     tmp.updateMatrix();
     slabs.setMatrixAt(l, tmp.matrix);
     const x = slabX(l);
+    anchors.set(slabId(l), new THREE.Vector3(x, 0, 0));
     const c = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]] as const;
     for (let k = 0; k < 4; k++) {
       const p = c[k]!;
@@ -207,7 +209,7 @@ export function buildTower(a: Architecture): TowerScene {
     const out: Record<string, number> = {};
     for (const id of anchors.keys()) {
       const p = parseId(id);
-      if (!p || p.type === 'shaft') continue;
+      if (!p || p.type === 'shaft' || p.type === 'slab') continue;
       out[p.type] = (out[p.type] ?? 0) + 1;
     }
     return out;
