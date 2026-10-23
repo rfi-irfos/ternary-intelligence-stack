@@ -13,6 +13,7 @@ import { pickAction } from './ui/pickAction';
 import { APP_NAME } from './content/brand';
 import { LABEL_CSS } from './data/labeled';
 import { createAnimator } from './flow/animate';
+import { LAYER_CSS, createLayerMode } from './layer/views';
 import { PLAYER_CSS, createPlayerBar } from './ui/player';
 import { attachPicking, createHover, createRaycastPicker } from './ui/picking';
 
@@ -52,6 +53,7 @@ async function main(): Promise<void> {
     ${PANEL_CSS}
     ${LABEL_CSS}
     ${PLAYER_CSS}
+    ${LAYER_CSS}
     .overview-btn { position: fixed; top: 56px; left: 14px; font: 12px monospace; padding: 6px 10px; color: #fff;
       background: #14161b; border: 1px solid #333a46; border-radius: 4px; cursor: pointer; }`;
   document.head.appendChild(style);
@@ -85,6 +87,24 @@ async function main(): Promise<void> {
   ov.textContent = 'Overview (Esc)';
   ov.addEventListener('click', () => void rig.overview());
   document.body.appendChild(ov);
+  const layerMode = createLayerMode({ arch, view, loadWeights });
+  document.body.appendChild(layerMode.element);
+  const enter = document.createElement('div');
+  enter.className = 'overview-btn';
+  enter.style.top = '96px';
+  const enterIn = document.createElement('input');
+  enterIn.type = 'number';
+  enterIn.min = '0';
+  enterIn.max = String(arch.model.num_layers - 1);
+  enterIn.value = '12';
+  enterIn.style.width = '4em';
+  enterIn.setAttribute('aria-label', 'Layer to enter');
+  const enterBtn = document.createElement('button');
+  enterBtn.textContent = 'Enter layer';
+  // A user click opens the exploded slab (the same camera flight as picking a slab); nothing moves on its own.
+  enterBtn.addEventListener('click', () => void layerMode.enter(Math.max(0, Math.min(arch.model.num_layers - 1, Number(enterIn.value) || 0))));
+  enter.append(enterIn, ' ', enterBtn);
+  document.body.appendChild(enter);
 
   const rayAt = createRaycastPicker(camera, renderer.domElement, () => view.pickRoot(),
     (hit) => (view.depth() > 0 ? view.pick(hit) : tower.pick(hit)));
