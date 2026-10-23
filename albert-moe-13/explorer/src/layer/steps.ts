@@ -291,7 +291,7 @@ export function layerSteps(
     position, logits, top3, weights: wts, a3Clamped: clamped, outputScales: router?.output_scales ?? [],
   };
   const a3Involved = top3.some((e) => e < 4);
-  const routerLabel = router ? 'measured' : 'illustrative';
+  const routerLabel = router && !isFixture ? 'measured' : 'illustrative';
   steps.push({
     id: 'router',
     title: {

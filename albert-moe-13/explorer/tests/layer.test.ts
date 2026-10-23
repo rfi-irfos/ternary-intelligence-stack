@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import arch from '../public/data/architecture.json';
 import { validateArchitecture } from '../src/data/architecture';
+import { measured } from '../src/data/labeled';
 import { validateTrace, type Trace } from '../src/data/trace';
 import * as THREE from 'three';
 import { layerSteps, STEP_IDS } from '../src/layer/steps';
@@ -276,5 +277,31 @@ describe('router chart and highlight', () => {
     applyHighlight(root, []);
     expect([g, m]).toEqual([1, 1]);
     expect(mesh.children).toHaveLength(0);
+  });
+});
+
+describe('fixture and sign handling', () => {
+  it('measured() throws for a fixture provenance', () => {
+    expect(() => measured(1, { ...kjv.provenance, mode: 'fixture' })).toThrow();
+  });
+  it('fixture trace: router and top3 views, and every data label, are illustrative', () => {
+    const fx = validateTrace(windowed, a);
+    const steps = layerSteps(fx, 12, 'A', 3, a);
+    for (const id of ['router', 'top3']) {
+      const v = steps.find((s) => s.id === id)?.view;
+      if (v?.kind !== 'bars') throw new Error('view');
+      expect(v.label).toBe('illustrative');
+      expect(renderView(v).querySelector('.layer-kind--measured')).toBeNull();
+    }
+    expect(steps.every((s) => s.data.kind !== 'measured')).toBe(true);
+  });
+  it('a negative logit renders a --neg bar', () => {
+    const t = clone(kjv);
+    const ev = t.events.find((e) => e.type === 'router' && e.layer === 12 && e.stream === 'a');
+    if (!ev || ev.type !== 'router') throw new Error('no router');
+    (ev.logits[4] as number[])[11] = -2.5;
+    const v = layerSteps(t, 12, 'A', 4, a).find((s) => s.id === 'router')?.view;
+    if (v?.kind !== 'bars') throw new Error('view');
+    expect(renderView(v).querySelectorAll('.layer-bar--neg').length).toBeGreaterThan(0);
   });
 });

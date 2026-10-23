@@ -97,7 +97,7 @@ async function main(): Promise<void> {
   ov.textContent = 'Overview (Esc)';
   ov.addEventListener('click', () => void rig.overview());
   document.body.appendChild(ov);
-    const layerMode = createLayerMode({
+  const layerMode = createLayerMode({
     arch, view, rig, loadWeights,
     slabCenter: (l) => new THREE.Vector3(tower.slabX(l), 0, 0),
     selectedLayer: () => selectedLayer ?? rail.selected() ?? layerOfId(panel.current()),
