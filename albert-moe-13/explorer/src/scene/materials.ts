@@ -127,20 +127,33 @@ export function instancedEdges(
   thresholdDeg = 30,
 ): THREE.LineSegments {
   const eg = new THREE.EdgesGeometry(mesh.geometry, thresholdDeg);
+  const line = sharedInstanceLines(mesh, eg.getAttribute('position') as THREE.BufferAttribute, material);
+  // Opacity per quality: look.ts swaps the material of every `part-edge` (shared, cached per preset).
+  line.userData.look = 'part-edge' satisfies LookRole;
+  line.name = `${mesh.name}-edges`;
+  return line;
+}
+
+/**
+ * Line segments (`positions`, in the instance's local frame) drawn once per instance of `mesh` in
+ * one draw call. The lines share the mesh's instanceMatrix attribute, so every matrix write on the
+ * mesh (hiding, the row shift in tower.ts) moves them too. The material needs the USE_INSTANCING
+ * define (partEdgeMaterial has it). Added as a child of the mesh; not pickable.
+ */
+export function sharedInstanceLines(
+  mesh: THREE.InstancedMesh, positions: THREE.BufferAttribute, material: THREE.Material,
+): THREE.LineSegments {
   const ig = new THREE.InstancedBufferGeometry();
-  ig.setAttribute('position', eg.getAttribute('position'));
+  ig.setAttribute('position', positions);
   ig.instanceCount = mesh.count;
   if (!mesh.boundingSphere) mesh.computeBoundingSphere();
   // Same culling sphere as the parent, so the parent (which uploads the shared matrices) is drawn
-  // whenever the outline is.
+  // whenever the outline is. tower.ts refreshes it after every shift.
   ig.boundingSphere = mesh.boundingSphere!.clone();
   const line = new THREE.LineSegments(ig, material);
-  // Opacity per quality: look.ts swaps the material of every `part-edge` (shared, cached per preset).
-  line.userData.look = 'part-edge' satisfies LookRole;
   // WebGLBindingStates binds `object.instanceMatrix` for the instanceMatrix attribute.
   (line as unknown as { instanceMatrix: THREE.InstancedBufferAttribute }).instanceMatrix = mesh.instanceMatrix;
   line.raycast = (): void => {};
-  line.name = `${mesh.name}-edges`;
   line.renderOrder = RENDER_ORDER.edge;
   mesh.add(line);
   return line;

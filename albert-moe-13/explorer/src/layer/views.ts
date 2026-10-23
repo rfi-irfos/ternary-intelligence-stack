@@ -325,7 +325,7 @@ export const LAYER_CSS = `
 
 export interface LayerModeDeps {
   arch: Architecture;
-  view: Pick<ExplodeView, 'explode' | 'reassemble' | 'depth' | 'current' | 'root'>;
+  view: Pick<ExplodeView, 'explode' | 'reassemble' | 'depth' | 'current' | 'root'> & Partial<Pick<ExplodeView, 'box'>>;
   rig: Pick<CameraRig, 'pose' | 'flyToPose' | 'frame'>;
   /** World centre of a slab, for framing. */
   slabCenter(layer: number): THREE.Vector3;
@@ -518,7 +518,17 @@ export function createLayerMode(deps: LayerModeDeps): LayerMode {
         while (view.depth() > 0) await view.reassemble();
         openPath = [];
         await draw();
-        await rig.frame(deps.slabCenter(layer), FRAME_HALF_W, FRAME_HALF_H, ms());
+        // Frame the exploded slab plus the room its neighbours made (never smaller than before).
+        const c = deps.slabCenter(layer);
+        const b = view.box?.() ?? null;
+        let halfW = FRAME_HALF_W;
+        let halfH = FRAME_HALF_H;
+        if (b) {
+          c.x = (b.min.x + b.max.x) / 2;
+          halfW = Math.max(halfW, (b.max.x - b.min.x) / 2);
+          halfH = Math.max(halfH, (b.max.z - b.min.z) / 2);
+        }
+        await rig.frame(c, halfW, halfH, ms());
       });
     },
     exit() {

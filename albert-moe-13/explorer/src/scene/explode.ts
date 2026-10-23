@@ -6,7 +6,7 @@ import { type ComponentId, type Stream, parseId } from './ids';
 import { type ChildSpec, type PartKind, childrenOf, isExplodable, lanePath } from './hierarchy';
 import { buildTile, CELL, tileCaption } from './tile';
 import type { LabelKind } from '../data/labeled';
-import { type TowerScene } from './tower';
+import { type RowExtent, type SlotKey, type TowerScene } from './tower';
 import { PALETTE, streamColor } from './palette';
 
 export interface TileInfo {
@@ -33,6 +33,8 @@ export interface ExplodeDeps {
   label?: (text: string, kind?: LabelKind) => THREE.Object3D;
   /** Animation length in ms (0 = instant). */
   ms?: number;
+  /** True when the user prefers reduced motion: parts and the row shift then move instantly. Defaults to the media query. */
+  reducedMotion?: () => boolean;
   doc?: Document;
   /** Fires after a level opens or closes; `current` is the id of the open level or null. */
   onChange?: (current: ComponentId | null) => void;
@@ -51,6 +53,11 @@ export interface ExplodeView {
   pick(hit: THREE.Intersection): ComponentId | null;
   tile(): TileInfo | null;
   /**
+   * World AABB of everything open (every level, labels included, plus the exploded slot), grown by
+   * NUDGE_MARGIN; the neighbours of the row are pushed out of it. Null when nothing is open.
+   */
+  box(): THREE.Box3 | null;
+  /**
    * Runs `swap` (a quality change that replaces row materials) with the row undimmed, then dims the
    * new materials again if a level is open, so the intact row stays faded behind the exploded parts
    * and reassembling restores the new materials (not the old ones) to full opacity.
@@ -63,10 +70,25 @@ export interface ExplodeView {
 interface Level {
   id: ComponentId;
   group: THREE.Group;
+  /** The pivot: where the opened component sits (its parts spread around it). */
   center: THREE.Vector3;
   parts: Map<ComponentId, THREE.Object3D>;
   tile: TileInfo | null;
+  /** Layout position of every part, before any nudge. */
+  base: Map<ComponentId, THREE.Vector3>;
+  /** x nudge of every part while one of its siblings is open as the next level. */
+  nudge: Map<ComponentId, number>;
+  /** The part of this level that is open as the next level (hidden here), or null. */
+  open: ComponentId | null;
+  /** Row slot the whole chain of levels sits in. */
+  slot: SlotKey;
 }
+
+/** Gap kept between an exploded group and everything nudged aside (world units). */
+export const NUDGE_MARGIN = 0.6;
+/** Half thickness given to a label's box along Y (sprites are flat). */
+const LABEL_HALF_DEPTH = 0.05;
+const EPS = 1e-3;
 
 interface Tween {
   obj: THREE.Object3D;
@@ -135,18 +157,49 @@ function partColor(c: ChildSpec): number {
 
 const isInstanced = (o: THREE.Object3D): o is THREE.InstancedMesh => (o as THREE.InstancedMesh).isInstancedMesh === true;
 
+/**
+ * Box of `o` in its own frame (no rotation or scale at rest): its mesh, its mesh children (a tile's
+ * glass) and its labels, which count as flat boxes of the sprite's width and height. Cached.
+ */
+function localBox(o: THREE.Object3D): THREE.Box3 {
+  const cached = o.userData.localBox as THREE.Box3 | undefined;
+  if (cached) return cached;
+  const box = new THREE.Box3();
+  const addMesh = (c: THREE.Object3D, off: THREE.Vector3): void => {
+    const m = c as THREE.Mesh;
+    if (!m.isMesh || isInstanced(c) || !m.geometry) return;
+    if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+    box.union(m.geometry.boundingBox!.clone().translate(off));
+  };
+  addMesh(o, new THREE.Vector3());
+  for (const c of o.children) {
+    if (c.userData.label) {
+      const h = new THREE.Vector3(c.scale.x / 2, LABEL_HALF_DEPTH, c.scale.y / 2);
+      box.union(new THREE.Box3(c.position.clone().sub(h), c.position.clone().add(h)));
+    } else addMesh(c, c.position);
+  }
+  o.userData.localBox = box;
+  return box;
+}
+
+const partBox = (o: THREE.Object3D, at: THREE.Vector3): THREE.Box3 => localBox(o).clone().translate(at);
+
 export function createExplode(deps: ExplodeDeps): ExplodeView {
   const { tower, arch, rig, loadWeights } = deps;
   const label = deps.label ?? defaultLabel;
   const ms = deps.ms ?? 700;
+  const reduced = deps.reducedMotion
+    ?? ((): boolean => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  /** Length of every explode, reassemble and shift tween in ms (0 under reduced motion). */
+  const dur = (): number => (reduced() ? 0 : ms);
   const doc = deps.doc ?? (typeof document !== 'undefined' ? document : undefined);
   const root = new THREE.Group();
   root.name = 'explode';
   const stack: Level[] = [];
   const tweens: Tween[] = [];
   const geoCache = new Map<PartKind, THREE.BufferGeometry>();
-  let hidden: { mesh: THREE.InstancedMesh; index: number; matrix: THREE.Matrix4 }[] = [];
   let dimmed: { mat: THREE.Material; opacity: number; transparent: boolean; depthWrite: boolean }[] = [];
+  const slots = tower.slots();
 
   const geo = (k: PartKind): THREE.BufferGeometry => {
     let g = geoCache.get(k);
@@ -154,30 +207,7 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
     return g;
   };
 
-  // --- hiding the intact row while a level is open ---
-  const hideOriginals = (target: ComponentId): void => {
-    const zero = new THREE.Matrix4().makeScale(0, 0, 0);
-    tower.root.traverse((o) => {
-      if (!isInstanced(o) || o.name === 'slabs') return;
-      const ids = o.userData.ids as ComponentId[] | undefined;
-      if (!ids) return;
-      ids.forEach((id, i) => {
-        if (id.endsWith('.gate') || !(id === target || id.startsWith(`${target}.`))) return;
-        const m = new THREE.Matrix4();
-        o.getMatrixAt(i, m);
-        hidden.push({ mesh: o, index: i, matrix: m });
-        o.setMatrixAt(i, zero);
-        o.instanceMatrix.needsUpdate = true;
-      });
-    });
-  };
-  const restoreOriginals = (): void => {
-    for (const h of hidden) {
-      h.mesh.setMatrixAt(h.index, h.matrix);
-      h.mesh.instanceMatrix.needsUpdate = true;
-    }
-    hidden = [];
-  };
+  // --- dimming the intact row while a level is open ---
   let isDimmed = false;
   const dim = (): void => {
     if (isDimmed) return;
@@ -208,17 +238,51 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
     isDimmed = false;
   };
 
-  // --- tweens ---
+  // --- tweens (only while something moves; update() is a no-op when idle) ---
   const animate = (obj: THREE.Object3D, to: THREE.Vector3, scaleFrom: number, scaleTo: number): Promise<void> =>
     new Promise<void>((resolve) => {
-      if (ms === 0) {
+      // A newer move of the same object replaces the running one.
+      const k = tweens.findIndex((tw) => tw.obj === obj);
+      if (k >= 0) tweens.splice(k, 1)[0]!.done();
+      obj.userData.goal = to.clone();
+      const d = dur();
+      if (d === 0) {
         obj.position.copy(to);
         obj.scale.setScalar(scaleTo);
         resolve();
         return;
       }
       obj.scale.setScalar(scaleFrom);
-      tweens.push({ obj, from: obj.position.clone(), to: to.clone(), scaleFrom, scaleTo, t: 0, dur: ms / 1000, done: resolve });
+      tweens.push({ obj, from: obj.position.clone(), to: to.clone(), scaleFrom, scaleTo, t: 0, dur: d / 1000, done: resolve });
+    });
+
+  // The row shift: one tween of every slot offset at a time, same easing and length as the parts.
+  let shiftTw: { from: Float64Array; to: Float64Array; t: number; dur: number; done: () => void } | null = null;
+  const readShift = (): Float64Array => Float64Array.from(slots.map((k) => tower.shiftOf(k)));
+  const writeShift = (v: ArrayLike<number>): void => {
+    slots.forEach((k, i) => {
+      const x = v[i] ?? 0;
+      if (typeof k === 'number') tower.layerShift[k] = x;
+      else tower.endShift[k] = x;
+    });
+    tower.applyShift();
+  };
+  const tweenShift = (to: Float64Array, gap: RowExtent | null): Promise<void> =>
+    new Promise<void>((resolve) => {
+      if (shiftTw) {
+        const old = shiftTw;
+        shiftTw = null;
+        old.done();
+      }
+      tower.setLaneGap(gap);
+      const from = readShift();
+      const d = dur();
+      if (d === 0 || from.every((x, i) => x === to[i])) {
+        writeShift(to);
+        resolve();
+        return;
+      }
+      shiftTw = { from, to, t: 0, dur: d / 1000, done: resolve };
     });
 
   const disposeTree = (o: THREE.Object3D): void => {
@@ -241,10 +305,141 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
   const top = (): Level | undefined => stack[stack.length - 1];
 
   const flyTo = (level: Level, extent: number): void => {
-    void rig.flyTo(level.center, extent * 3 + 4);
+    void rig.flyTo(level.center, extent * 3 + 4, reduced() ? 0 : undefined);
   };
 
-  async function buildMatrixLevel(id: ComponentId, center: THREE.Vector3, start: THREE.Vector3): Promise<Level> {
+  // --- layout: nested nudges, then the row shift ---
+  const targetOf = (l: Level, id: ComponentId): THREE.Vector3 =>
+    l.base.get(id)!.clone().add(new THREE.Vector3(l.nudge.get(id) ?? 0, 0, 0));
+
+  /** Box of a level's visible parts at their (nudged) targets, labels included. */
+  const levelBox = (l: Level): THREE.Box3 => {
+    const b = new THREE.Box3();
+    for (const [id, o] of l.parts) if (id !== l.open) b.union(partBox(o, targetOf(l, id)));
+    return b;
+  };
+
+  /**
+   * Nudges the siblings of `l.open` along x out of `avoid` (the open child's chain, margin
+   * included): parts left of the pivot all move left by one amount, parts right of it (or at the
+   * same x) right by another, so the level's own layout is kept.
+   */
+  const nudgeLevel = (l: Level, avoid: THREE.Box3): void => {
+    const pivot = l.base.get(l.open!)!.x;
+    let left = 0;
+    let right = 0;
+    const side = new Map<ComponentId, number>();
+    for (const [id, o] of l.parts) {
+      if (id === l.open) continue;
+      const at = l.base.get(id)!;
+      const b = partBox(o, at);
+      const s = at.x < pivot - 1e-6 ? -1 : 1;
+      side.set(id, s);
+      if (s < 0) left = Math.max(left, b.max.x - avoid.min.x + EPS);
+      else right = Math.max(right, avoid.max.x - b.min.x + EPS);
+    }
+    for (const [id, s] of side) l.nudge.set(id, s < 0 ? -left : right);
+  };
+
+  /** Union of every open level plus the exploded slot, grown by the margin. */
+  const openBox = (): THREE.Box3 | null => {
+    const first = stack[0];
+    if (!first) return null;
+    const b = tower.slotBaseBox(first.slot);
+    for (const l of stack) b.union(levelBox(l));
+    return b.expandByScalar(NUDGE_MARGIN);
+  };
+
+  /** Slot offsets that push every other slot of the row out of the open box (left ones left, right ones right). */
+  const rowLayout = (): { to: Float64Array; gap: RowExtent | null } => {
+    const to = new Float64Array(slots.length);
+    const b = openBox();
+    const first = stack[0];
+    if (!b || !first) return { to, gap: null };
+    const c = slots.indexOf(first.slot);
+    let left = 0;
+    let right = 0;
+    slots.forEach((k, i) => {
+      const sb = tower.slotBaseBox(k);
+      if (i < c) left = Math.max(left, sb.max.x - b.min.x + EPS);
+      else if (i > c) right = Math.max(right, b.max.x - sb.min.x + EPS);
+    });
+    slots.forEach((_, i) => { to[i] = i < c ? -left : i > c ? right : 0; });
+    return { to, gap: { minX: b.min.x, maxX: b.max.x } };
+  };
+
+  /**
+   * Recomputes the whole chain from the top level down: each level's siblings make room for the
+   * levels above it, then the row makes room for all of them. Moves only what has a new goal.
+   */
+  const relayout = (): Promise<void>[] => {
+    const out: Promise<void>[] = [];
+    let above: THREE.Box3 | null = null;
+    for (let k = stack.length - 1; k >= 0; k--) {
+      const l = stack[k]!;
+      if (above && l.open) nudgeLevel(l, above.clone().expandByScalar(NUDGE_MARGIN));
+      else l.nudge.clear();
+      for (const [id, o] of l.parts) {
+        if (id === l.open) continue;
+        const to = targetOf(l, id);
+        const goal = (o.userData.goal as THREE.Vector3 | undefined) ?? o.position;
+        if (goal.distanceToSquared(to) > 1e-12) out.push(animate(o, to, 1, 1));
+      }
+      const b = levelBox(l);
+      above = above ? b.union(above) : b;
+    }
+    const { to, gap } = rowLayout();
+    out.push(tweenShift(to, gap));
+    return out;
+  };
+
+  // --- lanes inside an exploded slab ---
+  const STREAMS: Stream[] = ['A', 'B'];
+  /**
+   * Lane lines of a slab level through its (nudged) parts. A lane that runs into the open child
+   * stops at the child's box (margin included) and starts again on its far side, so it never runs
+   * through the exploded parts.
+   */
+  const layoutLanes = (l: Level, child: THREE.Box3 | null): void => {
+    const lanes = l.group.userData.lanes as THREE.Group | undefined;
+    const p = parseId(l.id);
+    if (!lanes || p?.type !== 'slab') return;
+    for (const s of STREAMS) {
+      const line = lanes.getObjectByName(`lane.${s}`) as THREE.LineSegments;
+      const ids = lanePath(p.layer, s);
+      const pts: THREE.Vector3[] = [];
+      for (let i = 0; i + 1 < ids.length; i++) {
+        const a = ids[i]!;
+        const b = ids[i + 1]!;
+        const pa = targetOf(l, a);
+        const pb = targetOf(l, b);
+        if (child && a === l.open) pa.x = pa.x <= pb.x ? child.max.x : child.min.x;
+        if (child && b === l.open) pb.x = pa.x <= pb.x ? child.min.x : child.max.x;
+        pts.push(pa, pb);
+      }
+      line.geometry.dispose();
+      line.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+    }
+  };
+  const setLanesVisible = (on: boolean): void => {
+    for (const l of stack) {
+      const lanes = l.group.userData.lanes as THREE.Object3D | undefined;
+      if (lanes) lanes.visible = on;
+    }
+  };
+  /** Lays the lanes of every level out at the settled positions and shows them. */
+  const showLanes = (): void => {
+    let above: THREE.Box3 | null = null;
+    for (let k = stack.length - 1; k >= 0; k--) {
+      const l = stack[k]!;
+      layoutLanes(l, l.open && above ? above.clone().expandByScalar(NUDGE_MARGIN) : null);
+      const b = levelBox(l);
+      above = above ? b.union(above) : b;
+    }
+    setLanesVisible(true);
+  };
+
+  async function buildMatrixLevel(id: ComponentId, center: THREE.Vector3, start: THREE.Vector3, slot: SlotKey): Promise<Level> {
     const p = parseId(id);
     const key = p ? weightKey(p) : null;
     if (p?.type !== 'matrix' || !key?.matrix) throw new Error(`no weight tile for ${id}`);
@@ -259,6 +454,7 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
     const grid = tile.userData.grid as { rows: number; cols: number; colors: number[] };
     tileCaption(m).forEach((t, i) => {
       const l = label(t, 'structure');
+      l.userData.label = true;
       l.position.set(0, -0.05, -(grid.rows * CELL) / 2 - 0.35 - i * 0.45);
       tile.add(l);
     });
@@ -266,14 +462,18 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
       id, name: m.name, rows: grid.rows, cols: grid.cols, ternary: m.ternary, colors: grid.colors,
       gamma: m.gamma, tau: m.tau, fracNeg: m.frac_neg, fracZero: m.frac_zero, fracPos: m.frac_pos,
     };
-    return { id, group, center, parts: new Map([[id, tile]]), tile: info };
+    return {
+      id, group, center, parts: new Map([[id, tile]]), tile: info,
+      base: new Map([[id, center.clone()]]), nudge: new Map(), open: null, slot,
+    };
   }
 
-  function buildPartsLevel(id: ComponentId, center: THREE.Vector3, start: () => THREE.Vector3): { level: Level; targets: [THREE.Object3D, THREE.Vector3][]; extent: number } {
+  function buildPartsLevel(id: ComponentId, center: THREE.Vector3, start: () => THREE.Vector3, slot: SlotKey): { level: Level; targets: [THREE.Object3D, THREE.Vector3][]; extent: number } {
     const kids = childrenOf(id, arch);
     const group = new THREE.Group();
     group.name = `level:${id}`;
     const parts = new Map<ComponentId, THREE.Object3D>();
+    const base = new Map<ComponentId, THREE.Vector3>();
     const targets: [THREE.Object3D, THREE.Vector3][] = [];
     let extent = 1;
     for (const c of kids) {
@@ -294,30 +494,31 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
       mesh.add(outline);
       mesh.position.copy(start());
       const text = label(c.label, 'structure');
+      text.userData.label = true;
       text.position.set(0, -0.2, -(c.kind === 'bank' ? 1.6 : 0.95));
       mesh.add(text);
       group.add(mesh);
       parts.set(c.id, mesh);
-      targets.push([mesh, center.clone().add(new THREE.Vector3(...c.pos))]);
+      const at = center.clone().add(new THREE.Vector3(...c.pos));
+      base.set(c.id, at);
+      targets.push([mesh, at.clone()]);
       extent = Math.max(extent, Math.abs(c.pos[0]) + 1, Math.abs(c.pos[2]) + 1);
     }
-    return { level: { id, group, center, parts, tile: null }, targets, extent };
+    return { level: { id, group, center, parts, tile: null, base, nudge: new Map(), open: null, slot }, targets, extent };
   }
 
-  function addLanes(level: Level, finals: Map<ComponentId, THREE.Vector3>): void {
+  function addLanes(level: Level): void {
     const p = parseId(level.id);
     if (p?.type !== 'slab') return;
     const lanes = new THREE.Group();
     lanes.name = 'lanes';
     lanes.visible = false;
-    for (const s of ['A', 'B'] as Stream[]) {
-      const pts = lanePath(p.layer, s).map((pid) => {
-        const at = finals.get(pid);
-        if (!at) throw new Error(`lane ${s} references ${pid}, not part of the slab`);
-        return at.clone();
-      });
-      const line = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(pts),
+    for (const s of STREAMS) {
+      for (const pid of lanePath(p.layer, s)) {
+        if (!level.base.has(pid)) throw new Error(`lane ${s} references ${pid}, not part of the slab`);
+      }
+      const line = new THREE.LineSegments(
+        new THREE.BufferGeometry(),
         new THREE.LineBasicMaterial({ color: streamColor(s), linewidth: 2 }),
       );
       line.name = `lane.${s}`;
@@ -325,6 +526,7 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
     }
     level.group.add(lanes);
     level.group.userData.lanes = lanes;
+    layoutLanes(level, null);
   }
 
   const view: ExplodeView = {
@@ -339,11 +541,13 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
         while (stack.length) await view.reassemble();
         cur = undefined;
       }
-      const center = cur ? cur.center.clone() : new THREE.Vector3(tower.slabX(p.layer), 0, 0);
+      // A nested level opens around its part where the parent laid it out; the first one around the slab.
+      const center = cur ? targetOf(cur, id) : new THREE.Vector3(tower.slabX(p.layer), 0, 0);
       const startAt = cur
         ? (cur.parts.get(id)?.position.clone() ?? center.clone())
         : (tower.has(id) ? tower.anchor(id) : center.clone());
       const startOf = (): THREE.Vector3 => startAt.clone();
+      const slot: SlotKey = cur ? cur.slot : p.layer;
 
       let level: Level;
       let extent: number;
@@ -351,7 +555,7 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
       if (p.type === 'matrix') {
         loading = true;
         try {
-          level = await buildMatrixLevel(id, center, startOf());
+          level = await buildMatrixLevel(id, center, startOf(), slot);
         } finally {
           loading = false;
         }
@@ -359,47 +563,61 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
         extent = Math.max(info.rows, info.cols) * CELL / 2 + 1;
         targets = [[level.parts.get(id)!, center.clone()]];
       } else {
-        ({ level, targets, extent } = buildPartsLevel(id, center, startOf));
+        ({ level, targets, extent } = buildPartsLevel(id, center, startOf, slot));
       }
 
-      if (cur) cur.group.visible = false;
-      else {
+      setLanesVisible(false);
+      if (cur) {
+        // The parent stays as context: the opened part gives way to its own parts, its siblings make room.
+        cur.open = id;
+        const part = cur.parts.get(id);
+        if (part) part.visible = false;
+      } else {
         dim();
-        hideOriginals(id);
+        tower.hide(id);
       }
       stack.push(level);
       root.add(level.group);
-      addLanes(level, new Map(targets.map(([o, to]) => [o.name, to])));
+      addLanes(level);
       flyTo(level, extent);
       deps.onChange?.(id);
-      await Promise.all(targets.map(([o, to]) => animate(o, to, 0.2, 1)));
-      const lanes = level.group.userData.lanes as THREE.Object3D | undefined;
-      if (lanes) lanes.visible = true;
+      const moves = targets.map(([o, to]) => animate(o, to, 0.2, 1));
+      await Promise.all([...moves, ...relayout()]);
+      if (top() === level) showLanes();
     },
 
     async reassemble() {
       const level = stack.pop();
       if (!level) return;
       closing++;
+      setLanesVisible(false);
       const lanes = level.group.userData.lanes as THREE.Object3D | undefined;
       if (lanes) lanes.visible = false;
       const prev = top();
       deps.onChange?.(prev?.id ?? null);
       if (prev) {
-        prev.group.visible = true;
+        prev.open = null;
         flyTo(prev, 8);
       }
-      const back = prev?.parts.get(level.id)?.position.clone()
-        ?? (tower.has(level.id) ? tower.anchor(level.id) : level.center.clone());
+      const back = prev ? targetOf(prev, level.id)
+        : (tower.has(level.id) ? tower.anchor(level.id) : level.center.clone());
       try {
-        await Promise.all([...level.parts.values()].map((o) => animate(o, back, 1, 0.2)));
+        await Promise.all([
+          ...[...level.parts.values()].map((o) => animate(o, back, 1, 0.2)),
+          ...relayout(),
+        ]);
       } finally {
         closing--;
       }
       root.remove(level.group);
       disposeTree(level.group);
+      if (prev) {
+        const part = prev.parts.get(level.id);
+        if (part) part.visible = true;
+        if (top() === prev) showLanes();
+      }
       if (stack.length === 0) {
-        restoreOriginals();
+        tower.unhide();
         undim();
       }
     },
@@ -412,18 +630,30 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
       return ids?.[hit.instanceId ?? 0] ?? null;
     },
     tile: () => top()?.tile ?? null,
+    box: () => openBox(),
 
     update(dt) {
       for (let i = tweens.length - 1; i >= 0; i--) {
         const tw = tweens[i]!;
         tw.t = Math.min(tw.t + dt, tw.dur);
-        const s = tw.t / tw.dur;
-        const k = s < 0.5 ? 4 * s * s * s : 1 - Math.pow(-2 * s + 2, 3) / 2;
+        const k = ease(tw.t / tw.dur);
         tw.obj.position.lerpVectors(tw.from, tw.to, k);
         tw.obj.scale.setScalar(tw.scaleFrom + (tw.scaleTo - tw.scaleFrom) * k);
         if (tw.t >= tw.dur) {
           tweens.splice(i, 1);
           tw.done();
+        }
+      }
+      const st = shiftTw;
+      if (st) {
+        st.t = Math.min(st.t + dt, st.dur);
+        if (st.t >= st.dur) {
+          shiftTw = null;
+          writeShift(st.to); // exact end values: reassembling restores the base matrices bit for bit
+          st.done();
+        } else {
+          const k = ease(st.t / st.dur);
+          writeShift(Array.from(st.from, (x, i) => x + ((st.to[i] ?? 0) - x) * k));
         }
       }
     },
@@ -446,7 +676,14 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
         root.remove(l.group);
         disposeTree(l.group);
       }
-      restoreOriginals();
+      if (shiftTw) {
+        const st = shiftTw;
+        shiftTw = null;
+        st.done();
+      }
+      tower.setLaneGap(null);
+      writeShift(new Float64Array(slots.length));
+      tower.unhide();
       undim();
       for (const g of geoCache.values()) g.dispose();
     },
@@ -466,4 +703,9 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
   };
   doc?.addEventListener('keydown', onKey);
   return view;
+}
+
+/** Cubic ease in and out (the camera uses the same curve). */
+function ease(s: number): number {
+  return s < 0.5 ? 4 * s * s * s : 1 - Math.pow(-2 * s + 2, 3) / 2;
 }

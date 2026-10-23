@@ -1,8 +1,7 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Modules } from './modules';
 import { PALETTE, streamColor } from './palette';
-import { RENDER_ORDER, instancedEdges, lookMaterial, markBloom, type LookRole } from './materials';
+import { RENDER_ORDER, instancedEdges, lookMaterial, markBloom, sharedInstanceLines, type LookRole } from './materials';
 import type { Architecture } from '../data/architecture';
 import {
   type ComponentId, type Stream,
@@ -38,23 +37,69 @@ export interface RowExtent {
   maxX: number;
 }
 
+/** One place in the row: a layer slab (0..n-1) or one of the row ends. */
+export type SlotKey = number | 'embed' | 'ln_f' | 'lm_head';
+
 export interface TowerScene {
   root: THREE.Group;
   /** Number of layer slabs. */
   readonly layerCount: number;
-  /** X span of the row, embed centre through lm_head centre. */
+  /** X span of the row, embed centre through lm_head centre (base layout, without shifts). */
   readonly rowExtent: RowExtent;
-  /** x-centre of slab `layer`. */
+  /** x-centre of slab `layer` in the base layout (add `layerShift[layer]` for where it is drawn now). */
   slabX(layer: number): number;
+  /** Where `id` is drawn now: the base anchor plus the x shift of its slot. */
   anchor(id: ComponentId): THREE.Vector3;
   has(id: ComponentId): boolean;
   pick(intersection: THREE.Intersection): ComponentId | null;
   counts(): Record<string, number>;
+  /**
+   * Per-layer x offset (world units) of everything that belongs to the layer: glass, frame, parts,
+   * gate arc. Write it (explode.ts does), then call applyShift().
+   */
+  readonly layerShift: Float64Array;
+  /** x offsets of the row ends. */
+  readonly endShift: Record<'embed' | 'ln_f' | 'lm_head', number>;
+  /** Slots in row order (embed, layers 0..n-1, ln_f, lm_head). */
+  slots(): SlotKey[];
+  /** Slot that holds `id` (null for the lanes, which span the row). */
+  slotOf(id: ComponentId): SlotKey | null;
+  shiftOf(slot: SlotKey): number;
+  /** World AABB of everything drawn in a slot in the base layout (hidden instances included). */
+  slotBaseBox(slot: SlotKey): THREE.Box3;
+  /** World AABB of a slot where it is drawn now (base box moved by the slot's shift). */
+  slotBox(slot: SlotKey): THREE.Box3;
+  /** The lanes are cut between these x values (an exploded group sits there); null = continuous. */
+  setLaneGap(gap: RowExtent | null): void;
+  /**
+   * Rewrites the instance matrices of every row element from the base layout plus the shifts
+   * (hidden instances stay at scale 0), the lane segments, and the culling spheres. No new objects.
+   */
+  applyShift(): void;
+  /** Hides (scale 0) the instances of `target` and everything below it; slab glass and gate arcs stay. */
+  hide(target: ComponentId): void;
+  unhide(): void;
+  /** Called after every applyShift(); returns the unsubscribe function. */
+  onShift(fn: () => void): () => void;
 }
 
 interface Item {
   id: ComponentId;
   pos: THREE.Vector3;
+}
+
+/** An instanced mesh whose instances move with their slot. */
+interface Shiftable {
+  mesh: THREE.InstancedMesh;
+  /** Instance matrices of the base layout. */
+  base: Float32Array;
+  /** Internal slot index per instance (see slotIndex). */
+  slot: Int16Array;
+  hidden: Set<number>;
+  /** Objects that share `mesh.instanceMatrix` and need their culling sphere refreshed. */
+  followers: THREE.Object3D[];
+  /** May be hidden by hide() (slab glass may not). */
+  hideable: boolean;
 }
 
 const STREAMS: Stream[] = ['A', 'B'];
@@ -98,16 +143,8 @@ function glassPart(
 /** Stream colour of a per-stream part (attention, norms). */
 const itemStream = (it: Item): number => streamColor(it.id.includes('.B.') ? 'B' : 'A');
 
-/**
- * The module frame copied to every slab and merged into one geometry. Each copy is disposed after
- * the merge; null when the merge fails (the caller keeps the procedural lines).
- */
-function mergedFrames(frame: THREE.BufferGeometry, n: number, slabX: (l: number) => number): THREE.BufferGeometry | null {
-  const copies = Array.from({ length: n }, (_, l) => frame.clone().translate(slabX(l), 0, 0));
-  const merged = mergeGeometries(copies, false);
-  for (const c of copies) c.dispose();
-  return merged;
-}
+const LANE_RADIUS = 0.035;
+const ZERO_MATRIX = new THREE.Matrix4().makeScale(0, 0, 0);
 
 /** `modules` (Blender glbs) replace the procedural geometry; layout and ids are identical. */
 export function buildTower(a: Architecture, modules?: Modules | null): TowerScene {
@@ -118,10 +155,48 @@ export function buildTower(a: Architecture, modules?: Modules | null): TowerScen
   const root = new THREE.Group();
   root.name = 'tower';
 
+  // Internal slot index: 0 = embed, 1..n = layers, n+1 = ln_f, n+2 = lm_head (row order).
+  const slotCount = n + 3;
+  const slotIndex = (k: SlotKey): number => {
+    if (k === 'embed') return 0;
+    if (k === 'ln_f') return n + 1;
+    if (k === 'lm_head') return n + 2;
+    if (!Number.isInteger(k) || k < 0 || k >= n) throw new Error(`no slot for layer ${k}`);
+    return k + 1;
+  };
+  const slotKey = (i: number): SlotKey => (i === 0 ? 'embed' : i === n + 1 ? 'ln_f' : i === n + 2 ? 'lm_head' : i - 1);
+  const slotOf = (id: ComponentId): SlotKey | null => {
+    const p = parseId(id);
+    if (!p || p.type === 'shaft') return null;
+    return 'layer' in p ? p.layer : p.type;
+  };
+  const layerShift = new Float64Array(n);
+  const endShift = { embed: 0, ln_f: 0, lm_head: 0 };
+  const shiftAt = (i: number): number => {
+    const k = slotKey(i);
+    return typeof k === 'number' ? layerShift[k] ?? 0 : endShift[k];
+  };
+
   const add = (id: ComponentId, pos: THREE.Vector3): Item => {
     anchors.set(id, pos.clone());
     return { id, pos };
   };
+
+  const shiftables: Shiftable[] = [];
+  const register = (mesh: THREE.InstancedMesh, slots: number[], hideable = true): Shiftable => {
+    const sh: Shiftable = {
+      mesh, base: Float32Array.from(mesh.instanceMatrix.array), slot: Int16Array.from(slots),
+      hidden: new Set(), followers: mesh.children.filter((c) => (c as unknown as { instanceMatrix?: unknown }).instanceMatrix === mesh.instanceMatrix),
+      hideable,
+    };
+    shiftables.push(sh);
+    return sh;
+  };
+  const slotsOfIds = (ids: ComponentId[]): number[] => ids.map((id) => {
+    const k = slotOf(id);
+    if (k === null) throw new Error(`no slot for ${id}`);
+    return slotIndex(k);
+  });
 
   // Slabs: glass planes (material per quality, look.ts) + thin white outlines.
   let slabGeo: THREE.BufferGeometry;
@@ -135,46 +210,50 @@ export function buildTower(a: Architecture, modules?: Modules | null): TowerScen
   slabs.name = 'slabs';
   slabs.userData.ids = Array.from({ length: n }, (_, l) => slabId(l));
   slabs.userData.look = 'slab-glass' satisfies LookRole;
-  const hw = SLAB_WIDTH / 2;
-  const hh = SLAB_HEIGHT / 2;
-  const edgePts: number[] = [];
   for (let l = 0; l < n; l++) {
     tmp.position.set(slabX(l), 0, 0);
     tmp.updateMatrix();
     slabs.setMatrixAt(l, tmp.matrix);
-    const x = slabX(l);
-    anchors.set(slabId(l), new THREE.Vector3(x, 0, 0));
-    const c = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]] as const;
-    for (let k = 0; k < 4; k++) {
-      const p = c[k]!;
-      const q = c[(k + 1) % 4]!;
-      edgePts.push(x, p[0], p[1], x, q[0], q[1]);
-    }
+    anchors.set(slabId(l), new THREE.Vector3(slabX(l), 0, 0));
   }
   slabs.renderOrder = RENDER_ORDER.slab;
   slabs.computeBoundingSphere();
-  // One-pixel lines: they stay visible at overview distance, where the 0.02 module bars are sub-pixel.
-  const edgeGeo = new THREE.BufferGeometry();
-  edgeGeo.setAttribute('position', new THREE.Float32BufferAttribute(edgePts, 3));
-  const lines = new THREE.LineSegments(
-    edgeGeo,
-    new THREE.LineBasicMaterial({ color: PALETTE.edge, transparent: true, opacity: 0.55, depthWrite: false }),
-  );
-  lines.renderOrder = RENDER_ORDER.edge;
+  // One-pixel slab outlines, instanced on the slab matrices (they move with the slab). They stay
+  // visible at overview distance, where the 0.02 module bars are sub-pixel.
+  const hw = SLAB_WIDTH / 2;
+  const hh = SLAB_HEIGHT / 2;
+  const rect: number[] = [];
+  const c4 = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]] as const;
+  for (let k = 0; k < 4; k++) {
+    const p = c4[k]!;
+    const q = c4[(k + 1) % 4]!;
+    rect.push(0, p[0], p[1], 0, q[0], q[1]);
+  }
+  const lineMat = new THREE.LineBasicMaterial({ color: PALETTE.edge, transparent: true, opacity: 0.55, depthWrite: false });
+  lineMat.defines = { USE_INSTANCING: '' };
+  const lines = sharedInstanceLines(slabs, new THREE.Float32BufferAttribute(rect, 3), lineMat);
+  slabs.remove(lines);
+  const slabFollowers: THREE.Object3D[] = [lines];
   let edges: THREE.Object3D = lines;
-  const merged = mg?.frame ? mergedFrames(mg.frame, n, slabX) : null;
-  if (merged) {
-    // Module bars (one merged mesh) give the outline thickness up close; the lines ride along.
-    edges = new THREE.Mesh(
-      merged,
+  if (mg?.frame) {
+    // Module bars give the outline thickness up close: one instanced mesh on the slab matrices.
+    const frame = new THREE.InstancedMesh(
+      mg.frame,
       new THREE.MeshBasicMaterial({ color: PALETTE.edge, transparent: true, opacity: 0.55, depthWrite: false }),
+      n,
     );
-    edges.renderOrder = RENDER_ORDER.edge;
+    frame.instanceMatrix = slabs.instanceMatrix;
+    frame.computeBoundingSphere();
+    frame.renderOrder = RENDER_ORDER.edge;
     lines.name = 'slab-edge-lines';
-    edges.add(lines);
+    frame.add(lines);
+    edges = frame;
+    slabFollowers.push(frame);
   }
   edges.name = 'slab-edges';
   root.add(slabs, edges);
+  const slabSh = register(slabs, slotsOfIds(slabs.userData.ids as ComponentId[]), false);
+  slabSh.followers.push(...slabFollowers);
 
   // Per-layer components.
   const experts: Item[] = [];
@@ -203,13 +282,17 @@ export function buildTower(a: Architecture, modules?: Modules | null): TowerScen
   // One glass material shared by every part mesh; the per-instance colour carries the role.
   const partMat = lookMaterial('part-glass', 'low');
   const edgeMat = lookMaterial('part-edge', 'low');
-  root.add(
+  const parts = [
     glassPart('experts', mg?.expert ?? new THREE.BoxGeometry(EXPERT_SIZE, EXPERT_SIZE, EXPERT_SIZE), experts, () => PALETTE.expert, partMat, edgeMat),
     glassPart('attn', mg?.attn ?? new THREE.BoxGeometry(0.4, 0.5, 0.5), perType.attn, itemStream, partMat, edgeMat),
     glassPart('router', mg?.router ?? new THREE.OctahedronGeometry(0.2), perType.router, () => PALETTE.router, partMat, edgeMat),
     glassPart('ln1', mg?.ln1 ?? new THREE.BoxGeometry(0.1, 0.4, 0.3), perType.ln1, itemStream, partMat, edgeMat),
     glassPart('ln2', mg?.ln2 ?? new THREE.BoxGeometry(0.1, 0.4, 0.3), perType.ln2, itemStream, partMat, edgeMat),
-  );
+  ];
+  for (const m of parts) {
+    root.add(m);
+    register(m, slotsOfIds(m.userData.ids as ComponentId[]));
+  }
 
   // Gates: one red arc between the two lanes, instanced across fusion slabs (solid: it is a light path).
   if (gates.length > 0) {
@@ -223,6 +306,7 @@ export function buildTower(a: Architecture, modules?: Modules | null): TowerScen
       new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1 }));
     gateMesh.renderOrder = RENDER_ORDER.gate;
     root.add(gateMesh);
+    register(gateMesh, slotsOfIds(gateMesh.userData.ids as ComponentId[]));
   }
 
   // Embed, ln_f, lm_head at the row ends.
@@ -236,22 +320,103 @@ export function buildTower(a: Architecture, modules?: Modules | null): TowerScen
   ];
   for (const [id, x, geo] of ends) {
     const it = add(id, new THREE.Vector3(x, 0, 0));
-    root.add(glassPart(id, geo, [it], () => PALETTE.neutral, partMat, edgeMat));
+    const m = glassPart(id, geo, [it], () => PALETTE.neutral, partMat, edgeMat);
+    root.add(m);
+    register(m, slotsOfIds([id]));
   }
 
-  // Lanes: the two light lines running the full row (A cyan, B amber); they feed the bloom.
-  const len = xHead - xEmbed;
+  // Base x of every slot (row order) and its base AABB (everything instanced in it).
+  const slotBaseX = Array.from({ length: slotCount }, (_, i) => {
+    const k = slotKey(i);
+    return k === 'embed' ? xEmbed : k === 'ln_f' ? xLnF : k === 'lm_head' ? xHead : slabX(k);
+  });
+  const slotBase = Array.from({ length: slotCount }, () => new THREE.Box3());
+  {
+    const m = new THREE.Matrix4();
+    const b = new THREE.Box3();
+    for (const sh of [...shiftables, ...(mg?.frame ? [{ mesh: edges as THREE.InstancedMesh, base: slabSh.base, slot: slabSh.slot }] : [])]) {
+      const g = sh.mesh.geometry;
+      if (!g.boundingBox) g.computeBoundingBox();
+      for (let i = 0; i < sh.slot.length; i++) {
+        m.fromArray(sh.base, i * 16);
+        slotBase[sh.slot[i]!]!.union(b.copy(g.boundingBox!).applyMatrix4(m));
+      }
+    }
+  }
+
+  // Lanes: the two light lines along the row (A cyan, B amber); they feed the bloom. One instanced
+  // cylinder segment per gap between neighbouring slots, so a shift stretches the segment that
+  // crosses it and the lane stays continuous; one spare instance for a cut inside a segment.
+  const segCount = slotCount - 1;
+  const laneCount = segCount + 1;
+  const laneGeo = new THREE.CylinderGeometry(LANE_RADIUS, LANE_RADIUS, 1, 8);
+  laneGeo.rotateZ(Math.PI / 2); // axis Y -> X, unit length along X
+  const lanes: THREE.InstancedMesh[] = [];
   for (const s of STREAMS) {
-    const geo = new THREE.CylinderGeometry(0.035, 0.035, len, 8);
-    geo.rotateZ(Math.PI / 2); // axis Y -> X
     const it = add(shaftId(s), new THREE.Vector3((xEmbed + xHead) / 2, LANE_Y[s], LANE_Z));
-    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: streamColor(s) }));
+    const m = new THREE.InstancedMesh(laneGeo, new THREE.MeshBasicMaterial({ color: streamColor(s) }), laneCount);
     m.name = shaftId(s);
-    m.position.copy(it.pos);
-    m.userData.ids = [it.id];
+    m.position.set(0, it.pos.y, it.pos.z);
+    m.userData.ids = Array.from({ length: laneCount }, () => it.id);
     markBloom(m);
     root.add(m);
+    lanes.push(m);
   }
+  let laneGap: RowExtent | null = null;
+  const segM = new THREE.Matrix4();
+  const writeLanes = (): void => {
+    const pieces: [number, number][] = [];
+    for (let i = 0; i < segCount; i++) {
+      const x0 = slotBaseX[i]! + shiftAt(i);
+      const x1 = slotBaseX[i + 1]! + shiftAt(i + 1);
+      if (!laneGap || x1 <= laneGap.minX || x0 >= laneGap.maxX) {
+        pieces.push([x0, x1]);
+        continue;
+      }
+      if (x0 < laneGap.minX) pieces.push([x0, laneGap.minX]);
+      if (x1 > laneGap.maxX) pieces.push([laneGap.maxX, x1]);
+    }
+    for (const m of lanes) {
+      for (let i = 0; i < laneCount; i++) {
+        const p = pieces[i];
+        if (!p || p[1] - p[0] <= 1e-6) m.setMatrixAt(i, ZERO_MATRIX);
+        else m.setMatrixAt(i, segM.makeScale(p[1] - p[0], 1, 1).setPosition((p[0] + p[1]) / 2, 0, 0));
+      }
+      m.instanceMatrix.needsUpdate = true;
+      m.computeBoundingSphere();
+    }
+  };
+
+  const listeners = new Set<() => void>();
+  const applyShift = (): void => {
+    for (const sh of shiftables) {
+      const arr = sh.mesh.instanceMatrix.array as Float32Array;
+      for (let i = 0; i < sh.slot.length; i++) {
+        const o = i * 16;
+        if (sh.hidden.has(i)) {
+          ZERO_MATRIX.toArray(arr, o);
+          continue;
+        }
+        for (let k = 0; k < 16; k++) arr[o + k] = sh.base[o + k]!;
+        arr[o + 12] = sh.base[o + 12]! + shiftAt(sh.slot[i]!);
+      }
+      sh.mesh.instanceMatrix.needsUpdate = true;
+      sh.mesh.computeBoundingSphere();
+      sh.mesh.boundingBox = null;
+      for (const f of sh.followers) {
+        const im = f as THREE.InstancedMesh;
+        if (im.isInstancedMesh) {
+          im.computeBoundingSphere();
+          im.boundingBox = null;
+        } else {
+          (f as THREE.LineSegments).geometry.boundingSphere = sh.mesh.boundingSphere!.clone();
+        }
+      }
+    }
+    writeLanes();
+    for (const fn of listeners) fn();
+  };
+  applyShift();
 
   const counts = (): Record<string, number> => {
     const out: Record<string, number> = {};
@@ -262,6 +427,7 @@ export function buildTower(a: Architecture, modules?: Modules | null): TowerScen
     }
     return out;
   };
+  const shiftOf = (k: SlotKey): number => shiftAt(slotIndex(k));
 
   return {
     root,
@@ -272,7 +438,10 @@ export function buildTower(a: Architecture, modules?: Modules | null): TowerScen
     anchor(id) {
       const v = anchors.get(id);
       if (!v) throw new Error(`unknown component id: ${id}`);
-      return v.clone();
+      const k = slotOf(id);
+      const out = v.clone();
+      if (k !== null) out.x += shiftOf(k);
+      return out;
     },
     pick(hit) {
       const ids = hit.object.userData.ids as ComponentId[] | undefined;
@@ -280,5 +449,38 @@ export function buildTower(a: Architecture, modules?: Modules | null): TowerScen
       return ids[hit.instanceId ?? 0] ?? null;
     },
     counts,
+    layerShift,
+    endShift,
+    slots: () => Array.from({ length: slotCount }, (_, i) => slotKey(i)),
+    slotOf,
+    shiftOf,
+    slotBaseBox: (k) => slotBase[slotIndex(k)]!.clone(),
+    slotBox(k) {
+      const b = slotBase[slotIndex(k)]!.clone();
+      return b.translate(new THREE.Vector3(shiftOf(k), 0, 0));
+    },
+    setLaneGap(gap) {
+      laneGap = gap ? { ...gap } : null;
+    },
+    applyShift,
+    hide(target) {
+      for (const sh of shiftables) {
+        if (!sh.hideable) continue;
+        const ids = sh.mesh.userData.ids as ComponentId[];
+        ids.forEach((id, i) => {
+          if (id.endsWith('.gate') || !(id === target || id.startsWith(`${target}.`))) return;
+          sh.hidden.add(i);
+        });
+      }
+      applyShift();
+    },
+    unhide() {
+      for (const sh of shiftables) sh.hidden.clear();
+      applyShift();
+    },
+    onShift(fn) {
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    },
   };
 }

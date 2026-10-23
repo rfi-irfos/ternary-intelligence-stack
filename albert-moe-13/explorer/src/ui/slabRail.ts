@@ -1,6 +1,5 @@
-import * as THREE from 'three';
 import type { CameraRig } from '../camera/controls';
-import { gateId } from '../scene/ids';
+import { gateId, slabId } from '../scene/ids';
 import type { TowerScene } from '../scene/tower';
 
 export interface SlabRail {
@@ -33,7 +32,8 @@ export function createSlabRail(
       b.tabIndex = i === l ? 0 : -1;
       b.setAttribute('aria-pressed', String(i === l));
     });
-    void rig.flyTo(new THREE.Vector3(tower.slabX(l), 0, 0), FOCUS_DISTANCE);
+    // The anchor is where the slab is drawn now (an exploded neighbour may have nudged it aside).
+    void rig.flyTo(tower.anchor(slabId(l)), FOCUS_DISTANCE);
     onSelect(l);
   };
 
