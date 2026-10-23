@@ -6,7 +6,8 @@ import { type ComponentId, type Stream, parseId } from './ids';
 import { type ChildSpec, type PartKind, childrenOf, isExplodable, lanePath } from './hierarchy';
 import { buildTile, CELL, tileCaption } from './tile';
 import type { LabelKind } from '../data/labeled';
-import { COLORS, type TowerScene } from './tower';
+import { type TowerScene } from './tower';
+import { PALETTE, streamColor } from './palette';
 
 export interface TileInfo {
   id: ComponentId;
@@ -116,11 +117,14 @@ const GEO: Record<PartKind, () => THREE.BufferGeometry> = {
   gelu: () => new THREE.SphereGeometry(0.5, 16, 12),
 };
 
+/** Role colour of an exploded part (palette.ts); shapes stay distinct per kind (GEO). */
 function partColor(c: ChildSpec): number {
-  if (c.kind === 'matrix') return 0xdfe6f2;
-  if (c.stream === 'A') return COLORS.A;
-  if (c.stream === 'B') return COLORS.B;
-  return COLORS.plus;
+  switch (c.kind) {
+    case 'matrix': return PALETTE.neutral;
+    case 'router': return PALETTE.router;
+    case 'bank': case 'expert': case 'seed': case 'gelu': return PALETTE.expert;
+    default: return c.stream === 'shared' ? PALETTE.neutral : streamColor(c.stream);
+  }
 }
 
 const isInstanced = (o: THREE.Object3D): o is THREE.InstancedMesh => (o as THREE.InstancedMesh).isInstancedMesh === true;
@@ -263,13 +267,21 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
     const targets: [THREE.Object3D, THREE.Vector3][] = [];
     let extent = 1;
     for (const c of kids) {
+      // Glass in the role colour with a thin white outline (spec 4.2b), like the parts in the row.
       const mat = new THREE.MeshStandardMaterial({
         color: partColor(c), roughness: 0.45, metalness: 0.1,
-        transparent: c.kind === 'bank', opacity: c.kind === 'bank' ? 0.25 : 1,
+        transparent: true, opacity: c.kind === 'bank' ? 0.18 : 0.5, depthWrite: false,
       });
       const mesh = new THREE.Mesh(geo(c.kind), mat);
       mesh.name = c.id;
       mesh.userData.ids = [c.id];
+      const outline = new THREE.LineSegments(
+        new THREE.EdgesGeometry(mesh.geometry, 30),
+        new THREE.LineBasicMaterial({ color: PALETTE.edge, transparent: true, opacity: 0.4, depthWrite: false }),
+      );
+      outline.name = `${c.id}:outline`;
+      outline.raycast = (): void => {};
+      mesh.add(outline);
       mesh.position.copy(start());
       const text = label(c.label, 'structure');
       text.position.set(0, -0.2, -(c.kind === 'bank' ? 1.6 : 0.95));
@@ -296,7 +308,7 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
       });
       const line = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints(pts),
-        new THREE.LineBasicMaterial({ color: COLORS[s], linewidth: 2 }),
+        new THREE.LineBasicMaterial({ color: streamColor(s), linewidth: 2 }),
       );
       line.name = `lane.${s}`;
       lanes.add(line);

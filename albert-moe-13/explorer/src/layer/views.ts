@@ -8,10 +8,11 @@ import type { ExplodeView } from '../scene/explode';
 import type { CameraPose, CameraRig } from '../camera/controls';
 import { type ComponentId, type Stream, parseId } from '../scene/ids';
 import { divergingColor, ternaryColor } from '../scene/tile';
+import { PALETTE, cssHex } from '../scene/palette';
 import { DEPTHS, DEPTH_LABEL, type Depth, getDepth, onDepthChange } from '../ui/depth';
 import { type Step, type ViewSpec, layerSteps } from './steps';
 
-const hex = (n: number): string => `#${n.toString(16).padStart(6, '0')}`;
+const hex = cssHex;
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
@@ -132,7 +133,7 @@ function maskView(v: Extract<ViewSpec, { kind: 'mask' }>): HTMLElement {
   const strip = el('div', 'layer-heat');
   for (let k = 0; k < v.size; k++) {
     const c = el('span', 'layer-heat-cell');
-    c.style.background = k <= v.position ? hex(0x58c4dd) : hex(0x1a1c21);
+    c.style.background = k <= v.position ? hex(PALETTE.neutral) : hex(PALETTE.ternaryZero);
     c.title = k <= v.position ? `key ${k}: visible` : `key ${k}: masked`;
     strip.append(c);
   }
@@ -271,9 +272,12 @@ export function applyHighlight(root: THREE.Object3D, ids: ComponentId[]): number
     if (!(o instanceof THREE.Mesh) || !want.has(o.name)) return;
     const edges = new THREE.LineSegments(
       new THREE.EdgesGeometry(o.geometry as THREE.BufferGeometry),
-      new THREE.LineBasicMaterial({ color: 0xffd940 }),
+      new THREE.LineBasicMaterial({ color: PALETTE.edge }),
     );
     edges.name = HL;
+    // Full white and slightly larger than the faint glass outline the part already has.
+    edges.scale.setScalar(1.06);
+    edges.renderOrder = 5;
     o.add(edges);
     count++;
   });
@@ -301,8 +305,8 @@ export const LAYER_CSS = `
 .layer-bars-zero { position: absolute; left: 0; right: 0; top: 50px; border-top: 1px solid #cfd8e8; }
 .layer-bar { position: relative; flex: 1 1 0; height: 100%; }
 .layer-bar-fill { position: absolute; left: 20%; width: 60%; }
-.layer-bar-fill.layer-bar--pos { bottom: 80px; background: #58c4dd; }
-.layer-bar-fill.layer-bar--neg { top: 50px; background: #fc6255; }
+.layer-bar-fill.layer-bar--pos { bottom: 80px; background: ${cssHex(PALETTE.ternaryPlus)}; }
+.layer-bar-fill.layer-bar--neg { top: 50px; background: ${cssHex(PALETTE.ternaryMinus)}; }
 .layer-bar--chosen { outline: 2px solid #ffd940; outline-offset: -1px; }
 .layer-bar-chosen { position: absolute; top: 106px; left: 0; right: 0; text-align: center; font-size: 8px; color: #ffd940; }
 .layer-bar-a3 { position: absolute; top: 96px; left: 0; right: 0; text-align: center; font-size: 8px; color: #fc6255; }

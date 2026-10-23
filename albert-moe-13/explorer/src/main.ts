@@ -12,6 +12,9 @@ import { createPanel, PANEL_CSS } from './ui/panel';
 import { attachDepthKeys } from './ui/depth';
 import { pickAction } from './ui/pickAction';
 import { APP_NAME } from './content/brand';
+import { PALETTE, cssHex } from './scene/palette';
+import { type Quality, createLook, createProbe, loadOverride, resolveQuality } from './scene/look';
+import { QUALITY_MENU_CSS, createQualityMenu } from './ui/qualityMenu';
 import { LABEL_CSS } from './data/labeled';
 import { createAnimator } from './flow/animate';
 import { LAYER_CSS, createLayerMode, layerOfId } from './layer/views';
@@ -31,7 +34,7 @@ async function main(): Promise<void> {
   document.body.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x000000);
+  scene.background = new THREE.Color(PALETTE.background);
   scene.add(tower.root);
   scene.add(new THREE.AmbientLight(0xffffff, 0.9));
   const key = new THREE.DirectionalLight(0xffffff, 2.2);
@@ -49,12 +52,13 @@ async function main(): Promise<void> {
       max-width: 96vw; overflow-x: auto; padding: 4px; background: rgba(0,0,0,0.55); border-radius: 6px; }
     .slab-rail-item { font: 10px monospace; min-width: 20px; padding: 3px 0; color: #cfd8e8; background: #14161b;
       border: 1px solid #333a46; border-radius: 3px; cursor: pointer; }
-    .slab-rail-item.fusion { border-color: #ffd940; color: #ffd940; }
+    .slab-rail-item.fusion { border-color: ${cssHex(PALETTE.gate)}; color: ${cssHex(PALETTE.gate)}; }
     .slab-rail-item.active { background: #58c4dd; color: #000; }
     ${PANEL_CSS}
     ${LABEL_CSS}
     ${PLAYER_CSS}
     ${LAYER_CSS}
+    ${QUALITY_MENU_CSS}
     .overview-btn { position: fixed; top: 56px; left: 14px; font: 12px monospace; padding: 6px 10px; color: #fff;
       background: #14161b; border: 1px solid #333a46; border-radius: 4px; cursor: pointer; }`;
   document.head.appendChild(style);
@@ -139,20 +143,49 @@ async function main(): Promise<void> {
     onHover: (id) => hover.show(id ? rayAt(lastX, lastY) : null),
   });
 
+  // Look and quality: a persisted choice wins; otherwise the first frames run at High and a
+  // probe of their render work time picks the preset (weak GPU -> Low, never a black screen).
+  const look = createLook({ renderer, scene, camera, root: tower.root });
+  const override = loadOverride();
+  look.applyQuality(override ?? 'high');
+  let probe = override ? null : createProbe();
+  let lastAuto: Quality | null = null;
+  const menu = createQualityMenu((q) => {
+    if (q) {
+      probe = null;
+      look.applyQuality(q);
+    } else if (lastAuto) {
+      look.applyQuality(lastAuto);
+    } else {
+      look.applyQuality('high');
+      probe = createProbe();
+    }
+  });
+  document.body.appendChild(menu.element);
+
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    look.setSize(window.innerWidth, window.innerHeight);
   });
 
-  const clock = new THREE.Clock();
-  renderer.setAnimationLoop(() => {
-    const dt = clock.getDelta();
+  const timer = new THREE.Timer();
+  timer.connect(document);
+  renderer.setAnimationLoop((now: number) => {
+    timer.update(now);
+    const dt = timer.getDelta();
     rig.update(dt);
     view.update(dt);
     bar.tick(dt);
     animator.update(dt);
-    renderer.render(scene, camera);
+    const ms = look.render(dt, probe !== null);
+    const picked = probe?.add(ms) ?? null;
+    if (picked) {
+      probe = null;
+      lastAuto = picked;
+      menu.setAuto(picked);
+      look.applyQuality(resolveQuality(picked));
+    }
   });
 }
 

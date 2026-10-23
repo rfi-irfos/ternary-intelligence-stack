@@ -1,21 +1,17 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Modules } from './modules';
+import { PALETTE, streamColor } from './palette';
+import { RENDER_ORDER, instancedEdges, lookMaterial, markBloom, type LookRole } from './materials';
 import type { Architecture } from '../data/architecture';
 import {
   type ComponentId, type Stream,
   attnId, embedId, expertId, gateId, ln1Id, ln2Id, lmHeadId, lnFId, parseId, routerId, shaftId, slabId,
 } from './ids';
 
-/** Look constants (spec 4.2b). Row runs along +X; slabs are YZ planes. */
-export const COLORS = {
-  A: 0xffd940,
-  B: 0x66f2b3,
-  plus: 0x58c4dd,
-  minus: 0xfc6255,
-  zero: 0x1a1c21,
-  edge: 0xffffff,
-} as const;
+export { streamColor };
+
+/* Layout constants (spec 4.2b). Row runs along +X; slabs are YZ planes. Colours: palette.ts. */
 
 export const SLAB_PITCH = 3;
 export const SLAB_WIDTH = 6; // Y
@@ -69,9 +65,8 @@ function instanced(
   geo: THREE.BufferGeometry,
   items: Item[],
   colorOf: (item: Item) => number,
-  roughness = 0.55,
+  mat: THREE.Material,
 ): THREE.InstancedMesh {
-  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness, metalness: 0.1 });
   const mesh = new THREE.InstancedMesh(geo, mat, items.length);
   mesh.name = name;
   const c = new THREE.Color();
@@ -88,8 +83,27 @@ function instanced(
   return mesh;
 }
 
-function streamColor(it: Item): number {
-  return it.id.includes('.B.') ? COLORS.B : COLORS.A;
+/** Glass parts with white outlines (spec 4.2b: no opaque solid cubes). Tint = role colour. */
+function glassPart(name: string, geo: THREE.BufferGeometry, items: Item[], colorOf: (item: Item) => number, mat: THREE.Material): THREE.InstancedMesh {
+  const mesh = instanced(name, geo, items, colorOf, mat);
+  mesh.userData.look = 'part-glass' satisfies LookRole;
+  mesh.renderOrder = RENDER_ORDER.part;
+  instancedEdges(mesh);
+  return mesh;
+}
+
+/** Stream colour of a per-stream part (attention, norms). */
+const itemStream = (it: Item): number => streamColor(it.id.includes('.B.') ? 'B' : 'A');
+
+/**
+ * The module frame copied to every slab and merged into one geometry. Each copy is disposed after
+ * the merge; null when the merge fails (the caller keeps the procedural lines).
+ */
+function mergedFrames(frame: THREE.BufferGeometry, n: number, slabX: (l: number) => number): THREE.BufferGeometry | null {
+  const copies = Array.from({ length: n }, (_, l) => frame.clone().translate(slabX(l), 0, 0));
+  const merged = mergeGeometries(copies, false);
+  for (const c of copies) c.dispose();
+  return merged;
 }
 
 /** `modules` (Blender glbs) replace the procedural geometry; layout and ids are identical. */
@@ -106,11 +120,7 @@ export function buildTower(a: Architecture, modules?: Modules | null): TowerScen
     return { id, pos };
   };
 
-  // Slabs: glass planes + merged white outline.
-  const slabMat = new THREE.MeshStandardMaterial({
-    color: 0x8fb4ff, transparent: true, opacity: 0.06, depthWrite: false,
-    side: THREE.DoubleSide, roughness: 0.2, metalness: 0,
-  });
+  // Slabs: glass planes (material per quality, look.ts) + thin white outlines.
   let slabGeo: THREE.BufferGeometry;
   if (mg?.glass) {
     slabGeo = mg.glass;
@@ -118,20 +128,19 @@ export function buildTower(a: Architecture, modules?: Modules | null): TowerScen
     slabGeo = new THREE.PlaneGeometry(SLAB_HEIGHT, SLAB_WIDTH); // local X = Z-high, Y = width
     slabGeo.rotateY(Math.PI / 2); // plane normal along X; local (x,y,z) -> (0, width, height)
   }
-  const slabs = new THREE.InstancedMesh(slabGeo, slabMat, n);
+  const slabs = new THREE.InstancedMesh(slabGeo, lookMaterial('slab-glass', 'low'), n);
   slabs.name = 'slabs';
   slabs.userData.ids = Array.from({ length: n }, (_, l) => slabId(l));
+  slabs.userData.look = 'slab-glass' satisfies LookRole;
   const hw = SLAB_WIDTH / 2;
   const hh = SLAB_HEIGHT / 2;
   const edgePts: number[] = [];
-  const frames: THREE.BufferGeometry[] = [];
   for (let l = 0; l < n; l++) {
     tmp.position.set(slabX(l), 0, 0);
     tmp.updateMatrix();
     slabs.setMatrixAt(l, tmp.matrix);
     const x = slabX(l);
     anchors.set(slabId(l), new THREE.Vector3(x, 0, 0));
-    if (mg?.frame) frames.push(mg.frame.clone().translate(x, 0, 0));
     const c = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]] as const;
     for (let k = 0; k < 4; k++) {
       const p = c[k]!;
@@ -139,21 +148,27 @@ export function buildTower(a: Architecture, modules?: Modules | null): TowerScen
       edgePts.push(x, p[0], p[1], x, q[0], q[1]);
     }
   }
-  slabs.renderOrder = 1;
-  let edges: THREE.Object3D;
-  if (frames.length > 0) {
-    // One merged (non-instanced) mesh, like the line version it replaces.
+  slabs.renderOrder = RENDER_ORDER.slab;
+  slabs.computeBoundingSphere();
+  // One-pixel lines: they stay visible at overview distance, where the 0.02 module bars are sub-pixel.
+  const edgeGeo = new THREE.BufferGeometry();
+  edgeGeo.setAttribute('position', new THREE.Float32BufferAttribute(edgePts, 3));
+  const lines = new THREE.LineSegments(
+    edgeGeo,
+    new THREE.LineBasicMaterial({ color: PALETTE.edge, transparent: true, opacity: 0.55, depthWrite: false }),
+  );
+  lines.renderOrder = RENDER_ORDER.edge;
+  let edges: THREE.Object3D = lines;
+  const merged = mg?.frame ? mergedFrames(mg.frame, n, slabX) : null;
+  if (merged) {
+    // Module bars (one merged mesh) give the outline thickness up close; the lines ride along.
     edges = new THREE.Mesh(
-      mergeGeometries(frames, false),
-      new THREE.MeshBasicMaterial({ color: COLORS.edge, transparent: true, opacity: 0.55 }),
+      merged,
+      new THREE.MeshBasicMaterial({ color: PALETTE.edge, transparent: true, opacity: 0.55, depthWrite: false }),
     );
-  } else {
-    const edgeGeo = new THREE.BufferGeometry();
-    edgeGeo.setAttribute('position', new THREE.Float32BufferAttribute(edgePts, 3));
-    edges = new THREE.LineSegments(
-      edgeGeo,
-      new THREE.LineBasicMaterial({ color: COLORS.edge, transparent: true, opacity: 0.55 }),
-    );
+    edges.renderOrder = RENDER_ORDER.edge;
+    lines.name = 'slab-edge-lines';
+    edges.add(lines);
   }
   edges.name = 'slab-edges';
   root.add(slabs, edges);
@@ -182,15 +197,17 @@ export function buildTower(a: Architecture, modules?: Modules | null): TowerScen
     if (fusion.has(l)) gates.push(add(gateId(l), gateArc(x).getPoint(0.5)));
   }
 
+  // One glass material shared by every part mesh; the per-instance colour carries the role.
+  const partMat = lookMaterial('part-glass', 'low');
   root.add(
-    instanced('experts', mg?.expert ?? new THREE.BoxGeometry(EXPERT_SIZE, EXPERT_SIZE, EXPERT_SIZE), experts, () => COLORS.plus),
-    instanced('attn', mg?.attn ?? new THREE.BoxGeometry(0.4, 0.5, 0.5), perType.attn, streamColor),
-    instanced('router', mg?.router ?? new THREE.OctahedronGeometry(0.2), perType.router, streamColor),
-    instanced('ln1', mg?.ln1 ?? new THREE.BoxGeometry(0.1, 0.4, 0.3), perType.ln1, streamColor),
-    instanced('ln2', mg?.ln2 ?? new THREE.BoxGeometry(0.1, 0.4, 0.3), perType.ln2, streamColor),
+    glassPart('experts', mg?.expert ?? new THREE.BoxGeometry(EXPERT_SIZE, EXPERT_SIZE, EXPERT_SIZE), experts, () => PALETTE.expert, partMat),
+    glassPart('attn', mg?.attn ?? new THREE.BoxGeometry(0.4, 0.5, 0.5), perType.attn, itemStream, partMat),
+    glassPart('router', mg?.router ?? new THREE.OctahedronGeometry(0.2), perType.router, () => PALETTE.router, partMat),
+    glassPart('ln1', mg?.ln1 ?? new THREE.BoxGeometry(0.1, 0.4, 0.3), perType.ln1, itemStream, partMat),
+    glassPart('ln2', mg?.ln2 ?? new THREE.BoxGeometry(0.1, 0.4, 0.3), perType.ln2, itemStream, partMat),
   );
 
-  // Gates: one arc between the two lanes, instanced across fusion slabs.
+  // Gates: one red arc between the two lanes, instanced across fusion slabs (solid: it is a light path).
   if (gates.length > 0) {
     // Module gate geometry is centred on the arc midpoint (= the gate anchor).
     const arcGeo = mg?.gate ?? new THREE.TubeGeometry(gateArc(0), 24, 0.05, 6, false);
@@ -198,7 +215,10 @@ export function buildTower(a: Architecture, modules?: Modules | null): TowerScen
       id: g.id,
       pos: mg?.gate ? g.pos.clone() : new THREE.Vector3(g.pos.x - GATE_X_OFFSET, 0, 0),
     }));
-    root.add(instanced('gates', arcGeo, arcItems, () => 0xffffff, 0.3));
+    const gateMesh = instanced('gates', arcGeo, arcItems, () => PALETTE.gate,
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1 }));
+    gateMesh.renderOrder = RENDER_ORDER.gate;
+    root.add(gateMesh);
   }
 
   // Embed, ln_f, lm_head at the row ends.
@@ -212,19 +232,20 @@ export function buildTower(a: Architecture, modules?: Modules | null): TowerScen
   ];
   for (const [id, x, geo] of ends) {
     const it = add(id, new THREE.Vector3(x, 0, 0));
-    root.add(instanced(id, geo, [it], () => 0xdfe6f2));
+    root.add(glassPart(id, geo, [it], () => PALETTE.neutral, partMat));
   }
 
-  // Lanes: the two shafts running the full row.
+  // Lanes: the two light lines running the full row (A cyan, B amber); they feed the bloom.
   const len = xHead - xEmbed;
   for (const s of STREAMS) {
     const geo = new THREE.CylinderGeometry(0.035, 0.035, len, 8);
     geo.rotateZ(Math.PI / 2); // axis Y -> X
     const it = add(shaftId(s), new THREE.Vector3((xEmbed + xHead) / 2, LANE_Y[s], LANE_Z));
-    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: COLORS[s] }));
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: streamColor(s) }));
     m.name = shaftId(s);
     m.position.copy(it.pos);
     m.userData.ids = [it.id];
+    markBloom(m);
     root.add(m);
   }
 

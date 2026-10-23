@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as THREE from 'three';
 import arch from '../public/data/architecture.json';
 import { validateArchitecture } from '../src/data/architecture';
 import { MODULE_FILES, loadModules, parseModules, type Modules } from '../src/scene/modules';
@@ -38,6 +39,16 @@ describe('modules', () => {
     expect(mod.has(gateId(13))).toBe(true);
     expect(mod.anchor(gateId(13)).toArray()).toEqual(plain.anchor(gateId(13)).toArray());
     expect(mod.root.getObjectByName('experts')).toBeDefined();
+  });
+
+  it('merged module frame does not write depth and keeps one-pixel lines; procedural fallback is lines', async () => {
+    const mod = buildTower(a, await real());
+    const frame = mod.root.getObjectByName('slab-edges') as THREE.Mesh;
+    expect((frame as unknown as { isMesh?: boolean }).isMesh).toBe(true);
+    expect((frame.material as THREE.Material).depthWrite).toBe(false);
+    expect(frame.getObjectByName('slab-edge-lines')).toBeDefined();
+    const plain = buildTower(a).root.getObjectByName('slab-edges') as THREE.LineSegments;
+    expect(plain.isLineSegments).toBe(true);
   });
 
   it('module slot nodes sit exactly at the tower layout', async () => {

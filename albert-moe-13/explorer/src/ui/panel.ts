@@ -9,6 +9,7 @@ import {
   attnId, bankId, embedId, expertId, lmHeadId, lnFId, ln1Id, ln2Id, parseId, routerId, slabId,
 } from '../scene/ids';
 import type { TowerScene } from '../scene/tower';
+import { PALETTE, cssHex } from '../scene/palette';
 import { DEPTHS, DEPTH_LABEL, getDepth, onDepthChange, setDepth } from './depth';
 
 export interface PanelDeps {
@@ -164,21 +165,21 @@ function visual(type: ComponentType, a: Architecture, id: ComponentId, rc: Resol
   if (type === 'router') {
     const n = a.model.num_experts;
     const bars = Array.from({ length: n }, (_, i) =>
-      `<rect x="${6 + i * 14}" y="${i < 3 ? 6 : 24}" width="10" height="${i < 3 ? 30 : 12}" fill="${i < 3 ? '#58c4dd' : '#2a2e36'}"/>`).join('');
+      `<rect x="${6 + i * 14}" y="${i < 3 ? 6 : 24}" width="10" height="${i < 3 ? 30 : 12}" fill="${i < 3 ? cssHex(PALETTE.router) : '#2a2e36'}"/>`).join('');
     return `<svg viewBox="0 0 ${12 + n * 14} 44" role="img" aria-label="router outputs, a few lit"><title>schematic: a few router outputs lit</title>${bars}</svg>`;
   }
   if (type === 'anastomosis') {
     return '<svg viewBox="0 0 160 44" role="img" aria-label="two streams exchange"><title>schematic</title>' +
-      '<circle cx="30" cy="22" r="14" fill="#ffd940"/><circle cx="130" cy="22" r="14" fill="#66f2b3"/>' +
-      '<path d="M46 14 L114 14 M114 30 L46 30" stroke="#fff" stroke-width="2" fill="none"/>' +
+      `<circle cx="30" cy="22" r="14" fill="${cssHex(PALETTE.streamA)}"/><circle cx="130" cy="22" r="14" fill="${cssHex(PALETTE.streamB)}"/>` +
+      `<path d="M46 14 L114 14 M114 30 L46 30" stroke="${cssHex(PALETTE.gate)}" stroke-width="2" fill="none"/>` +
       '<text x="80" y="10" fill="#fff" font-size="10" text-anchor="middle">g₀</text>' +
       '<text x="80" y="42" fill="#fff" font-size="10" text-anchor="middle">g₁</text></svg>';
   }
   if (ternary) {
     return '<svg viewBox="0 0 170 44" role="img" aria-label="ternary weights are minus one, zero or plus one"><title>schematic</title>' +
-      '<rect x="6" y="8" width="28" height="28" fill="#fc6255"/><text x="20" y="27" text-anchor="middle" font-size="14" fill="#000">−1</text>' +
-      '<rect x="40" y="8" width="28" height="28" fill="#1a1c21" stroke="#555"/><text x="54" y="27" text-anchor="middle" font-size="14" fill="#fff">0</text>' +
-      '<rect x="74" y="8" width="28" height="28" fill="#58c4dd"/><text x="88" y="27" text-anchor="middle" font-size="14" fill="#000">+1</text>' +
+      `<rect x="6" y="8" width="28" height="28" fill="${cssHex(PALETTE.ternaryMinus)}"/>` + '<text x="20" y="27" text-anchor="middle" font-size="14" fill="#000">−1</text>' +
+      `<rect x="40" y="8" width="28" height="28" fill="${cssHex(PALETTE.ternaryZero)}" stroke="#555"/>` + '<text x="54" y="27" text-anchor="middle" font-size="14" fill="#fff">0</text>' +
+      `<rect x="74" y="8" width="28" height="28" fill="${cssHex(PALETTE.ternaryPlus)}"/>` + '<text x="88" y="27" text-anchor="middle" font-size="14" fill="#000">+1</text>' +
       '<text x="108" y="27" font-size="14" fill="#fff">× γ</text></svg>';
   }
   // Words only: counts of the real tensors are shown (as structure) in the text around the schematic.

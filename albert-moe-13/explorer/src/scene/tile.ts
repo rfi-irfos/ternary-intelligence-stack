@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import type { MatrixData } from '../data/weights';
 import { fmtText, structure } from '../data/labeled';
+import { PALETTE } from './palette';
 
-/** Spec 4.2b value colours: +1 cyan, -1 red, 0 near-black. */
-export const TILE_COLORS = { plus: 0x58c4dd, minus: 0xfc6255, zero: 0x1a1c21 } as const;
+/** Spec §5 value colours (palette.ts): +1 warm, -1 cold, 0 dark. */
+export const TILE_COLORS = { plus: PALETTE.ternaryPlus, minus: PALETTE.ternaryMinus, zero: PALETTE.ternaryZero } as const;
 export const CELL = 0.12;
 
 const cPlus = new THREE.Color(TILE_COLORS.plus);
@@ -14,7 +15,7 @@ export function ternaryColor(ch: string): number {
   return ch === '+' ? TILE_COLORS.plus : ch === '-' ? TILE_COLORS.minus : TILE_COLORS.zero;
 }
 
-/** Diverging scale: -max -> red, 0 -> dark, +max -> cyan. */
+/** Diverging scale: -max -> cold, 0 -> dark, +max -> warm. */
 export function divergingColor(v: number, maxAbs: number): number {
   const t = maxAbs > 0 ? Math.min(Math.abs(v) / maxAbs, 1) : 0;
   return new THREE.Color().copy(cZero).lerp(v >= 0 ? cPlus : cMinus, t).getHex();
@@ -64,7 +65,7 @@ export function buildTile(m: MatrixData, id: string): THREE.Group {
   const glass = new THREE.Mesh(
     glassGeo,
     new THREE.MeshStandardMaterial({
-      color: 0x8fb4ff, transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide,
+      color: PALETTE.glass, transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide,
     }),
   );
   glass.position.y = 0.01;

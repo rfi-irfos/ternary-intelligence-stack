@@ -9,6 +9,7 @@ import { createControls } from '../src/camera/controls';
 import { createExplode, fitFontPx } from '../src/scene/explode';
 import { childrenOf, lanePath } from '../src/scene/hierarchy';
 import { tileGrid } from '../src/scene/tile';
+import { PALETTE } from '../src/scene/palette';
 import { LANE_Y, buildTower } from '../src/scene/tower';
 import { attachPicking, isClick } from '../src/ui/picking';
 
@@ -128,8 +129,8 @@ describe('explode view', () => {
     const t = view.tile()!;
     expect([t.rows, t.cols]).toEqual([32, 32]);
     expect(t.colors).toHaveLength(1024);
-    expect(t.colors[0]).toBe(0x58c4dd); // '+'
-    expect(t.colors[1]).toBe(0xfc6255); // '-'
+    expect(t.colors[0]).toBe(PALETTE.ternaryPlus); // '+' warm
+    expect(t.colors[1]).toBe(PALETTE.ternaryMinus); // '-' cold
     expect(t.gamma).toBe(0.1);
     expect(t.tau).toBe(0.0153);
     let cells = 0;

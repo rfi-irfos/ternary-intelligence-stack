@@ -65,15 +65,16 @@ export async function parseModules(buffers: Record<(typeof MODULE_FILES)[number]
  */
 export async function loadModules(base = `${import.meta.env?.BASE_URL ?? '/'}assets/`): Promise<Modules | null> {
   try {
-    const bufs = {} as Record<(typeof MODULE_FILES)[number], ArrayBuffer>;
-    for (const f of MODULE_FILES) {
+    // Fetched in parallel; any missing or non-glb file (Vite dev serves index.html for missing
+    // files) makes the whole set fall back.
+    const got = await Promise.all(MODULE_FILES.map(async (f) => {
       const r = await fetch(`${base}${f}.glb`);
       if (!r.ok) return null;
       const buf = await r.arrayBuffer();
-      // Vite dev serves index.html for missing files; reject non-glb payloads.
-      if (new Uint32Array(buf, 0, 1)[0] !== 0x46546c67) return null;
-      bufs[f] = buf;
-    }
+      return buf.byteLength >= 4 && new Uint32Array(buf, 0, 1)[0] === 0x46546c67 ? buf : null;
+    }));
+    if (got.some((b) => b === null)) return null;
+    const bufs = Object.fromEntries(MODULE_FILES.map((f, i) => [f, got[i]!])) as Record<(typeof MODULE_FILES)[number], ArrayBuffer>;
     const m = await parseModules(bufs);
     for (const p of ['glass', 'frame', 'expert', 'attn', 'router', 'ln1', 'ln2', 'gate', 'embed', 'lm_head'] as const) {
       if (!m.geo[p]) return null;

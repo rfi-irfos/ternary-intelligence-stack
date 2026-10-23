@@ -3,7 +3,9 @@ import {
   type ComponentId, type Stream,
   attnId, embedId, expertId, gateId, ln1Id, ln2Id, lmHeadId, lnFId, routerId,
 } from '../scene/ids';
-import { COLORS, LANE_Y, LANE_Z, type TowerScene, gateArc } from '../scene/tower';
+import { LANE_Y, LANE_Z, type TowerScene, gateArc } from '../scene/tower';
+import { PALETTE, streamColor } from '../scene/palette';
+import { markBloom } from '../scene/materials';
 import type { ExpertsData, GateData, Op } from './timeline';
 
 /** What one op lights up, as ids and numbers (no THREE objects; unit-testable). */
@@ -74,12 +76,13 @@ export function createAnimator(tower: TowerScene): Animator {
   root.name = 'flow';
   const pulseMat = (c: number): THREE.MeshBasicMaterial => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.95, depthTest: false });
   const sphere = new THREE.SphereGeometry(0.28, 16, 12);
-  const pulses: Record<Stream, THREE.Mesh> = { A: new THREE.Mesh(sphere, pulseMat(COLORS.A)), B: new THREE.Mesh(sphere, pulseMat(COLORS.B)) };
-  for (const p of Object.values(pulses)) { p.visible = false; p.renderOrder = 10; root.add(p); }
+  const pulses: Record<Stream, THREE.Mesh> = { A: new THREE.Mesh(sphere, pulseMat(streamColor('A'))), B: new THREE.Mesh(sphere, pulseMat(streamColor('B'))) };
+  for (const p of Object.values(pulses)) { p.visible = false; p.renderOrder = 10; markBloom(p); root.add(p); }
 
   const valveGeo = new THREE.SphereGeometry(0.3, 12, 10);
   const cube = new THREE.BoxGeometry(0.46, 0.46, 0.46);
-  const litMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthTest: false });
+  // Lit experts glow in the expert colour (bloom); dark ones are dimmed. Size also encodes the weight.
+  const litMat = new THREE.MeshBasicMaterial({ color: PALETTE.expert, transparent: true, opacity: 0.85, depthTest: false });
   const darkMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.8 });
   const expertMarks = new THREE.Group();
   root.add(expertMarks);
@@ -126,6 +129,7 @@ export function createAnimator(tower: TowerScene): Animator {
         m.scale.setScalar(0.8 + 0.5 * clamp01(l.weight));
         m.renderOrder = 9;
         m.name = `lit:${l.id}`;
+        markBloom(m);
         expertMarks.add(m);
       }
       for (const d of target.dark) {
@@ -138,8 +142,9 @@ export function createAnimator(tower: TowerScene): Animator {
         const arc = gateArc(tower.slabX(op.layer ?? 0));
         for (const l of ['A', 'B'] as Stream[]) {
           const open = target.valves[l];
+          // Valves belong to the gate (red); which lane is told by position on the arc, openness by size.
           const v = new THREE.Mesh(valveGeo, new THREE.MeshBasicMaterial({
-            color: COLORS[l], transparent: true, opacity: 0.25 + 0.7 * open, depthTest: false,
+            color: PALETTE.gate, transparent: true, opacity: 0.25 + 0.7 * open, depthTest: false,
           }));
           v.position.copy(arc.getPoint(l === 'A' ? 0.15 : 0.85));
           v.scale.setScalar(0.4 + 0.9 * open);
