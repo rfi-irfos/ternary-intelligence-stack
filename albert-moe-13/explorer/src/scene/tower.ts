@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import type { Modules } from './modules';
 import type { Architecture } from '../data/architecture';
 import {
   type ComponentId, type Stream,
@@ -90,7 +92,9 @@ function streamColor(it: Item): number {
   return it.id.includes('.B.') ? COLORS.B : COLORS.A;
 }
 
-export function buildTower(a: Architecture): TowerScene {
+/** `modules` (Blender glbs) replace the procedural geometry; layout and ids are identical. */
+export function buildTower(a: Architecture, modules?: Modules | null): TowerScene {
+  const mg = modules?.geo;
   const n = a.model.num_layers;
   const slabX = (layer: number): number => layer * SLAB_PITCH;
   const anchors = new Map<ComponentId, THREE.Vector3>();
@@ -107,20 +111,27 @@ export function buildTower(a: Architecture): TowerScene {
     color: 0x8fb4ff, transparent: true, opacity: 0.06, depthWrite: false,
     side: THREE.DoubleSide, roughness: 0.2, metalness: 0,
   });
-  const slabGeo = new THREE.PlaneGeometry(SLAB_HEIGHT, SLAB_WIDTH); // local X = Z-high, Y = width
-  slabGeo.rotateY(Math.PI / 2); // plane normal along X; local (x,y,z) -> (0, width, height)
+  let slabGeo: THREE.BufferGeometry;
+  if (mg?.glass) {
+    slabGeo = mg.glass;
+  } else {
+    slabGeo = new THREE.PlaneGeometry(SLAB_HEIGHT, SLAB_WIDTH); // local X = Z-high, Y = width
+    slabGeo.rotateY(Math.PI / 2); // plane normal along X; local (x,y,z) -> (0, width, height)
+  }
   const slabs = new THREE.InstancedMesh(slabGeo, slabMat, n);
   slabs.name = 'slabs';
   slabs.userData.ids = Array.from({ length: n }, (_, l) => slabId(l));
   const hw = SLAB_WIDTH / 2;
   const hh = SLAB_HEIGHT / 2;
   const edgePts: number[] = [];
+  const frames: THREE.BufferGeometry[] = [];
   for (let l = 0; l < n; l++) {
     tmp.position.set(slabX(l), 0, 0);
     tmp.updateMatrix();
     slabs.setMatrixAt(l, tmp.matrix);
     const x = slabX(l);
     anchors.set(slabId(l), new THREE.Vector3(x, 0, 0));
+    if (mg?.frame) frames.push(mg.frame.clone().translate(x, 0, 0));
     const c = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]] as const;
     for (let k = 0; k < 4; k++) {
       const p = c[k]!;
@@ -129,12 +140,21 @@ export function buildTower(a: Architecture): TowerScene {
     }
   }
   slabs.renderOrder = 1;
-  const edgeGeo = new THREE.BufferGeometry();
-  edgeGeo.setAttribute('position', new THREE.Float32BufferAttribute(edgePts, 3));
-  const edges = new THREE.LineSegments(
-    edgeGeo,
-    new THREE.LineBasicMaterial({ color: COLORS.edge, transparent: true, opacity: 0.55 }),
-  );
+  let edges: THREE.Object3D;
+  if (frames.length > 0) {
+    // One merged (non-instanced) mesh, like the line version it replaces.
+    edges = new THREE.Mesh(
+      mergeGeometries(frames, false),
+      new THREE.MeshBasicMaterial({ color: COLORS.edge, transparent: true, opacity: 0.55 }),
+    );
+  } else {
+    const edgeGeo = new THREE.BufferGeometry();
+    edgeGeo.setAttribute('position', new THREE.Float32BufferAttribute(edgePts, 3));
+    edges = new THREE.LineSegments(
+      edgeGeo,
+      new THREE.LineBasicMaterial({ color: COLORS.edge, transparent: true, opacity: 0.55 }),
+    );
+  }
   edges.name = 'slab-edges';
   root.add(slabs, edges);
 
@@ -163,18 +183,21 @@ export function buildTower(a: Architecture): TowerScene {
   }
 
   root.add(
-    instanced('experts', new THREE.BoxGeometry(EXPERT_SIZE, EXPERT_SIZE, EXPERT_SIZE), experts, () => COLORS.plus),
-    instanced('attn', new THREE.BoxGeometry(0.4, 0.5, 0.5), perType.attn, streamColor),
-    instanced('router', new THREE.OctahedronGeometry(0.2), perType.router, streamColor),
-    instanced('ln1', new THREE.BoxGeometry(0.1, 0.4, 0.3), perType.ln1, streamColor),
-    instanced('ln2', new THREE.BoxGeometry(0.1, 0.4, 0.3), perType.ln2, streamColor),
+    instanced('experts', mg?.expert ?? new THREE.BoxGeometry(EXPERT_SIZE, EXPERT_SIZE, EXPERT_SIZE), experts, () => COLORS.plus),
+    instanced('attn', mg?.attn ?? new THREE.BoxGeometry(0.4, 0.5, 0.5), perType.attn, streamColor),
+    instanced('router', mg?.router ?? new THREE.OctahedronGeometry(0.2), perType.router, streamColor),
+    instanced('ln1', mg?.ln1 ?? new THREE.BoxGeometry(0.1, 0.4, 0.3), perType.ln1, streamColor),
+    instanced('ln2', mg?.ln2 ?? new THREE.BoxGeometry(0.1, 0.4, 0.3), perType.ln2, streamColor),
   );
 
   // Gates: one arc between the two lanes, instanced across fusion slabs.
   if (gates.length > 0) {
-    const arc = gateArc(0);
-    const arcGeo = new THREE.TubeGeometry(arc, 24, 0.05, 6, false);
-    const arcItems = gates.map((g) => ({ id: g.id, pos: new THREE.Vector3(g.pos.x - GATE_X_OFFSET, 0, 0) }));
+    // Module gate geometry is centred on the arc midpoint (= the gate anchor).
+    const arcGeo = mg?.gate ?? new THREE.TubeGeometry(gateArc(0), 24, 0.05, 6, false);
+    const arcItems = gates.map((g) => ({
+      id: g.id,
+      pos: mg?.gate ? g.pos.clone() : new THREE.Vector3(g.pos.x - GATE_X_OFFSET, 0, 0),
+    }));
     root.add(instanced('gates', arcGeo, arcItems, () => 0xffffff, 0.3));
   }
 
@@ -182,10 +205,10 @@ export function buildTower(a: Architecture): TowerScene {
   const xEmbed = slabX(0) - SLAB_PITCH;
   const xLnF = slabX(n - 1) + SLAB_PITCH;
   const xHead = xLnF + SLAB_PITCH;
-  const ends: [ComponentId, number, THREE.BoxGeometry][] = [
-    [embedId(), xEmbed, new THREE.BoxGeometry(0.8, 3.2, 2.4)],
+  const ends: [ComponentId, number, THREE.BufferGeometry][] = [
+    [embedId(), xEmbed, mg?.embed ?? new THREE.BoxGeometry(0.8, 3.2, 2.4)],
     [lnFId(), xLnF, new THREE.BoxGeometry(0.15, 3.2, 1.6)],
-    [lmHeadId(), xHead, new THREE.BoxGeometry(0.8, 3.2, 2.4)],
+    [lmHeadId(), xHead, mg?.lm_head ?? new THREE.BoxGeometry(0.8, 3.2, 2.4)],
   ];
   for (const [id, x, geo] of ends) {
     const it = add(id, new THREE.Vector3(x, 0, 0));

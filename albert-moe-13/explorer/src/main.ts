@@ -3,6 +3,7 @@ import { createControls } from './camera/controls';
 import { createSlabRail } from './ui/slabRail';
 import { loadArchitecture } from './data/architecture';
 import { buildTower } from './scene/tower';
+import { loadModules } from './scene/modules';
 import { createWeightsLoader } from './data/weights';
 import { createExplode } from './scene/explode';
 import { isExplodable } from './scene/hierarchy';
@@ -22,7 +23,7 @@ async function main(): Promise<void> {
   const heading = document.getElementById('app-name');
   if (heading) heading.textContent = APP_NAME;
   const arch = await loadArchitecture();
-  const tower = buildTower(arch);
+  const tower = buildTower(arch, await loadModules());
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
