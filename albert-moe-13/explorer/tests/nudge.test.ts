@@ -5,7 +5,8 @@ import arch from '../public/data/architecture.json';
 import fixture from './fixtures/L12.fixture.json';
 import { validateArchitecture } from '../src/data/architecture';
 import { validateLayerWeights } from '../src/data/weights';
-import { NUDGE_MARGIN, createExplode } from '../src/scene/explode';
+import { NUDGE_MARGIN, SLAB_FADE, createExplode } from '../src/scene/explode';
+import { INSTANCE_FADE, lookMaterial } from '../src/scene/materials';
 import { childrenOf } from '../src/scene/hierarchy';
 import { buildTower } from '../src/scene/tower';
 import { createAnimator } from '../src/flow/animate';
@@ -325,5 +326,259 @@ describe('exploded parts nudge neighbours aside', () => {
     await view.reassemble();
     expect(fresh.opacity).toBe(0.4);
     expect(objects()).toEqual(before);
+  });
+});
+
+/** Everything a settled open leaves behind: the exploded parts, the row matrices, shifts and fades. */
+function openState(tower: ReturnType<typeof buildTower>, view: ReturnType<typeof createExplode>) {
+  const parts: Record<string, number[]> = {};
+  view.root.traverse((o) => {
+    if (!o.name) return;
+    const extra: number[] = [];
+    const g = (o as THREE.LineSegments).geometry;
+    if (o.name.startsWith('lane.') && g) extra.push(...(g.getAttribute('position')?.array ?? []));
+    parts[o.name] = [...o.position.toArray(), o.scale.x, o.visible ? 1 : 0, ...extra];
+  });
+  return {
+    depth: view.depth(),
+    current: view.current(),
+    levels: view.root.children.map((c) => c.name),
+    parts,
+    matrices: matrices(tower),
+    shift: [...tower.layerShift],
+    ends: { ...tower.endShift },
+    fade: Array.from({ length: tower.layerCount }, (_, l) => tower.slabFade(l)),
+    box: [...view.box()!.min.toArray(), ...view.box()!.max.toArray()],
+  };
+}
+
+/** True once `p` has settled (checked after a microtask flush). */
+async function settled(p: Promise<void>): Promise<boolean> {
+  let done = false;
+  void p.then(() => { done = true; });
+  for (let i = 0; i < 30; i++) await Promise.resolve();
+  return done;
+}
+
+describe('direct row opens go through the slab', () => {
+  const others = (open: string): string[] => [...SIBLINGS, 'L20.bank'].filter((s) => s !== open);
+
+  for (const [open, name] of [['L20.A.attn', 'attention A'], ['L20.bank', 'the expert bank']] as const) {
+    it(`direct row open of ${name} in layer 20 nudges every sibling of slab 20 so that no sibling AABB intersects the opened box, and row neighbours clear it as well`, async () => {
+      const { tower, view } = setup(0);
+      await view.explode(open); // straight from the row: nothing open before
+      expect(view.depth()).toBe(2);
+      expect(view.current()).toBe(open);
+      expect(view.root.children.map((c) => c.name)).toEqual(['level:L20', `level:${open}`]);
+      view.root.updateMatrixWorld(true);
+      const opened = new THREE.Box3().setFromObject(view.root.children[1]!);
+      const withMargin = opened.clone().expandByScalar(NUDGE_MARGIN);
+      for (const id of others(open)) {
+        const o = view.root.getObjectByName(id)!;
+        expect(o.visible, id).toBe(true);
+        expect(new THREE.Box3().setFromObject(o).intersectsBox(withMargin), id).toBe(false);
+      }
+      expect(view.root.getObjectByName(open)!.visible).toBe(false);
+      // The slab's originals in the row are hidden, as when the slab is opened by hand.
+      const experts = tower.root.getObjectByName('experts') as THREE.InstancedMesh;
+      const em = new THREE.Matrix4();
+      experts.getMatrixAt((experts.userData.ids as string[]).indexOf('L20.expert.0'), em);
+      expect(new THREE.Vector3().setFromMatrixScale(em).x).toBe(0);
+      const all = view.box()!;
+      expect(all.containsBox(new THREE.Box3().setFromObject(view.root))).toBe(true);
+      for (const l of [18, 19, 21, 22]) {
+        const nb = drawnLayerBox(tower, l);
+        expect(nb.intersectsBox(all), `layer ${l}`).toBe(false);
+        expect(nb.intersectsBox(withMargin), `layer ${l}`).toBe(false);
+      }
+
+      // Identical to opening the slab and then the part by hand.
+      const byHand = setup(0);
+      await byHand.view.explode('L20');
+      await byHand.view.explode(open);
+      expect(openState(tower, view)).toEqual(openState(byHand.tower, byHand.view));
+
+      // Closing once closes the part's level; the slab stays open with its siblings back in place.
+      await view.reassemble();
+      await byHand.view.reassemble();
+      expect(view.depth()).toBe(1);
+      expect(view.current()).toBe('L20');
+      expect(openState(tower, view)).toEqual(openState(byHand.tower, byHand.view));
+      await view.reassemble();
+      expect(view.depth()).toBe(0);
+    });
+  }
+
+  it('with motion a direct open is one combined tween of the explode length, ending where the two opens by hand end', async () => {
+    const { tower, view } = setup(500, () => false);
+    const p = view.explode('L20.bank');
+    view.update(0.25);
+    // Mid-way both levels move together: the slab's parts and the bank's experts are on their way.
+    const ln1 = view.root.getObjectByName('L20.A.ln1')!;
+    const expert = view.root.getObjectByName('L20.expert.0')!;
+    expect(ln1.scale.x).toBeGreaterThan(0.2); // Minor 6: the nudge keeps the explode's scale tween
+    expect(ln1.scale.x).toBeLessThan(1);
+    expect(expert.scale.x).toBeGreaterThan(0.2);
+    expect(expert.scale.x).toBeLessThan(1);
+    expect(tower.layerShift[21]).toBeGreaterThan(0);
+    expect(await settled(p)).toBe(false);
+    view.update(0.25);
+    expect(await settled(p)).toBe(true); // done after exactly one explode length
+    const byHand = setup(0);
+    await byHand.view.explode('L20');
+    await byHand.view.explode('L20.bank');
+    const a1 = openState(tower, view);
+    const a2 = openState(byHand.tower, byHand.view);
+    expect(Object.keys(a1.parts).sort()).toEqual(Object.keys(a2.parts).sort());
+    for (const [k, v] of Object.entries(a2.parts)) a1.parts[k]!.forEach((x, i) => expect(x, k).toBeCloseTo(v[i]!, 9));
+    expect(a1.shift).toEqual(a2.shift);
+    expect(a1.fade).toEqual(a2.fade);
+  });
+
+  it('reduced motion applies both levels at once', async () => {
+    const { tower, view } = setup(700, () => true);
+    await view.explode('L20.A.attn'); // no update() ticks
+    expect(view.depth()).toBe(2);
+    expect(tower.layerShift[21]).toBeGreaterThan(0);
+    expect(view.root.getObjectByName('L20.bank')!.position.x).toBeGreaterThan(tower.slabX(20) + 3.4);
+  });
+
+  it('embed and lm_head are not opened (as before)', async () => {
+    const { view } = setup(0);
+    await view.explode('embed');
+    await view.explode('lm_head');
+    expect(view.depth()).toBe(0);
+  });
+});
+
+describe('neighbour glass fade', () => {
+  it('fades the exploded slab and its nearest neighbour on each side to SLAB_FADE, tweened, and restores on close', async () => {
+    const { tower, view } = setup(500, () => false);
+    const fades = (): number[] => [18, 19, 20, 21, 22].map((l) => tower.slabFade(l));
+    expect(fades()).toEqual([1, 1, 1, 1, 1]);
+    const p = view.explode('L20');
+    view.update(0.25);
+    const mid = fades();
+    expect(mid[2]).toBeGreaterThan(SLAB_FADE);
+    expect(mid[2]).toBeLessThan(1);
+    await settle(view, p);
+    expect(fades()).toEqual([1, SLAB_FADE, SLAB_FADE, SLAB_FADE, 1]);
+    await settle(view, view.explode('L20.bank')); // a nested level keeps the fade
+    expect(fades()).toEqual([1, SLAB_FADE, SLAB_FADE, SLAB_FADE, 1]);
+    // A quality swap replaces materials; the fade lives on the instances and stays.
+    const slabs = tower.root.getObjectByName('slabs') as THREE.InstancedMesh;
+    view.refreshLook(() => { slabs.material = lookMaterial('slab-glass', 'high'); });
+    expect(fades()).toEqual([1, SLAB_FADE, SLAB_FADE, SLAB_FADE, 1]);
+    await settle(view, view.reassemble());
+    await settle(view, view.reassemble());
+    expect(Array.from({ length: 46 }, (_, l) => tower.slabFade(l)).every((f) => f === 1)).toBe(true);
+  });
+
+  it('glass, frame bars and outline share one fade attribute and every slab-glass preset reads it (no new materials)', () => {
+    const tower = buildTower(a);
+    const slabs = tower.root.getObjectByName('slabs') as THREE.InstancedMesh;
+    const fade = slabs.geometry.getAttribute(INSTANCE_FADE);
+    expect(fade).toBeInstanceOf(THREE.InstancedBufferAttribute);
+    expect(fade.count).toBe(46);
+    const lines = tower.root.getObjectByName('slab-edges') as THREE.LineSegments;
+    expect(lines.geometry.getAttribute(INSTANCE_FADE)).toBe(fade);
+    expect((lines.material as THREE.Material).userData.instanceFade).toBe(true);
+    const mats: THREE.Material[] = [];
+    tower.root.traverse((o) => { const m = (o as THREE.Mesh).material; if (m) mats.push(m as THREE.Material); });
+    const before = new Set(mats);
+    tower.setSlabFade(20, SLAB_FADE);
+    expect(fade.getX(20)).toBe(SLAB_FADE);
+    const after: THREE.Material[] = [];
+    tower.root.traverse((o) => { const m = (o as THREE.Mesh).material; if (m) after.push(m as THREE.Material); });
+    expect(new Set(after)).toEqual(before);
+    for (const q of ['high', 'medium', 'low'] as const) {
+      const m = lookMaterial('slab-glass', q);
+      const lib = q === 'high' ? THREE.ShaderLib.physical : THREE.ShaderLib.basic;
+      const sh = { vertexShader: lib.vertexShader, fragmentShader: lib.fragmentShader, uniforms: {} };
+      m.onBeforeCompile(sh as never, {} as never);
+      expect(sh.vertexShader, q).toContain(`attribute float ${INSTANCE_FADE}`);
+      expect(sh.vertexShader, q).toContain('vInstanceFade = instanceFade');
+      expect(sh.fragmentShader, q).toContain('diffuseColor.a *= vInstanceFade');
+      expect(m.customProgramCacheKey(), q).toContain('instance-fade');
+      if (q === 'medium') expect(sh.fragmentShader).toContain('uRim'); // the fresnel rim is kept
+    }
+  });
+});
+
+describe('fix round 1 minors', () => {
+  it('close slab A, then immediately open slab B: no A instance stays hidden', async () => {
+    const { tower, view } = setup(500, () => false);
+    await settle(view, view.explode('L12'));
+    const r = view.reassemble(); // A still flies back
+    const p = view.explode('L30');
+    await settle(view, Promise.all([r, p]).then(() => undefined));
+    expect(view.depth()).toBe(1);
+    const experts = tower.root.getObjectByName('experts') as THREE.InstancedMesh;
+    const ids = experts.userData.ids as string[];
+    const m = new THREE.Matrix4();
+    const s = new THREE.Vector3();
+    const scaleOf = (id: string): number => { experts.getMatrixAt(ids.indexOf(id), m); return s.setFromMatrixScale(m).x; };
+    for (let e = 0; e < 12; e++) {
+      expect(scaleOf(`L12.expert.${e}`), `L12.expert.${e}`).toBeGreaterThan(0);
+      expect(scaleOf(`L30.expert.${e}`), `L30.expert.${e}`).toBe(0);
+    }
+    // The row stays dimmed for B.
+    expect(((tower.root.getObjectByName('experts') as THREE.Mesh).material as THREE.Material).opacity).toBeLessThan(0.2);
+  });
+
+  it('dispose resolves and clears running tweens', async () => {
+    const { view } = setup(500, () => false);
+    const p = view.explode('L20');
+    view.update(0.1);
+    const part = view.root.getObjectByName('L20.A.ln1')!;
+    view.dispose();
+    expect(await settled(p)).toBe(true);
+    const at = part.position.clone();
+    view.update(0.2);
+    expect(part.position.equals(at)).toBe(true);
+  });
+
+  it('a pulse mid-flight keeps its course when the row shifts', async () => {
+    const { tower, view } = setup(0);
+    const anim = createAnimator(tower);
+    cleanup.push(() => anim.dispose());
+    const op = (layer: number) => ({ kind: 'router', layer, stream: 'A', data: { value: {} }, caveats: [] } as unknown as Op);
+    anim.show(op(21));
+    anim.update(1);
+    anim.show(op(23)); // flies from layer 21 to layer 23
+    anim.update(0.1);
+    const pulse = anim.root.getObjectByName('pulse:A')!;
+    const from0 = (pulse.userData.from as THREE.Vector3).x;
+    const to0 = (pulse.userData.to as THREE.Vector3).x;
+    await view.explode('L20');
+    const s = tower.layerShift[21]!;
+    expect(s).toBeGreaterThan(0);
+    expect((pulse.userData.to as THREE.Vector3).x).toBeCloseTo(to0 + s, 9);
+    expect((pulse.userData.from as THREE.Vector3).x).toBeCloseTo(from0 + s, 9);
+    anim.update(1);
+    expect(pulse.position.x).toBeCloseTo(tower.anchor('L23.A.router').x, 9);
+  });
+
+  it('a weight tile that finishes loading after the stack changed is dropped', async () => {
+    const tower = buildTower(a);
+    const rig = { flyTo: vi.fn(() => Promise.resolve()), escapeGuard: null as (() => boolean) | null };
+    let release: () => void = () => {};
+    let gate: Promise<void> = Promise.resolve();
+    const view = createExplode({
+      tower, arch: a, rig, label: noLabel, ms: 0,
+      loadWeights: async () => { await gate; return validateLayerWeights(fixture); },
+    });
+    cleanup.push(() => view.dispose());
+    await view.explode('L12');
+    await view.explode('L12.A.attn');
+    gate = new Promise<void>((r) => { release = r; });
+    const p = view.explode('L12.A.attn.q');
+    await view.reassemble(); // the attention level closes while the tile loads
+    release();
+    await p;
+    expect(view.depth()).toBe(1);
+    expect(view.current()).toBe('L12');
+    expect(view.tile()).toBeNull();
+    expect(view.root.children).toHaveLength(1);
   });
 });

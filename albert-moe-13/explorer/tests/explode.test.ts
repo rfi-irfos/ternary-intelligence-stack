@@ -127,9 +127,14 @@ describe('explode view', () => {
     await p;
     const part = view.root.getObjectByName('L12.expert.7.c_fc')!;
     expect(part.position.distanceTo(tower.anchor('L12.expert.7'))).toBeGreaterThan(1);
-    const r = view.reassemble();
-    for (let i = 0; i < 60; i++) view.update(1 / 30);
-    await r;
+    // From the row the expert opens through its slab and the bank: three levels, closed one by one.
+    expect(view.depth()).toBe(3);
+    for (let k = 0; k < 3; k++) {
+      const r = view.reassemble();
+      for (let i = 0; i < 60; i++) view.update(1 / 30);
+      await r;
+    }
+    expect(view.depth()).toBe(0);
     expect(snapshot(tower)).toEqual(before);
   });
 

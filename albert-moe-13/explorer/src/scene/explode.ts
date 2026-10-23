@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Architecture } from '../data/architecture';
 import type { CameraRig } from '../camera/controls';
 import { findMatrix, type WeightsLoader, weightKey } from '../data/weights';
-import { type ComponentId, type Stream, parseId } from './ids';
+import { type ComponentId, type Stream, parseId, slabId } from './ids';
 import { type ChildSpec, type PartKind, childrenOf, isExplodable, lanePath } from './hierarchy';
 import { buildTile, CELL, tileCaption } from './tile';
 import type { LabelKind } from '../data/labeled';
@@ -43,6 +43,11 @@ export interface ExplodeDeps {
 export interface ExplodeView {
   /** Add this to the scene; holds every exploded part. */
   readonly root: THREE.Group;
+  /**
+   * Opens `id`. From the row (nothing open), a part inside a slab opens through its slab and every
+   * level between, in one combined move: the slab's other parts make room exactly as when the slab
+   * is opened first by hand. Closing once then closes only the part's level; the slab stays open.
+   */
   explode(id: ComponentId): Promise<void>;
   /** Closes the top level (parts fly back and the previous level, or the intact row, returns). */
   reassemble(): Promise<void>;
@@ -54,7 +59,8 @@ export interface ExplodeView {
   tile(): TileInfo | null;
   /**
    * World AABB of everything open (every level, labels included, plus the exploded slot), grown by
-   * NUDGE_MARGIN; the neighbours of the row are pushed out of it. Null when nothing is open.
+   * ROW_NUDGE_MARGIN along x and NUDGE_MARGIN across; the neighbours of the row are pushed out of
+   * it. Null when nothing is open.
    */
   box(): THREE.Box3 | null;
   /**
@@ -84,8 +90,22 @@ interface Level {
   slot: SlotKey;
 }
 
-/** Gap kept between an exploded group and everything nudged aside (world units). */
+interface Built {
+  level: Level;
+  targets: [THREE.Object3D, THREE.Vector3][];
+  extent: number;
+}
+
+/** Gap kept between an exploded part and its siblings nudged aside inside a level (world units). */
 export const NUDGE_MARGIN = 0.6;
+/**
+ * Gap (x, world units) kept between the open group and the row slabs pushed aside. Wider than the
+ * sibling margin: a neighbour slab's 6-unit-deep glass plane, seen in perspective from the default
+ * and the framed camera, must not reach across the exploded parts.
+ */
+export const ROW_NUDGE_MARGIN = 1.8;
+/** Opacity factor of the exploded slab's glass and of its nearest neighbour on each side while a level is open. */
+export const SLAB_FADE = 0.25;
 /** Half thickness given to a label's box along Y (sprites are flat). */
 const LABEL_HALF_DEPTH = 0.05;
 const EPS = 1e-3;
@@ -239,6 +259,24 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
   };
 
   // --- tweens (only while something moves; update() is a no-op when idle) ---
+  /**
+   * Gives `obj` a new goal. A running tween (a part still flying out) keeps its timing and its scale
+   * tween and only bends towards the new goal, without a jump; an idle part tweens there at its scale.
+   */
+  const moveTo = (obj: THREE.Object3D, to: THREE.Vector3): Promise<void> => {
+    const tw = tweens.find((x) => x.obj === obj);
+    if (!tw) return animate(obj, to, obj.scale.x, obj.scale.x);
+    obj.userData.goal = to.clone();
+    const k = ease(tw.t / tw.dur);
+    // from' such that lerp(from', to, k) is where the part is now.
+    if (k < 1 - 1e-9) tw.from.copy(obj.position).addScaledVector(to, -k).multiplyScalar(1 / (1 - k));
+    tw.to.copy(to);
+    return new Promise<void>((resolve) => {
+      const prev = tw.done;
+      tw.done = () => { prev(); resolve(); };
+    });
+  };
+
   const animate = (obj: THREE.Object3D, to: THREE.Vector3, scaleFrom: number, scaleTo: number): Promise<void> =>
     new Promise<void>((resolve) => {
       // A newer move of the same object replaces the running one.
@@ -256,9 +294,22 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
       tweens.push({ obj, from: obj.position.clone(), to: to.clone(), scaleFrom, scaleTo, t: 0, dur: d / 1000, done: resolve });
     });
 
-  // The row shift: one tween of every slot offset at a time, same easing and length as the parts.
-  let shiftTw: { from: Float64Array; to: Float64Array; t: number; dur: number; done: () => void } | null = null;
+  // The row shift and the slab fade: one tween of every slot offset and every slab's glass fade at a
+  // time, same easing and length as the parts.
+  interface RowState { shift: Float64Array; fade: Float64Array }
+  let shiftTw: { from: RowState; to: RowState; t: number; dur: number; done: () => void } | null = null;
+  const layers = tower.layerCount;
   const readShift = (): Float64Array => Float64Array.from(slots.map((k) => tower.shiftOf(k)));
+  const readFade = (): Float64Array => Float64Array.from({ length: layers }, (_, l) => tower.slabFade(l));
+  const writeFade = (v: ArrayLike<number>): void => {
+    for (let l = 0; l < layers; l++) tower.setSlabFade(l, v[l] ?? 1);
+  };
+  const writeRow = (v: RowState): void => {
+    writeFade(v.fade);
+    writeShift(v.shift);
+  };
+  const lerpArr = (a: Float64Array, b: Float64Array, k: number): Float64Array =>
+    Float64Array.from(a, (x, i) => x + ((b[i] ?? 0) - x) * k);
   const writeShift = (v: ArrayLike<number>): void => {
     slots.forEach((k, i) => {
       const x = v[i] ?? 0;
@@ -267,7 +318,7 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
     });
     tower.applyShift();
   };
-  const tweenShift = (to: Float64Array, gap: RowExtent | null): Promise<void> =>
+  const tweenRow = (to: RowState, gap: RowExtent | null): Promise<void> =>
     new Promise<void>((resolve) => {
       if (shiftTw) {
         const old = shiftTw;
@@ -275,10 +326,11 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
         old.done();
       }
       tower.setLaneGap(gap);
-      const from = readShift();
+      const from: RowState = { shift: readShift(), fade: readFade() };
       const d = dur();
-      if (d === 0 || from.every((x, i) => x === to[i])) {
-        writeShift(to);
+      const same = (a: Float64Array, b: Float64Array): boolean => a.every((x, i) => x === b[i]);
+      if (d === 0 || (same(from.shift, to.shift) && same(from.fade, to.fade))) {
+        writeRow(to);
         resolve();
         return;
       }
@@ -347,7 +399,17 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
     if (!first) return null;
     const b = tower.slotBaseBox(first.slot);
     for (const l of stack) b.union(levelBox(l));
-    return b.expandByScalar(NUDGE_MARGIN);
+    return b.expandByVector(new THREE.Vector3(ROW_NUDGE_MARGIN, NUDGE_MARGIN, NUDGE_MARGIN));
+  };
+
+  /** Fade of every slab: the exploded one and its nearest neighbour on each side while a level is open. */
+  const fadeLayout = (): Float64Array => {
+    const f = new Float64Array(layers).fill(1);
+    const slot = stack[0]?.slot;
+    if (typeof slot === 'number') {
+      for (let l = Math.max(0, slot - 1); l <= Math.min(layers - 1, slot + 1); l++) f[l] = SLAB_FADE;
+    }
+    return f;
   };
 
   /** Slot offsets that push every other slot of the row out of the open box (left ones left, right ones right). */
@@ -383,13 +445,13 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
         if (id === l.open) continue;
         const to = targetOf(l, id);
         const goal = (o.userData.goal as THREE.Vector3 | undefined) ?? o.position;
-        if (goal.distanceToSquared(to) > 1e-12) out.push(animate(o, to, 1, 1));
+        if (goal.distanceToSquared(to) > 1e-12) out.push(moveTo(o, to));
       }
       const b = levelBox(l);
       above = above ? b.union(above) : b;
     }
     const { to, gap } = rowLayout();
-    out.push(tweenShift(to, gap));
+    out.push(tweenRow({ shift: to, fade: fadeLayout() }, gap));
     return out;
   };
 
@@ -529,6 +591,19 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
     layoutLanes(level, null);
   }
 
+  /** Ids from slab `layer` down to `id` (the slab first, `id` last), or null when `id` is not inside it. */
+  const pathFromSlab = (layer: number, id: ComponentId): ComponentId[] | null => {
+    const walk = (at: ComponentId): ComponentId[] | null => {
+      if (at === id) return [at];
+      for (const c of childrenOf(at, arch)) {
+        const rest = walk(c.id);
+        if (rest) return [at, ...rest];
+      }
+      return null;
+    };
+    return walk(slabId(layer));
+  };
+
   const view: ExplodeView = {
     root,
 
@@ -541,49 +616,75 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
         while (stack.length) await view.reassemble();
         cur = undefined;
       }
-      // A nested level opens around its part where the parent laid it out; the first one around the slab.
-      const center = cur ? targetOf(cur, id) : new THREE.Vector3(tower.slabX(p.layer), 0, 0);
-      const startAt = cur
-        ? (cur.parts.get(id)?.position.clone() ?? center.clone())
-        : (tower.has(id) ? tower.anchor(id) : center.clone());
-      const startOf = (): THREE.Vector3 => startAt.clone();
+      // From the row, a part opens through its slab (and any level between): the slab's other parts
+      // make room exactly as in a nested open, and every level moves in one combined tween.
+      const chain = cur ? [id] : pathFromSlab(p.layer, id);
+      if (!chain) return;
       const slot: SlotKey = cur ? cur.slot : p.layer;
-
-      let level: Level;
-      let extent: number;
-      let targets: [THREE.Object3D, THREE.Vector3][];
-      if (p.type === 'matrix') {
-        loading = true;
-        try {
-          level = await buildMatrixLevel(id, center, startOf(), slot);
-        } finally {
-          loading = false;
+      const built: Built[] = [];
+      const drop = (): void => { for (const b of built) disposeTree(b.level.group); };
+      let parent: Level | undefined = cur;
+      let start = new THREE.Vector3(tower.slabX(p.layer), 0, 0);
+      try {
+        for (const cid of chain) {
+          const cp = parseId(cid)!;
+          // A nested level opens around its part where the parent laid it out; the first one around the slab.
+          const center = parent ? targetOf(parent, cid) : new THREE.Vector3(tower.slabX(p.layer), 0, 0);
+          // Parts fly out of the part as drawn now (the parent's part, or the row instance when there is one).
+          if (parent && parent === cur) start = cur.parts.get(cid)?.position.clone() ?? center.clone();
+          else if (tower.has(cid)) start = tower.anchor(cid);
+          const from = start.clone();
+          if (cp.type === 'matrix') {
+            loading = true;
+            let level: Level;
+            try {
+              level = await buildMatrixLevel(cid, center, from, slot);
+            } finally {
+              loading = false;
+            }
+            built.push({ level, targets: [[level.parts.get(cid)!, center.clone()]], extent: Math.max(level.tile!.rows, level.tile!.cols) * CELL / 2 + 1 });
+            // The stack changed while the weights loaded (a close, another open): this open is stale.
+            if (top() !== cur) {
+              drop();
+              return;
+            }
+          } else {
+            built.push(buildPartsLevel(cid, center, () => from.clone(), slot));
+          }
+          parent = built[built.length - 1]!.level;
         }
-        const info = level.tile!;
-        extent = Math.max(info.rows, info.cols) * CELL / 2 + 1;
-        targets = [[level.parts.get(id)!, center.clone()]];
-      } else {
-        ({ level, targets, extent } = buildPartsLevel(id, center, startOf, slot));
+      } catch (err) {
+        drop();
+        throw err;
       }
 
       setLanesVisible(false);
       if (cur) {
         // The parent stays as context: the opened part gives way to its own parts, its siblings make room.
-        cur.open = id;
-        const part = cur.parts.get(id);
+        cur.open = chain[0]!;
+        const part = cur.parts.get(chain[0]!);
         if (part) part.visible = false;
       } else {
         dim();
-        tower.hide(id);
+        tower.hide(chain[0]!);
       }
-      stack.push(level);
-      root.add(level.group);
-      addLanes(level);
-      flyTo(level, extent);
+      built.forEach(({ level }, k) => {
+        const below = built[k - 1]?.level;
+        if (below) {
+          below.open = level.id;
+          const part = below.parts.get(level.id);
+          if (part) part.visible = false;
+        }
+        stack.push(level);
+        root.add(level.group);
+        addLanes(level);
+      });
+      const last = built[built.length - 1]!;
+      flyTo(last.level, last.extent);
       deps.onChange?.(id);
-      const moves = targets.map(([o, to]) => animate(o, to, 0.2, 1));
+      const moves = built.flatMap((b) => b.targets.map(([o, to]) => animate(o, to, 0.2, 1)));
       await Promise.all([...moves, ...relayout()]);
-      if (top() === level) showLanes();
+      if (top() === last.level) showLanes();
     },
 
     async reassemble() {
@@ -616,7 +717,9 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
         if (part) part.visible = true;
         if (top() === prev) showLanes();
       }
-      if (stack.length === 0) {
+      // Only once everything is closed and no other close still animates: a slab opened meanwhile
+      // keeps its originals hidden and the row dimmed.
+      if (stack.length === 0 && closing === 0) {
         tower.unhide();
         undim();
       }
@@ -649,11 +752,11 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
         st.t = Math.min(st.t + dt, st.dur);
         if (st.t >= st.dur) {
           shiftTw = null;
-          writeShift(st.to); // exact end values: reassembling restores the base matrices bit for bit
+          writeRow(st.to); // exact end values: reassembling restores the base matrices bit for bit
           st.done();
         } else {
           const k = ease(st.t / st.dur);
-          writeShift(Array.from(st.from, (x, i) => x + ((st.to[i] ?? 0) - x) * k));
+          writeRow({ shift: lerpArr(st.from.shift, st.to.shift, k), fade: lerpArr(st.from.fade, st.to.fade, k) });
         }
       }
     },
@@ -681,8 +784,9 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
         shiftTw = null;
         st.done();
       }
+      for (const tw of tweens.splice(0)) tw.done();
       tower.setLaneGap(null);
-      writeShift(new Float64Array(slots.length));
+      writeRow({ shift: new Float64Array(slots.length), fade: new Float64Array(layers).fill(1) });
       tower.unhide();
       undim();
       for (const g of geoCache.values()) g.dispose();

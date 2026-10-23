@@ -163,7 +163,9 @@ describe('exploded navigation and picking', () => {
     const deps = { explodable: (id: string) => isExplodable(id, a), explode: (id: string) => view.explode(id), openPanel };
     pickAction('L12.A.attn', deps);
     await flush();
-    expect(view.depth()).toBe(1);
+    // From the row the part opens through its slab (two levels), with one panel open.
+    expect(view.depth()).toBe(2);
+    expect(view.current()).toBe('L12.A.attn');
     expect(openPanel).toHaveBeenCalledTimes(1);
     openPanel.mockClear();
     pickAction('L12.expert.7.gelu', { ...deps, explodable: () => false });

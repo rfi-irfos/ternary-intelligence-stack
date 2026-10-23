@@ -233,6 +233,24 @@ describe('layer mode', () => {
     expect(document.body.classList.contains('layer-mode')).toBe(false);
   });
 
+  it('re-frames when a step grows the open group beyond the frame, never when it shrinks', async () => {
+    const { deps, calls } = fakeDeps({ defaults: () => ({ promptId: 'kjv', position: 4 }) });
+    const v = deps.view as unknown as { depth(): number; box?: () => THREE.Box3 | null };
+    // Depth 1 (the slab) spans x -10..10; depth 2 (attention) grows the group to x 30.
+    v.box = () => (v.depth() === 0 ? null
+      : new THREE.Box3(new THREE.Vector3(-10, -3, -2), new THREE.Vector3(v.depth() > 1 ? 30 : 10, 3, 2)));
+    const lm = createLayerMode(deps);
+    await lm.enter(12);
+    const frames = (): number => calls.filter((c) => c === 'frame').length;
+    expect(frames()).toBe(1);
+    await lm.goto(1); // attention level: wider than the frame
+    expect(frames()).toBe(2);
+    await lm.goto(0); // back to the slab: smaller, the frame stays
+    expect(frames()).toBe(2);
+    await lm.goto(1); // fits the current frame
+    expect(frames()).toBe(2);
+  });
+
   it('a stream change re-opens the matching level', async () => {
     const { deps } = fakeDeps({ defaults: () => ({ promptId: 'kjv', position: 4 }) });
     const lm = createLayerMode(deps);

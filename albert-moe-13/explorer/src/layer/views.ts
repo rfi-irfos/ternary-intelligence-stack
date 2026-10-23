@@ -459,6 +459,35 @@ export function createLayerMode(deps: LayerModeDeps): LayerMode {
     openPath = [...path];
   };
 
+  /** The frame layer mode last gave the camera (null outside layer mode). */
+  let framed: { cx: number; halfW: number; halfH: number } | null = null;
+  /** Frame of the exploded slab plus the room its neighbours made (never smaller than the default). */
+  const frameFor = (): { c: THREE.Vector3; halfW: number; halfH: number } => {
+    const c = deps.slabCenter(layer);
+    const b = view.box?.() ?? null;
+    let halfW = FRAME_HALF_W;
+    let halfH = FRAME_HALF_H;
+    if (b) {
+      c.x = (b.min.x + b.max.x) / 2;
+      halfW = Math.max(halfW, (b.max.x - b.min.x) / 2);
+      halfH = Math.max(halfH, (b.max.z - b.min.z) / 2);
+    }
+    return { c, halfW, halfH };
+  };
+  /**
+   * Frames the open group (`always`), or only when it grew beyond the current frame. Called from
+   * user actions only (enter, a step, a prompt/token/stream change), never from idle code.
+   */
+  const reframe = async (always: boolean): Promise<void> => {
+    const f = frameFor();
+    const o = framed;
+    const grew = !o || f.c.x - f.halfW < o.cx - o.halfW - 1e-6 || f.c.x + f.halfW > o.cx + o.halfW + 1e-6
+      || f.halfH > o.halfH + 1e-6;
+    if (!always && !grew) return;
+    framed = { cx: f.c.x, halfW: f.halfW, halfH: f.halfH };
+    await rig.frame(f.c, f.halfW, f.halfH, ms());
+  };
+
   const show = (): void => {
     const step = stepList[i];
     if (!step) return;
@@ -471,6 +500,8 @@ export function createLayerMode(deps: LayerModeDeps): LayerMode {
     show();
     await ensureOpen(step.open);
     applyHighlight(view.root, step.highlight);
+    // A step that opens a bigger group (the bank, an expert) widens the frame so it stays in view.
+    if (active && framed) await reframe(false);
   };
   const go = (to: number): Promise<void> => {
     target = Math.max(0, Math.min(stepList.length - 1, to));
@@ -517,24 +548,17 @@ export function createLayerMode(deps: LayerModeDeps): LayerMode {
         // Start from a clean view: whatever was open (a panel level, another layer) closes first.
         while (view.depth() > 0) await view.reassemble();
         openPath = [];
+        framed = null;
         await draw();
         // Frame the exploded slab plus the room its neighbours made (never smaller than before).
-        const c = deps.slabCenter(layer);
-        const b = view.box?.() ?? null;
-        let halfW = FRAME_HALF_W;
-        let halfH = FRAME_HALF_H;
-        if (b) {
-          c.x = (b.min.x + b.max.x) / 2;
-          halfW = Math.max(halfW, (b.max.x - b.min.x) / 2);
-          halfH = Math.max(halfH, (b.max.z - b.min.z) / 2);
-        }
-        await rig.frame(c, halfW, halfH, ms());
+        await reframe(true);
       });
     },
     exit() {
       return enqueue(async () => {
         if (!active) return;
         active = false;
+        framed = null;
         root.hidden = true;
         document.body.classList.remove('layer-mode');
         applyHighlight(view.root, []);

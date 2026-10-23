@@ -68,8 +68,38 @@ export function fresnelGlass(color: number, opacity: number, rim: number): THREE
   return m;
 }
 
-/** Glass of the 46 slab planes for one quality. */
+/** Per-instance opacity factor of the slab glass, frame and outline (tower.ts owns the attribute). */
+export const INSTANCE_FADE = 'instanceFade';
+
+/**
+ * Makes `m` multiply its alpha by the per-instance `instanceFade` attribute (1 = as is). Every
+ * geometry drawn with `m` must carry that attribute (tower.ts adds one shared attribute to the slab
+ * glass, frame and outline geometries). Chains an existing onBeforeCompile (the fresnel rim), so the
+ * fade applies on top of it. Patches the material in place and returns it; no new material.
+ */
+export function withInstanceFade<M extends THREE.Material>(m: M): M {
+  const prev = m.onBeforeCompile.bind(m);
+  const prevKey = m.customProgramCacheKey.bind(m);
+  m.onBeforeCompile = (sh, r) => {
+    prev(sh, r);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', `#include <common>\nattribute float ${INSTANCE_FADE};\nvarying float vInstanceFade;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>\n  vInstanceFade = ${INSTANCE_FADE};`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vInstanceFade;')
+      .replace('#include <opaque_fragment>', 'diffuseColor.a *= vInstanceFade;\n  #include <opaque_fragment>');
+  };
+  m.customProgramCacheKey = (): string => `${prevKey()}+instance-fade`;
+  m.userData.instanceFade = true;
+  return m;
+}
+
+/** Glass of the 46 slab planes for one quality; its alpha follows the slab's `instanceFade`. */
 export function slabGlassMaterial(q: Quality): THREE.Material {
+  return withInstanceFade(slabGlassBase(q));
+}
+
+function slabGlassBase(q: Quality): THREE.Material {
   if (q === 'high') {
     // Frosted transmission: the lanes and gates behind a slab show through, slightly blurred.
     const m = new THREE.MeshPhysicalMaterial({

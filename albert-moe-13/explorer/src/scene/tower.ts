@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import type { Modules } from './modules';
 import { PALETTE, streamColor } from './palette';
-import { RENDER_ORDER, instancedEdges, lookMaterial, markBloom, sharedInstanceLines, type LookRole } from './materials';
+import {
+  INSTANCE_FADE, RENDER_ORDER, instancedEdges, lookMaterial, markBloom, sharedInstanceLines, withInstanceFade, type LookRole,
+} from './materials';
 import type { Architecture } from '../data/architecture';
 import {
   type ComponentId, type Stream,
@@ -76,11 +78,20 @@ export interface TowerScene {
    * (hidden instances stay at scale 0), the lane segments, and the culling spheres. No new objects.
    */
   applyShift(): void;
-  /** Hides (scale 0) the instances of `target` and everything below it; slab glass and gate arcs stay. */
+  /**
+   * Hides (scale 0) the instances of `target` and everything below it, and shows again whatever an
+   * earlier call hid (it replaces, never accumulates); slab glass and gate arcs stay.
+   */
   hide(target: ComponentId): void;
   unhide(): void;
   /** Called after every applyShift(); returns the unsubscribe function. */
   onShift(fn: () => void): () => void;
+  /**
+   * Opacity factor (1 = as is) of slab `layer`'s glass, frame and outline, applied per instance on
+   * top of the material's opacity, so a quality swap or the row dim keeps it. No new materials.
+   */
+  setSlabFade(layer: number, f: number): void;
+  slabFade(layer: number): number;
 }
 
 interface Item {
@@ -206,6 +217,11 @@ export function buildTower(a: Architecture, modules?: Modules | null): TowerScen
     slabGeo = new THREE.PlaneGeometry(SLAB_HEIGHT, SLAB_WIDTH); // local X = Z-high, Y = width
     slabGeo.rotateY(Math.PI / 2); // plane normal along X; local (x,y,z) -> (0, width, height)
   }
+  // One fade factor per slab, shared by the glass, the frame bars and the outline (explode.ts fades
+  // the exploded slab and its nearest neighbours so their planes do not cut across the parts).
+  const fade = new THREE.InstancedBufferAttribute(new Float32Array(n).fill(1), 1);
+  fade.setUsage(THREE.DynamicDrawUsage);
+  slabGeo.setAttribute(INSTANCE_FADE, fade);
   const slabs = new THREE.InstancedMesh(slabGeo, lookMaterial('slab-glass', 'low'), n);
   slabs.name = 'slabs';
   slabs.userData.ids = Array.from({ length: n }, (_, l) => slabId(l));
@@ -229,17 +245,19 @@ export function buildTower(a: Architecture, modules?: Modules | null): TowerScen
     const q = c4[(k + 1) % 4]!;
     rect.push(0, p[0], p[1], 0, q[0], q[1]);
   }
-  const lineMat = new THREE.LineBasicMaterial({ color: PALETTE.edge, transparent: true, opacity: 0.55, depthWrite: false });
+  const lineMat = withInstanceFade(new THREE.LineBasicMaterial({ color: PALETTE.edge, transparent: true, opacity: 0.55, depthWrite: false }));
   lineMat.defines = { USE_INSTANCING: '' };
   const lines = sharedInstanceLines(slabs, new THREE.Float32BufferAttribute(rect, 3), lineMat);
+  lines.geometry.setAttribute(INSTANCE_FADE, fade);
   slabs.remove(lines);
   const slabFollowers: THREE.Object3D[] = [lines];
   let edges: THREE.Object3D = lines;
   if (mg?.frame) {
     // Module bars give the outline thickness up close: one instanced mesh on the slab matrices.
+    mg.frame.setAttribute(INSTANCE_FADE, fade);
     const frame = new THREE.InstancedMesh(
       mg.frame,
-      new THREE.MeshBasicMaterial({ color: PALETTE.edge, transparent: true, opacity: 0.55, depthWrite: false }),
+      withInstanceFade(new THREE.MeshBasicMaterial({ color: PALETTE.edge, transparent: true, opacity: 0.55, depthWrite: false })),
       n,
     );
     frame.instanceMatrix = slabs.instanceMatrix;
@@ -464,7 +482,9 @@ export function buildTower(a: Architecture, modules?: Modules | null): TowerScen
     },
     applyShift,
     hide(target) {
+      // Replaces what was hidden: a slab still flying back while another one opens shows again.
       for (const sh of shiftables) {
+        sh.hidden.clear();
         if (!sh.hideable) continue;
         const ids = sh.mesh.userData.ids as ComponentId[];
         ids.forEach((id, i) => {
@@ -482,5 +502,11 @@ export function buildTower(a: Architecture, modules?: Modules | null): TowerScen
       listeners.add(fn);
       return () => listeners.delete(fn);
     },
+    setSlabFade(layer, f) {
+      if (fade.getX(layer) === f) return;
+      fade.setX(layer, f);
+      fade.needsUpdate = true;
+    },
+    slabFade: (layer) => fade.getX(layer),
   };
 }

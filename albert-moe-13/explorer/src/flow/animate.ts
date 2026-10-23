@@ -77,7 +77,7 @@ export function createAnimator(tower: TowerScene): Animator {
   const pulseMat = (c: number): THREE.MeshBasicMaterial => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.95, depthTest: false });
   const sphere = new THREE.SphereGeometry(0.28, 16, 12);
   const pulses: Record<Stream, THREE.Mesh> = { A: new THREE.Mesh(sphere, pulseMat(streamColor('A'))), B: new THREE.Mesh(sphere, pulseMat(streamColor('B'))) };
-  for (const p of Object.values(pulses)) { p.visible = false; p.renderOrder = 10; markBloom(p); root.add(p); }
+  for (const [s, p] of Object.entries(pulses)) { p.name = `pulse:${s}`; p.visible = false; p.renderOrder = 10; markBloom(p); root.add(p); }
 
   const valveGeo = new THREE.SphereGeometry(0.3, 12, 10);
   const cube = new THREE.BoxGeometry(0.46, 0.46, 0.46);
@@ -129,6 +129,10 @@ export function createAnimator(tower: TowerScene): Animator {
       const p = pulses[l];
       if (!p.visible) continue;
       const dest = pulseDest(shown.target, l);
+      const old = p.userData.to as THREE.Vector3 | undefined;
+      const from = p.userData.from as THREE.Vector3 | undefined;
+      // Mid-flight, the start moves with the row as the goal does, so the pulse keeps its course.
+      if (t < PULSE_SECONDS && old && from) from.x += dest.x - old.x;
       if (t >= PULSE_SECONDS) p.position.copy(dest);
       p.userData.to = dest;
     }
