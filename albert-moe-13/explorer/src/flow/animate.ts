@@ -30,7 +30,12 @@ export function opTarget(op: Op, tower: TowerScene): OpTarget {
     case 'lm_head': return pick(lmHeadId());
     case 'ln1': return pick(ln1Id(layer, s ?? 'A'));
     case 'ln2': return pick(ln2Id(layer, s ?? 'A'));
-    case 'attn': case 'resid': return pick(attnId(layer, s ?? 'A'));
+    case 'attn': return pick(attnId(layer, s ?? 'A'));
+    case 'resid': {
+      // post_moe closes the layer: pulse sits at the router end so it never jumps backward.
+      const post = (op.data.value as { phase?: string }).phase === 'post_moe';
+      return pick(post ? routerId(layer, s ?? 'A') : attnId(layer, s ?? 'A'));
+    }
     case 'router': return pick(routerId(layer, s ?? 'A'));
     case 'experts': {
       const d = op.data.value as ExpertsData;
@@ -97,6 +102,7 @@ export function createAnimator(tower: TowerScene): Animator {
       // The pulse rides its lane from where it was to the new x.
       const dest = new THREE.Vector3(here.x, LANE_Y[l], LANE_Z);
       p.userData.from = (p.visible ? p.position : dest).clone();
+      p.position.copy(p.userData.from as THREE.Vector3);
       p.userData.to = dest;
       p.visible = true;
     }

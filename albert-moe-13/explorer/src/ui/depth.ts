@@ -43,7 +43,7 @@ export function onDepthChange(cb: (d: Depth) => void): () => void {
 export function attachDepthKeys(doc: Document = document): () => void {
   const on = (e: KeyboardEvent): void => {
     const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const d = DEPTHS[Number(e.key) - 1];
     if (d) setDepth(d);

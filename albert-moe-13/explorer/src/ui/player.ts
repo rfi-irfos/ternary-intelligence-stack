@@ -1,7 +1,7 @@
 import type { CameraRig } from '../camera/controls';
 import { CAVEATS } from '../content/caveats';
 import type { Architecture } from '../data/architecture';
-import { type Labeled, type LabeledValue, fmt } from '../data/labeled';
+import { type Labeled, type LabeledValue, fmt, structure } from '../data/labeled';
 import { type Trace, decodeToken, loadTrace } from '../data/trace';
 import type { Animator } from '../flow/animate';
 import {
@@ -47,7 +47,7 @@ export function createPlayer(ops: readonly Op[], animate: (op: Op, index: number
   let i = 0;
   let isPlaying = false;
   let spd: Speed = 1;
-  let mode: CameraMode = 'follow';
+  let mode: CameraMode = 'free';
   let acc = 0;
   const listeners = new Set<(index: number, op: Op) => void>();
 
@@ -90,7 +90,7 @@ export function createPlayer(ops: readonly Op[], animate: (op: Op, index: number
     },
     tick(dt) {
       if (!isPlaying) return;
-      acc += dt * spd;
+      acc += Math.min(dt, 0.1) * spd;
       while (acc >= OP_SECONDS - 1e-9 && isPlaying) {
         const rest = Math.max(acc - OP_SECONDS, 0);
         if (i >= ops.length - 1) { isPlaying = false; acc = 0; break; }
@@ -112,12 +112,17 @@ const OP_LABEL: Record<OpKind, string> = {
 
 export const NO_TRACE_TEXT = 'no measured trace available';
 
-const row = (label: string, ...vals: (HTMLElement | string)[]): HTMLElement => {
+/** Label, then parts: strings are literal text; consecutive value elements are separated by ", ". */
+const row = (label: string, ...parts: (HTMLElement | string)[]): HTMLElement => {
   const d = document.createElement('div');
   d.className = 'player-row';
   const b = document.createElement('b');
   b.textContent = `${label} `;
-  d.append(b, ...vals.flatMap((v, k) => (k === 0 ? [v] : [', ', v])));
+  d.append(b);
+  parts.forEach((v, k) => {
+    if (k > 0 && typeof v !== 'string' && typeof parts[k - 1] !== 'string') d.append(', ');
+    d.append(v);
+  });
   return d;
 };
 
@@ -129,17 +134,21 @@ export function opDetails(op: Op): HTMLElement {
     const l: Labeled<LabeledValue> = { kind: op.data.kind, value: v, ...(op.data.provenance ? { provenance: op.data.provenance } : {}) };
     return fmt(l, format ? { format } : {});
   };
+  const fs = (v: LabeledValue): HTMLElement => fmt(structure(v));
   const pct = (x: LabeledValue): string => `${(Number(x) * 100).toFixed(1)} %`;
   const d = op.data.value;
   switch (op.kind) {
     case 'embed': {
       const e = d as EmbedData;
-      box.append(row('token', f(JSON.stringify(e.token), (x) => String(x)), `id `, f(e.tokenId)));
+      box.append(row('token', f(JSON.stringify(e.token)), ' id ', f(e.tokenId)));
       break;
     }
     case 'attn': {
       const a = d as AttnData;
-      box.append(row('heads', f(a.heads.length), 'each with its attention row over the earlier tokens'));
+      box.append(
+        row('heads', fs(a.heads.length)),
+        row('max attention weight per head', ...a.heads.map((h) => f(Math.max(...h.row), () => `h${h.head} ${Math.max(...h.row).toFixed(2)}`))),
+      );
       break;
     }
     case 'resid': {
@@ -150,8 +159,8 @@ export function opDetails(op: Op): HTMLElement {
     case 'router': {
       const r = d as RouterData;
       box.append(
-        row('top 3 experts', ...r.top3.map((e, k) => f(`E${e}`, () => `E${e} (${(r.weights[k] as number * 100).toFixed(1)} %)`))),
-        row('weights', ...r.weights.map((w) => f(w, pct)), '(softmax after the A3 clamp, before output scales)'),
+        row('top 3 experts (softmax weight after the A3 clamp, before output scales)',
+          ...r.top3.map((e, k) => f(`E${e}`, () => `E${e} (${((r.weights[k] as number) * 100).toFixed(1)} %)`))),
         row('output scale (traffic light)', f(r.outputScales.length > 0 ? Math.min(...r.outputScales) : 0),
           r.outputScales.every((s) => s === r.outputScales[0]) ? '(all experts equal)' : '(min over experts)'),
       );
@@ -160,7 +169,7 @@ export function opDetails(op: Op): HTMLElement {
     }
     case 'experts': {
       const x = d as ExpertsData;
-      box.append(row('lit', f(x.lit.length), 'of ', f(x.lit.length + x.dark.length), `experts (E${x.lit.join(', E')})`));
+      box.append(row('lit', fs(x.lit.length), ' of ', fs(x.lit.length + x.dark.length), ' experts: ', ...x.lit.map((e) => f(`E${e}`))));
       break;
     }
     case 'gate': {
@@ -171,7 +180,13 @@ export function opDetails(op: Op): HTMLElement {
     case 'merge': box.append(row('merged norm', f((d as MergeData).mergedNorm))); break;
     case 'lm_head': {
       const h = d as LmHeadData;
-      if (!h.available) { box.append(row('next-token top 5', h.note)); break; }
+      if (!h.available) {
+        const note = document.createElement('div');
+        note.className = 'player-row';
+        note.textContent = h.note;
+        box.append(note);
+        break;
+      }
       for (const k of h.topK) box.append(row(JSON.stringify(k.token), f(k.prob, pct)));
       break;
     }
@@ -261,6 +276,12 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   let player: Player | null = null;
   let offChange: (() => void) | null = null;
   let lastKey = '';
+  /** True only while handling a user action (Play, Step, scrub, jumps); builds never move the camera. */
+  let userAction = false;
+  const act = (fn: () => void): void => {
+    userAction = true;
+    try { fn(); } finally { userAction = false; }
+  };
 
   const promptSel = select('Prompt', []);
   const tokenSel = select('Token', []);
@@ -275,6 +296,7 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   const speedSel = select('Speed', SPEEDS.map((s) => [String(s), `${s}x`]));
   speedSel.value = '1';
   const camSel = select('Camera', CAMERA_MODES.map((m) => [m, `camera: ${m}`]));
+  camSel.value = 'free';
   const layerIn = document.createElement('input');
   layerIn.type = 'number';
   layerIn.min = '0';
@@ -315,7 +337,7 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     where.textContent = `${index + 1} / ${player?.ops.length ?? 0}: ${OP_LABEL[op.kind]}${lay}${str}`;
     details.replaceChildren(opDetails(op));
     play.textContent = player?.playing() ? 'Pause' : 'Play';
-    followCamera(op, false);
+    if (userAction || player?.playing()) followCamera(op, false);
   };
 
   const build = (id: string, position: number): void => {
@@ -342,10 +364,10 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
 
   promptSel.addEventListener('change', () => { fillTokens(promptSel.value); build(promptSel.value, Number(tokenSel.value)); });
   tokenSel.addEventListener('change', () => build(promptSel.value, Number(tokenSel.value)));
-  play.addEventListener('click', () => { player?.toggle(); play.textContent = player?.playing() ? 'Pause' : 'Play'; });
-  prev.addEventListener('click', () => { player?.step(-1); play.textContent = 'Play'; });
-  next.addEventListener('click', () => { player?.step(1); play.textContent = 'Play'; });
-  scrub.addEventListener('input', () => player?.scrub(Number(scrub.value)));
+  play.addEventListener('click', () => { act(() => player?.toggle()); play.textContent = player?.playing() ? 'Pause' : 'Play'; });
+  prev.addEventListener('click', () => { act(() => player?.step(-1)); play.textContent = 'Play'; });
+  next.addEventListener('click', () => { act(() => player?.step(1)); play.textContent = 'Play'; });
+  scrub.addEventListener('input', () => act(() => player?.scrub(Number(scrub.value))));
   speedSel.addEventListener('change', () => player?.setSpeed(Number(speedSel.value) as Speed));
   camSel.addEventListener('change', () => {
     player?.setCameraMode(camSel.value as CameraMode);
@@ -355,9 +377,9 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   });
   layerGo.addEventListener('click', () => {
     const l = Number(layerIn.value);
-    if (layerIn.value !== '' && Number.isInteger(l)) player?.jumpToLayer(l);
+    if (layerIn.value !== '' && Number.isInteger(l)) act(() => player?.jumpToLayer(l));
   });
-  kindGo.addEventListener('click', () => player?.jumpToNext(kindSel.value as OpKind));
+  kindGo.addEventListener('click', () => act(() => player?.jumpToNext(kindSel.value as OpKind)));
 
   const ready = (async () => {
     const results = await Promise.allSettled((deps.ids ?? TRACE_IDS).map(async (id) => [id, await load(id)] as const));

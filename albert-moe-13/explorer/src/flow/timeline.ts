@@ -58,7 +58,7 @@ export interface LmHeadData {
 }
 export interface PlainData { note: string }
 
-const LAST_ONLY = 'the next-token top 5 was recorded for the last position of the prompt only';
+const LAST_ONLY = 'albert_trace records the next-token top 5 for the last prompt position only';
 
 function need<T>(v: T | undefined, what: string): T {
   if (v === undefined) throw new Error(`trace is missing ${what}`);

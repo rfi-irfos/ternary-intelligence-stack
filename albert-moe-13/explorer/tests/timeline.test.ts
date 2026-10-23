@@ -52,15 +52,55 @@ describe('buildTimeline', () => {
     expect(other?.caveats).not.toContain('A3');
   });
 
-  it('real clamped rows carry A3, unclamped ones do not', () => {
+  it('real traces: op A3 flag equals the raw a3_clamped of the trace events', () => {
+    let clamped = 0;
     for (const id of ['kjv', 'de', 'ternary']) {
       const t = load(id);
+      const raw = new Map<string, boolean[]>();
+      for (const e of t.events) if (e.type === 'router') raw.set(`${e.layer}${e.stream}`, e.a3_clamped);
       for (let pos = 0; pos < t.provenance.token_ids.length; pos++) {
         for (const o of buildTimeline(t, a, pos)) {
-          if (o.kind === 'router') expect(o.caveats.includes('A3')).toBe((o.data.value as RouterData).a3Clamped);
+          if (o.kind !== 'router' && o.kind !== 'experts') continue;
+          const flag = raw.get(`${o.layer}${(o.stream as string).toLowerCase()}`)?.[pos];
+          expect(typeof flag).toBe('boolean');
+          expect(o.caveats.includes('A3')).toBe(flag);
+          if (o.kind === 'router' && flag) clamped++;
         }
       }
     }
+    // count over all positions of the three traces, computed from the raw events
+    let rawCount = 0;
+    for (const id of ['kjv', 'de', 'ternary']) {
+      for (const e of load(id).events) if (e.type === 'router') rawCount += e.a3_clamped.filter(Boolean).length;
+    }
+    expect(clamped).toBe(rawCount);
+    expect(clamped).toBeGreaterThan(0);
+    console.log(`A3-clamped router positions across kjv, de, ternary: ${clamped}`);
+  });
+
+  it('op order: embed, per layer stream A then B (7 ops each), gate after B on fusion layers, then merge, ln_f, lm_head', () => {
+    const ops = buildTimeline(kjv, a, 2);
+    const seven = ['ln1', 'attn', 'resid', 'ln2', 'router', 'experts', 'resid'];
+    expect(ops[0]?.kind).toBe('embed');
+    expect(ops.slice(-3).map((o) => o.kind)).toEqual(['merge', 'ln_f', 'lm_head']);
+    const layerOps = (l: number) => ops.filter((o) => o.layer === l);
+    // layer 0 is not a fusion layer: A(7) then B(7), no gate
+    const l0 = layerOps(0);
+    expect(l0.map((o) => o.kind)).toEqual([...seven, ...seven]);
+    expect(l0.map((o) => o.stream)).toEqual([...Array(7).fill('A'), ...Array(7).fill('B')]);
+    expect(ops.indexOf(l0[0] as never)).toBe(1);
+    // layer 2 is a fusion layer: gate follows stream B
+    expect(a.model.fusion_layers).toContain(2);
+    const l2 = layerOps(2);
+    expect(l2.map((o) => o.kind)).toEqual([...seven, ...seven, 'gate']);
+    expect(l2.at(-1)?.stream).toBeUndefined();
+    // layers are contiguous and ascending
+    const layers = ops.map((o) => o.layer).filter((l): l is number => l !== undefined);
+    expect(layers).toEqual([...layers].sort((x, y) => x - y));
+    // resid ops come in pairs: post_attn then post_moe
+    const phases = ops.filter((o) => o.kind === 'resid').map((o) => (o.data.value as { phase: string }).phase);
+    expect(phases).toHaveLength(a.model.num_layers * 4);
+    phases.forEach((ph, i) => expect(ph).toBe(i % 2 === 0 ? 'post_attn' : 'post_moe'));
   });
 
   it('lm_head op data is measured top-5 with provenance', () => {
@@ -112,6 +152,11 @@ describe('opTarget', () => {
     const g = op.data.value as { gA: number; gB: number };
     expect(t.valves?.A).toBeCloseTo(Math.max(0, Math.min(1, g.gA)));
     expect(t.valves?.B).toBeCloseTo(Math.max(0, Math.min(1, g.gB)));
+  });
+  it('post_moe resid pulses at the router, post_attn at attn', () => {
+    const r = ops.filter((o) => o.kind === 'resid' && o.layer === 5 && o.stream === 'A');
+    expect(opTarget(r[0] as never, tower).pulse).toBe('L5.A.attn');
+    expect(opTarget(r[1] as never, tower).pulse).toBe('L5.A.router');
   });
   it('every op resolves to an anchor', () => {
     for (const o of ops) expect(tower.has(opTarget(o, tower).pulse)).toBe(true);
