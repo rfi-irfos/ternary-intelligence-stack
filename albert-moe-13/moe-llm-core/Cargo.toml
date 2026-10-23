@@ -17,6 +17,7 @@ required-features = ["serve"]
 
 [features]
 cuda  = ["candle-core/cuda", "candle-nn/cuda"]
+trace = []
 serve = ["dep:axum", "dep:tokio", "dep:tower-http", "dep:anyhow"]
 
 [dependencies]

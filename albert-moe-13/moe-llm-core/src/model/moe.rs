@@ -321,6 +321,13 @@ impl MoeBlock {
             val_tensor.broadcast_mul(&multiplier)
         };
 
+        // Trace (read-only): a3_clamped uses the pre-safety logits; nothing is fed back.
+        #[cfg(feature = "trace")]
+        let trace_pre: Option<[Vec<f32>; 3]> = if crate::trace::recording() {
+            let f = |t: &Tensor| t.flatten_all().and_then(|t| t.to_vec1::<f32>()).unwrap_or_default();
+            Some([f(&max1_values), f(&max2_values), f(&max3_values)])
+        } else { None };
+
         let max1_values = apply_safety(&max1_indices, &max1_values)?;
         let max2_values = apply_safety(&max2_indices, &max2_values)?;
         let max3_values = apply_safety(&max3_indices, &max3_values)?;
@@ -331,6 +338,25 @@ impl MoeBlock {
             1,
         )?;
         let top3_probs = candle_nn::ops::softmax(&top3_logits, 1)?;
+
+        crate::trace_event! {
+            let (layer, stream) = crate::trace::site();
+            let idx = |t: &Tensor| t.flatten_all().and_then(|t| t.to_vec1::<u32>()).unwrap_or_default();
+            let (i1, i2, i3) = (idx(&max1_indices), idx(&max2_indices), idx(&max3_indices));
+            let n = i1.len();
+            let top3: Vec<[u32; 3]> = (0..n).map(|k| [i1[k], i2[k], i3[k]]).collect();
+            let weights: Vec<[f32; 3]> = crate::trace::rows(&top3_probs, 3).iter()
+                .map(|r| [r[0], r[1], r[2]]).collect();
+            let a3_clamped: Vec<bool> = match &trace_pre {
+                Some(pre) => (0..n).map(|k| (0..3).any(|j| top3[k][j] < 4 && pre[j][k] < safety_threshold)).collect(),
+                None => vec![false; n],
+            };
+            crate::trace::push(crate::trace::TraceEvent::Router {
+                layer, stream,
+                logits: crate::trace::rows(&gate_logits, self.num_experts),
+                top3, weights, a3_clamped,
+            });
+        }
 
         let mut final_output = Tensor::zeros((b * s, h), x.dtype(), dev)?;
 

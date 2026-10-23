@@ -152,6 +152,17 @@ impl Attention {
         attn_weights = attn_weights.broadcast_add(&mask)?;
         let attn_weights = candle_nn::ops::softmax(&attn_weights, D::Minus1)?;
 
+        crate::trace_event! {
+            let (layer, stream) = crate::trace::site();
+            for head in 0..self.num_heads {
+                if let Ok(hw) = attn_weights.narrow(0, 0, 1).and_then(|t| t.narrow(1, head, 1)) {
+                    crate::trace::push(crate::trace::TraceEvent::Attention {
+                        layer, stream, head, weights: crate::trace::rows(&hw, seq_len),
+                    });
+                }
+            }
+        }
+
         let attn_output = attn_weights.matmul(&v)?;
         let attn_output = attn_output.transpose(1, 2)?.contiguous()?.reshape((b_sz, seq_len, h_sz))?;
         self.o_proj.forward(&attn_output)

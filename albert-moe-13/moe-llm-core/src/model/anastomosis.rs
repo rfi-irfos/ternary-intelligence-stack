@@ -67,6 +67,15 @@ impl AnastomosisLayer {
         let g_a = g.narrow(2, 0, 1)?;    // [B, S, 1] — gate for B→A
         let g_b = g.narrow(2, 1, 1)?;    // [B, S, 1] — gate for A→B
 
+        crate::trace_event! {
+            let r = crate::trace::rows(&g, 2);
+            crate::trace::push(crate::trace::TraceEvent::Gate {
+                layer: crate::trace::site().0,
+                g_a: r.iter().map(|p| p[0]).collect(),
+                g_b: r.iter().map(|p| p[1]).collect(),
+            });
+        }
+
         let h_a_new = (h_a + &h_b.broadcast_mul(&g_a)?)?;
         let h_b_new = (h_b + &h_a.broadcast_mul(&g_b)?)?;
         Ok((h_a_new, h_b_new))

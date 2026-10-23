@@ -79,7 +79,10 @@ impl Block {
     // Prefill: process full prompt, populate KV-cache.
     pub fn forward_and_cache(&self, x: &Tensor) -> Result<Tensor> {
         let x = (x + self.attention.forward_and_cache(&self.ln1.forward(x)?)?)?;
-        self.feed_forward(x)
+        crate::trace_event! { crate::trace::residual("post_attn", &x); }
+        let out = self.feed_forward(x)?;
+        crate::trace_event! { crate::trace::residual("post_moe", &out); }
+        Ok(out)
     }
 
     // Decode: single new token, reads from KV-cache.
@@ -224,17 +227,31 @@ impl Transformer {
             let mut h_b = embed;
 
             for i in 0..self.blocks.len() {
+                crate::trace::set_site(i, 'a');
                 h_a = self.blocks[i].forward_and_cache(&h_a)?;
+                crate::trace::set_site(i, 'b');
                 h_b = blocks_b[i].forward_and_cache(&h_b)?;
 
                 if let Some((_, anast)) = self.anastomosis.iter().find(|(idx, _)| *idx == i) {
+                    crate::trace::set_site(i, 'a');
                     let (new_a, new_b) = anast.forward(&h_a, &h_b)?;
                     h_a = new_a;
                     h_b = new_b;
+                    crate::trace_event! {
+                        crate::trace::set_site(i, 'a');
+                        crate::trace::residual("post_gate", &h_a);
+                        crate::trace::set_site(i, 'b');
+                        crate::trace::residual("post_gate", &h_b);
+                    }
                 }
             }
 
             let h_merged = (&h_a + &h_b)?.affine(0.5, 0.0)?;
+            crate::trace_event! {
+                crate::trace::push(crate::trace::TraceEvent::Final {
+                    merged_norm: crate::trace::l2_norms(&h_merged),
+                });
+            }
             let h_merged = self.ln_f.forward(&h_merged)?;
             self.lm_head.forward(&h_merged)
         } else {
