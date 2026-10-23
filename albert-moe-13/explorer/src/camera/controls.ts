@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-/** Row geometry the overview frames: embed (x=-3) through lm_head (x=141), see tower.ts. */
-export const ROW_MIN_X = -3;
-export const ROW_MAX_X = 141;
+/** X span the overview frames (embed through lm_head); comes from TowerScene.rowExtent. */
+export interface RowExtent {
+  minX: number;
+  maxX: number;
+}
 const OVERVIEW_DIR = new THREE.Vector3(-0.45, -1, 0.5).normalize(); // front-left, slightly above
 
 export interface CameraRig {
@@ -30,9 +32,9 @@ export const easeInOutCubic = (t: number): number =>
   t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
 /** Camera pose that shows embed, all slabs and lm_head. */
-export function overviewPose(aspect: number, fovDeg: number): { target: THREE.Vector3; distance: number } {
-  const len = ROW_MAX_X - ROW_MIN_X;
-  const target = new THREE.Vector3((ROW_MIN_X + ROW_MAX_X) / 2, 0, 0);
+export function overviewPose(aspect: number, fovDeg: number, extent: RowExtent): { target: THREE.Vector3; distance: number } {
+  const len = extent.maxX - extent.minX;
+  const target = new THREE.Vector3((extent.minX + extent.maxX) / 2, 0, 0);
   // Row length seen across the view direction, plus margin for perspective depth.
   const apparent = len * Math.sqrt(1 - OVERVIEW_DIR.x * OVERVIEW_DIR.x);
   const halfV = THREE.MathUtils.degToRad(fovDeg) / 2;
@@ -41,7 +43,7 @@ export function overviewPose(aspect: number, fovDeg: number): { target: THREE.Ve
   return { target, distance };
 }
 
-export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement): CameraRig {
+export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement, extent: RowExtent): CameraRig {
   const controls = new OrbitControls(camera, dom);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
@@ -93,7 +95,7 @@ export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement
       return start(target, target.clone().addScaledVector(dir, distance), ms);
     },
     overview(ms = 900) {
-      const { target, distance } = overviewPose(camera.aspect, camera.fov);
+      const { target, distance } = overviewPose(camera.aspect, camera.fov, extent);
       return start(target, target.clone().addScaledVector(OVERVIEW_DIR, distance), ms);
     },
     update(dt) {

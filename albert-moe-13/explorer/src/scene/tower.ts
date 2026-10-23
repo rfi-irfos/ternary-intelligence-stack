@@ -22,7 +22,8 @@ export const LANE_Y: Record<Stream, number> = { A: -1.8, B: 1.8 };
 export const LANE_Z = -1.2;
 /** Gate arc sits beside the expert bank in X so it never crosses an expert box. */
 export const GATE_X_OFFSET = 0.45;
-export const EXPERT_HALF = 0.2;
+export const EXPERT_SIZE = 0.4;
+export const EXPERT_HALF = EXPERT_SIZE / 2;
 export function gateArc(x: number): THREE.QuadraticBezierCurve3 {
   const gx = x + GATE_X_OFFSET;
   return new THREE.QuadraticBezierCurve3(
@@ -34,8 +35,17 @@ export function gateArc(x: number): THREE.QuadraticBezierCurve3 {
 const EXPERT_COLS = 3; // along Y
 const EXPERT_ROWS = 4; // along Z
 
+export interface RowExtent {
+  minX: number;
+  maxX: number;
+}
+
 export interface TowerScene {
   root: THREE.Group;
+  /** Number of layer slabs. */
+  readonly layerCount: number;
+  /** X span of the row, embed centre through lm_head centre. */
+  readonly rowExtent: RowExtent;
   /** x-centre of slab `layer`. */
   slabX(layer: number): number;
   anchor(id: ComponentId): THREE.Vector3;
@@ -151,7 +161,7 @@ export function buildTower(a: Architecture): TowerScene {
   }
 
   root.add(
-    instanced('experts', new THREE.BoxGeometry(0.4, 0.4, 0.4), experts, () => COLORS.plus),
+    instanced('experts', new THREE.BoxGeometry(EXPERT_SIZE, EXPERT_SIZE, EXPERT_SIZE), experts, () => COLORS.plus),
     instanced('attn', new THREE.BoxGeometry(0.4, 0.5, 0.5), perType.attn, streamColor),
     instanced('router', new THREE.OctahedronGeometry(0.2), perType.router, streamColor),
     instanced('ln1', new THREE.BoxGeometry(0.1, 0.4, 0.3), perType.ln1, streamColor),
@@ -205,6 +215,8 @@ export function buildTower(a: Architecture): TowerScene {
 
   return {
     root,
+    layerCount: n,
+    rowExtent: { minX: xEmbed, maxX: xHead },
     slabX,
     has: (id) => anchors.has(id),
     anchor(id) {

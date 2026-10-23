@@ -1,15 +1,23 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { createControls, overviewPose } from '../src/camera/controls';
 
-function rig() {
+const EXTENT = { minX: -3, maxX: 141 };
+const rigs: Array<{ dispose(): void }> = [];
+afterEach(() => {
+  while (rigs.length) rigs.pop()!.dispose();
+});
+
+function rig(extent = EXTENT) {
   const camera = new THREE.PerspectiveCamera(45, 16 / 9, 0.1, 1000);
   camera.up.set(0, 0, 1);
   camera.position.set(10, -10, 5);
   const dom = document.createElement('canvas');
   document.body.appendChild(dom);
-  return { camera, rig: createControls(camera, dom) };
+  const r = createControls(camera, dom, extent);
+  rigs.push(r);
+  return { camera, rig: r };
 }
 
 function run(r: ReturnType<typeof rig>['rig'], max = 600): void {
@@ -35,10 +43,15 @@ describe('camera rig', () => {
     const b = new THREE.Vector3(90, 0, 0);
     const p1 = r.flyTo(a, 12, 900);
     for (let i = 0; i < 20; i++) r.update(1 / 60);
+    const before = camera.position.clone();
     const p2 = r.flyTo(b, 8, 400);
+    r.update(0);
+    expect(camera.position.distanceTo(before)).toBeLessThan(1e-6); // no jump
     await p1; // cancelled promise resolves
     run(r);
     await p2;
+    expect(r.controls.enabled).toBe(true);
+    expect(r.isFlying()).toBe(false);
     expect(camera.position.distanceTo(b)).toBeCloseTo(8, 3);
     expect(r.controls.target.distanceTo(b)).toBeLessThan(1e-3);
   });
@@ -75,7 +88,13 @@ describe('camera rig', () => {
       }
     }
     expect(camera.position.y).toBeLessThan(0); // front
-    expect(camera.position.x).toBeLessThan(overviewPose(16 / 9, 45).target.x); // left
+    expect(camera.position.x).toBeLessThan(overviewPose(16 / 9, 45, EXTENT).target.x); // left
     expect(camera.position.z).toBeGreaterThan(0); // above
+  });
+
+  it('overview pose follows the given extent', () => {
+    const small = overviewPose(16 / 9, 45, { minX: -3, maxX: 9 });
+    expect(small.target.x).toBeCloseTo(3, 6);
+    expect(small.distance).toBeLessThan(overviewPose(16 / 9, 45, EXTENT).distance);
   });
 });

@@ -9,7 +9,6 @@ export interface SlabRail {
   selected(): number | null;
 }
 
-const LAYERS = 46;
 const FOCUS_DISTANCE = 14;
 
 /** Slim horizontal rail of one button per slab; fusion slabs (those with a gate) are marked. */
@@ -18,6 +17,7 @@ export function createSlabRail(
   rig: CameraRig,
   onSelect: (layer: number) => void,
 ): SlabRail {
+  const layers = tower.layerCount;
   const el = document.createElement('div');
   el.className = 'slab-rail';
   el.setAttribute('role', 'toolbar');
@@ -26,7 +26,7 @@ export function createSlabRail(
   let current: number | null = null;
 
   const select = (layer: number): void => {
-    const l = Math.max(0, Math.min(LAYERS - 1, layer));
+    const l = Math.max(0, Math.min(layers - 1, layer));
     current = l;
     buttons.forEach((b, i) => {
       b.classList.toggle('active', i === l);
@@ -37,7 +37,7 @@ export function createSlabRail(
     onSelect(l);
   };
 
-  for (let l = 0; l < LAYERS; l++) {
+  for (let l = 0; l < layers; l++) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'slab-rail-item';
@@ -58,7 +58,7 @@ export function createSlabRail(
   el.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
     e.preventDefault();
-    const next = (current ?? (e.key === 'ArrowRight' ? -1 : LAYERS)) + (e.key === 'ArrowRight' ? 1 : -1);
+    const next = (current ?? (e.key === 'ArrowRight' ? -1 : layers)) + (e.key === 'ArrowRight' ? 1 : -1);
     select(next);
     buttons[current ?? 0]?.focus();
   });

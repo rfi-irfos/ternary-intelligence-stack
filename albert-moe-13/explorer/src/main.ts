@@ -23,7 +23,7 @@ async function main(): Promise<void> {
 
   const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
   camera.up.set(0, 0, 1);
-  const rig = createControls(camera, renderer.domElement);
+  const rig = createControls(camera, renderer.domElement, tower.rowExtent);
   void rig.overview(0);
 
   const style = document.createElement('style');
