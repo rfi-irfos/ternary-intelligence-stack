@@ -12,6 +12,8 @@ import { attachDepthKeys } from './ui/depth';
 import { pickAction } from './ui/pickAction';
 import { APP_NAME } from './content/brand';
 import { LABEL_CSS } from './data/labeled';
+import { createAnimator } from './flow/animate';
+import { PLAYER_CSS, createPlayerBar } from './ui/player';
 import { attachPicking, createHover, createRaycastPicker } from './ui/picking';
 
 async function main(): Promise<void> {
@@ -49,6 +51,7 @@ async function main(): Promise<void> {
     .slab-rail-item.active { background: #58c4dd; color: #000; }
     ${PANEL_CSS}
     ${LABEL_CSS}
+    ${PLAYER_CSS}
     .overview-btn { position: fixed; top: 56px; left: 14px; font: 12px monospace; padding: 6px 10px; color: #fff;
       background: #14161b; border: 1px solid #333a46; border-radius: 4px; cursor: pointer; }`;
   document.head.appendChild(style);
@@ -73,6 +76,10 @@ async function main(): Promise<void> {
   attachDepthKeys();
   const rail = createSlabRail(tower, rig, (l) => void panel.openPanel(slabId(l)));
   document.body.appendChild(rail.element);
+  const animator = createAnimator(tower);
+  scene.add(animator.root);
+  const bar = createPlayerBar({ arch, tower, rig, animator });
+  document.body.appendChild(bar.element);
   const ov = document.createElement('button');
   ov.className = 'overview-btn';
   ov.textContent = 'Overview (Esc)';
@@ -113,6 +120,8 @@ async function main(): Promise<void> {
     const dt = clock.getDelta();
     rig.update(dt);
     view.update(dt);
+    bar.tick(dt);
+    animator.update(dt);
     renderer.render(scene, camera);
   });
 }

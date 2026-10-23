@@ -12,7 +12,10 @@ export type TraceEvent =
     /** [S][E] gate logits after temperature and traffic-light modifiers. */
     logits: number[][];
     top3: [number, number, number][];
-    /** Softmax top-3 probabilities, before the traffic-light output scales. */
+    /**
+     * Softmax over the top-3 logits AFTER the A3 safety clamp and BEFORE the traffic-light output scales.
+     * They need not descend (clamped rows can reorder them). Never recompute them from `logits`.
+     */
     weights: [number, number, number][];
     a3_clamped: boolean[];
     /** Traffic-light output scale per expert (12). */
