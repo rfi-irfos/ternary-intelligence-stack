@@ -15,21 +15,38 @@ export interface PickingHandlers {
   onHover?(id: ComponentId | null): void;
 }
 
-/** Click = pointer-up without drag > 4 px. Hover is evaluated only while no button is held. */
-export function attachPicking(dom: HTMLElement, h: PickingHandlers): () => void {
-  let down: { x: number; y: number } | null = null;
+/** A press longer than this is a hold, not a click. */
+export const CLICK_MS = 1000;
+
+/**
+ * Click = pointerdown AND pointerup on the canvas, same pointer, primary button, moved <= 4 px,
+ * within CLICK_MS. A pointerup without a preceding canvas pointerdown never picks (tab activation,
+ * focus clicks, a press that started elsewhere); the pending press is dropped on pointercancel,
+ * window blur and when the page is hidden. Hover is evaluated only while no button is held.
+ */
+export function attachPicking(dom: HTMLElement, h: PickingHandlers, now: () => number = () => performance.now()): () => void {
+  let down: { x: number; y: number; id: number | undefined; t: number } | null = null;
   let hovered: ComponentId | null = null;
+  const pid = (e: MouseEvent): number | undefined => (e as PointerEvent).pointerId;
   const onDown = (e: MouseEvent): void => {
-    if (e.button === 0) down = { x: e.clientX, y: e.clientY };
+    down = e.button === 0 && (e as PointerEvent).isPrimary !== false
+      ? { x: e.clientX, y: e.clientY, id: pid(e), t: now() }
+      : null;
   };
   const onUp = (e: MouseEvent): void => {
-    if (e.button !== 0 || !down) return;
     const d = down;
     down = null;
+    if (e.button !== 0 || !d || d.id !== pid(e) || now() - d.t > CLICK_MS) return;
     if (!isClick(d, { x: e.clientX, y: e.clientY })) return;
     const id = h.pickAt(e.clientX, e.clientY);
     if (id) h.onPick(id);
     else h.onEmpty();
+  };
+  const cancel = (): void => {
+    down = null;
+  };
+  const onVisibility = (): void => {
+    if (dom.ownerDocument.hidden) down = null;
   };
   const onMove = (e: MouseEvent): void => {
     if (!h.onHover || e.buttons !== 0) return;
@@ -39,13 +56,20 @@ export function attachPicking(dom: HTMLElement, h: PickingHandlers): () => void 
       h.onHover(id);
     }
   };
+  const win = dom.ownerDocument.defaultView;
   dom.addEventListener('pointerdown', onDown);
   dom.addEventListener('pointerup', onUp);
+  dom.addEventListener('pointercancel', cancel);
   dom.addEventListener('pointermove', onMove);
+  win?.addEventListener('blur', cancel);
+  dom.ownerDocument.addEventListener('visibilitychange', onVisibility);
   return () => {
     dom.removeEventListener('pointerdown', onDown);
     dom.removeEventListener('pointerup', onUp);
+    dom.removeEventListener('pointercancel', cancel);
     dom.removeEventListener('pointermove', onMove);
+    win?.removeEventListener('blur', cancel);
+    dom.ownerDocument.removeEventListener('visibilitychange', onVisibility);
   };
 }
 

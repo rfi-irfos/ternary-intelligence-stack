@@ -383,10 +383,10 @@ export const PANEL_CSS = `
 .inspect-panel td.t-params { width: 20%; text-align: right; }
 .inspect-panel { overflow-x: hidden; }
 .inspect-panel .formula { font-style: italic; }
-.inspect-panel a { color: #58c4dd; }
+.inspect-panel a { color: ${cssHex(PALETTE.accent)}; text-decoration: underline; }
 .inspect-panel .panel-close { position: absolute; right: 10px; top: 8px; background: none; border: 0; color: #fff; font-size: 20px; cursor: pointer; }
 .inspect-panel .depth-btn { font: 11px monospace; margin-right: 4px; padding: 2px 6px; color: #cfd8e8; background: #14161b; border: 1px solid #333a46; border-radius: 3px; cursor: pointer; }
-.inspect-panel .depth-btn.active { background: #58c4dd; color: #000; }
+.inspect-panel .depth-btn.active { background: ${cssHex(PALETTE.accent)}; color: #000; }
 .inspect-panel svg { width: 100%; height: 56px; }
 .inspect-panel svg text { fill: #e8eef9; }
 .inspect-panel .evidence { font: 11px monospace; color: #cfd8e8; }

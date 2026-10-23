@@ -84,11 +84,14 @@ function instanced(
 }
 
 /** Glass parts with white outlines (spec 4.2b: no opaque solid cubes). Tint = role colour. */
-function glassPart(name: string, geo: THREE.BufferGeometry, items: Item[], colorOf: (item: Item) => number, mat: THREE.Material): THREE.InstancedMesh {
+function glassPart(
+  name: string, geo: THREE.BufferGeometry, items: Item[], colorOf: (item: Item) => number,
+  mat: THREE.Material, edgeMat: THREE.Material,
+): THREE.InstancedMesh {
   const mesh = instanced(name, geo, items, colorOf, mat);
   mesh.userData.look = 'part-glass' satisfies LookRole;
   mesh.renderOrder = RENDER_ORDER.part;
-  instancedEdges(mesh);
+  instancedEdges(mesh, edgeMat);
   return mesh;
 }
 
@@ -199,12 +202,13 @@ export function buildTower(a: Architecture, modules?: Modules | null): TowerScen
 
   // One glass material shared by every part mesh; the per-instance colour carries the role.
   const partMat = lookMaterial('part-glass', 'low');
+  const edgeMat = lookMaterial('part-edge', 'low');
   root.add(
-    glassPart('experts', mg?.expert ?? new THREE.BoxGeometry(EXPERT_SIZE, EXPERT_SIZE, EXPERT_SIZE), experts, () => PALETTE.expert, partMat),
-    glassPart('attn', mg?.attn ?? new THREE.BoxGeometry(0.4, 0.5, 0.5), perType.attn, itemStream, partMat),
-    glassPart('router', mg?.router ?? new THREE.OctahedronGeometry(0.2), perType.router, () => PALETTE.router, partMat),
-    glassPart('ln1', mg?.ln1 ?? new THREE.BoxGeometry(0.1, 0.4, 0.3), perType.ln1, itemStream, partMat),
-    glassPart('ln2', mg?.ln2 ?? new THREE.BoxGeometry(0.1, 0.4, 0.3), perType.ln2, itemStream, partMat),
+    glassPart('experts', mg?.expert ?? new THREE.BoxGeometry(EXPERT_SIZE, EXPERT_SIZE, EXPERT_SIZE), experts, () => PALETTE.expert, partMat, edgeMat),
+    glassPart('attn', mg?.attn ?? new THREE.BoxGeometry(0.4, 0.5, 0.5), perType.attn, itemStream, partMat, edgeMat),
+    glassPart('router', mg?.router ?? new THREE.OctahedronGeometry(0.2), perType.router, () => PALETTE.router, partMat, edgeMat),
+    glassPart('ln1', mg?.ln1 ?? new THREE.BoxGeometry(0.1, 0.4, 0.3), perType.ln1, itemStream, partMat, edgeMat),
+    glassPart('ln2', mg?.ln2 ?? new THREE.BoxGeometry(0.1, 0.4, 0.3), perType.ln2, itemStream, partMat, edgeMat),
   );
 
   // Gates: one red arc between the two lanes, instanced across fusion slabs (solid: it is a light path).
@@ -232,7 +236,7 @@ export function buildTower(a: Architecture, modules?: Modules | null): TowerScen
   ];
   for (const [id, x, geo] of ends) {
     const it = add(id, new THREE.Vector3(x, 0, 0));
-    root.add(glassPart(id, geo, [it], () => PALETTE.neutral, partMat));
+    root.add(glassPart(id, geo, [it], () => PALETTE.neutral, partMat, edgeMat));
   }
 
   // Lanes: the two light lines running the full row (A cyan, B amber); they feed the bloom.

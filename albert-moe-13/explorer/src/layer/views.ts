@@ -294,7 +294,7 @@ export const LAYER_CSS = `
   background: #14161b; border: 1px solid #333a46; border-radius: 3px; padding: 3px 6px; cursor: pointer; }
 .layer-ctl { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .layer-step-title { margin: 6px 0; font-size: 14px; color: #fff; }
-.layer-formula { display: block; margin-bottom: 6px; color: #ffd940; }
+.layer-formula { display: block; margin-bottom: 6px; color: ${cssHex(PALETTE.accent)}; }
 .layer-view { margin: 6px 0; }
 .layer-view-title { margin-bottom: 4px; }
 .layer-heat, .layer-attn-mrow { display: flex; flex-wrap: nowrap; }
@@ -307,16 +307,16 @@ export const LAYER_CSS = `
 .layer-bar-fill { position: absolute; left: 20%; width: 60%; }
 .layer-bar-fill.layer-bar--pos { bottom: 80px; background: ${cssHex(PALETTE.ternaryPlus)}; }
 .layer-bar-fill.layer-bar--neg { top: 50px; background: ${cssHex(PALETTE.ternaryMinus)}; }
-.layer-bar--chosen { outline: 2px solid #ffd940; outline-offset: -1px; }
-.layer-bar-chosen { position: absolute; top: 106px; left: 0; right: 0; text-align: center; font-size: 8px; color: #ffd940; }
-.layer-bar-a3 { position: absolute; top: 96px; left: 0; right: 0; text-align: center; font-size: 8px; color: #fc6255; }
+.layer-bar--chosen { outline: 2px solid ${cssHex(PALETTE.accent)}; outline-offset: -1px; }
+.layer-bar-chosen { position: absolute; top: 106px; left: 0; right: 0; text-align: center; font-size: 8px; color: ${cssHex(PALETTE.accent)}; }
+.layer-bar-a3 { position: absolute; top: 96px; left: 0; right: 0; text-align: center; font-size: 8px; color: ${cssHex(PALETTE.accent)}; }
 .layer-bar-label { position: absolute; bottom: 0; left: 0; right: 0; text-align: center; font-size: 9px; }
 .layer-legend { margin-top: 4px; font-size: 10px; }
 .layer-kind { display: inline-block; padding: 0 5px; border-radius: 3px; border: 1px solid #cfd8e8; }
-.layer-kind--measured { border-color: #ffd940; color: #ffd940; }
+.layer-kind--measured { border-color: ${cssHex(PALETTE.accent)}; color: ${cssHex(PALETTE.accent)}; border-style: solid; }
 .layer-kind--illustrative { background: repeating-linear-gradient(45deg, #333a46 0 2px, transparent 2px 4px); }
-.layer-caveat { display: inline-block; padding: 0 5px; border: 1px solid #ffd940; color: #ffd940; border-radius: 3px; }
-.layer-truncated { color: #fff; border: 1px dashed #ffd940; padding: 3px; margin: 4px 0; }
+.layer-caveat { display: inline-block; padding: 0 5px; border: 1px solid ${cssHex(PALETTE.accent)}; color: ${cssHex(PALETTE.accent)}; border-radius: 3px; }
+.layer-truncated { color: #fff; border: 1px dashed ${cssHex(PALETTE.accent)}; padding: 3px; margin: 4px 0; }
 .layer-matmul { display: flex; gap: 8px; align-items: center; }
 .layer-mm-w { display: grid; grid-template-columns: repeat(4, 22px); }
 .layer-mm-v { display: grid; grid-template-columns: 38px; }

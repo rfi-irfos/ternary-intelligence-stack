@@ -29,7 +29,9 @@ export interface Preset {
 export const PRESETS: Record<Quality, Preset> = {
   high: { bloom: true, haze: true, transmission: true, fresnel: true, msaa: 4, maxPixelRatio: 2 },
   medium: { bloom: true, haze: true, transmission: false, fresnel: true, msaa: 2, maxPixelRatio: 1.5 },
-  low: { bloom: false, haze: false, transmission: false, fresnel: false, msaa: 0, maxPixelRatio: 1 },
+  // Low keeps the identity (black room, thin white edges, tinted glass, coloured lanes, haze for depth)
+  // and drops only what costs: post-processing, transmission and the fresnel shader.
+  low: { bloom: false, haze: true, transmission: false, fresnel: false, msaa: 0, maxPixelRatio: 1 },
 };
 
 export const usesPost = (q: Quality): boolean => PRESETS[q].bloom;
@@ -104,7 +106,17 @@ export function resolveQuality(probe: Quality, store: KeyValueStore | null = def
  * Work time, not the requestAnimationFrame interval: rAF is vsync-capped (16.7 ms at 60 Hz), so an
  * interval median could never reach the 12 ms "high" threshold.
  */
-export function createProbe(samples = 30, warmup = 5): { add(ms: number): Quality | null; done(): boolean } {
+export interface Probe {
+  /** Adds one frame time; returns the pick once, on the frame that completes the probe. */
+  add(ms: number): Quality | null;
+  done(): boolean;
+  /** Median of the samples so far (ms), for calibration logs. */
+  medianMs(): number;
+  /** Number of samples counted after the warm-up. */
+  count(): number;
+}
+
+export function createProbe(samples = 30, warmup = PROBE_WARMUP): Probe {
   const times: number[] = [];
   let seen = 0;
   let result: Quality | null = null;
@@ -120,9 +132,13 @@ export function createProbe(samples = 30, warmup = 5): { add(ms: number): Qualit
       return result;
     },
     done: () => result !== null,
+    medianMs: () => median(times),
+    count: () => times.length,
   };
 }
 
+/** Frames skipped before measuring (late shader compiles, texture uploads, first layout). */
+export const PROBE_WARMUP = 8;
 const EARLY_SAMPLES = 5;
 
 /** Selective bloom: a soft halo around the light lines, not a wash over the room. */
@@ -148,14 +164,17 @@ void main() {
 const MIX_FRAGMENT = /* glsl */ `
 uniform sampler2D baseTexture;
 uniform sampler2D bloomTexture;
+uniform float bloomGain;
 varying vec2 vUv;
 void main() {
-  gl_FragColor = texture2D( baseTexture, vUv ) + vec4( 1.0 ) * texture2D( bloomTexture, vUv );
+  gl_FragColor = texture2D( baseTexture, vUv ) + bloomGain * texture2D( bloomTexture, vUv );
 }`;
 
 interface Post {
   bloom: EffectComposer;
   final: EffectComposer;
+  /** 1 = add the bloom texture, 0 = skip it (no bloom source visible this frame). */
+  gain: { value: number };
   dispose(): void;
 }
 
@@ -196,6 +215,16 @@ export function createLook(deps: LookDeps): Look {
   const pixel = new Uint8Array(4);
   const bloomLayers = new THREE.Layers();
   bloomLayers.set(BLOOM_LAYER);
+  // Reused every frame: no per-frame allocation for the bloom-source scan.
+  const muted: THREE.Object3D[] = [];
+  let lit = 0;
+  const scanBloom = (o: THREE.Object3D): void => {
+    if (!o.layers.test(bloomLayers)) return;
+    const m = (o as THREE.Mesh).material as THREE.Material | undefined;
+    // A dimmed bloom source (explode.ts fades the row) must not glow at full strength.
+    if (m && !Array.isArray(m) && m.opacity < 0.5) muted.push(o);
+    else lit++;
+  };
 
   const material = (role: LookRole, quality: Quality): THREE.Material => {
     const key = `${role}:${quality}`;
@@ -215,17 +244,21 @@ export function createLook(deps: LookDeps): Look {
     bloom.addPass(new UnrealBloomPass(new THREE.Vector2(size.x, size.y), BLOOM.strength, BLOOM.radius, 0));
     const final = new EffectComposer(renderer, new THREE.WebGLRenderTarget(size.x, size.y, { type, samples: p.msaa }));
     final.addPass(new RenderPass(scene, camera));
+    const gain = { value: 1 };
     const mix = new ShaderPass(new THREE.ShaderMaterial({
-      uniforms: { baseTexture: { value: null }, bloomTexture: { value: bloom.renderTarget2.texture } },
+      uniforms: { baseTexture: { value: null }, bloomTexture: { value: bloom.renderTarget2.texture }, bloomGain: gain },
       vertexShader: MIX_VERTEX,
       fragmentShader: MIX_FRAGMENT,
     }), 'baseTexture');
     mix.needsSwap = true;
     final.addPass(mix);
     final.addPass(new OutputPass());
+    // ShaderPass uses a given ShaderMaterial as is; read the uniform back from the pass to be safe.
+    const live = (mix.material as THREE.ShaderMaterial).uniforms.bloomGain as { value: number };
     return {
       bloom,
       final,
+      gain: live,
       dispose() {
         for (const c of [bloom, final]) {
           for (const pass of c.passes) pass.dispose();
@@ -260,21 +293,26 @@ export function createLook(deps: LookDeps): Look {
       if (post) {
         // Bloom source: only objects on BLOOM_LAYER, on black. Lanes are lights seen through glass,
         // so the slabs need not occlude them here.
-        const mask = camera.layers.mask;
-        const bg = scene.background;
-        // A dimmed bloom source (explode.ts fades the row) must not glow at full strength.
-        const muted: THREE.Object3D[] = [];
-        scene.traverseVisible((o) => {
-          const m = (o as THREE.Mesh).material as THREE.Material | undefined;
-          if (o.layers.test(bloomLayers) && m && !Array.isArray(m) && m.opacity < 0.5) muted.push(o);
-        });
-        for (const o of muted) o.visible = false;
-        scene.background = null;
-        camera.layers.set(BLOOM_LAYER);
-        post.bloom.render(dt);
-        camera.layers.mask = mask;
-        scene.background = bg;
-        for (const o of muted) o.visible = true;
+        muted.length = 0;
+        lit = 0;
+        scene.traverseVisible(scanBloom);
+        post.gain.value = lit > 0 ? 1 : 0;
+        if (lit > 0) {
+          const mask = camera.layers.mask;
+          const bg = scene.background;
+          for (const o of muted) o.visible = false;
+          try {
+            scene.background = null;
+            camera.layers.set(BLOOM_LAYER);
+            post.bloom.render(dt);
+          } finally {
+            // A throwing pass must not leave the scene black-backgrounded or the dimmed lanes hidden.
+            camera.layers.mask = mask;
+            scene.background = bg;
+            for (const o of muted) o.visible = true;
+            muted.length = 0;
+          }
+        }
         post.final.render(dt);
       } else {
         renderer.render(scene, camera);

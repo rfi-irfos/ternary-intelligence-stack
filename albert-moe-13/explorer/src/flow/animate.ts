@@ -83,7 +83,9 @@ export function createAnimator(tower: TowerScene): Animator {
   const cube = new THREE.BoxGeometry(0.46, 0.46, 0.46);
   // Lit experts glow in the expert colour (bloom); dark ones are dimmed. Size also encodes the weight.
   const litMat = new THREE.MeshBasicMaterial({ color: PALETTE.expert, transparent: true, opacity: 0.85, depthTest: false });
-  const darkMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.8 });
+  // Not chosen: a dim shade drawn after the glass, without depth writes, so the expert's glass and
+  // outline stay visible behind it (a depth-writing black box used to hide them completely).
+  const darkMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.45, depthWrite: false });
   const expertMarks = new THREE.Group();
   root.add(expertMarks);
   const valves = new THREE.Group();
@@ -136,6 +138,7 @@ export function createAnimator(tower: TowerScene): Animator {
         const m = new THREE.Mesh(cube, darkMat);
         m.position.copy(tower.anchor(d));
         m.name = `dark:${d}`;
+        m.renderOrder = 8;
         expertMarks.add(m);
       }
       if (target.valves) {

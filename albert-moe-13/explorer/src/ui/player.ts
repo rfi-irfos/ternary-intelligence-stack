@@ -1,3 +1,4 @@
+import { PALETTE, cssHex } from '../scene/palette';
 import type { CameraRig } from '../camera/controls';
 import { CAVEATS } from '../content/caveats';
 import type { Architecture } from '../data/architecture';
@@ -219,7 +220,7 @@ export const PLAYER_CSS = `
 .player-bar input[type=range] { flex: 1 1 200px; }
 .player-bar input[type=number] { width: 4.5em; }
 .player-where { color: #fff; margin-bottom: 4px; }
-.player-caveat { display: inline-block; padding: 0 5px; border: 1px solid #ffd940; color: #ffd940; border-radius: 3px; }
+.player-caveat { display: inline-block; padding: 0 5px; border: 1px solid ${cssHex(PALETTE.accent)}; color: ${cssHex(PALETTE.accent)}; border-radius: 3px; }
 .player-empty { color: #fff; }
 `;
 

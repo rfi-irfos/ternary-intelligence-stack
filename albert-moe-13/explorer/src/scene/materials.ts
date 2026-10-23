@@ -16,7 +16,7 @@ export function markBloom(o: THREE.Object3D): void {
  * Role tags on tower objects (`userData.look`); look.ts swaps the material of every tagged object
  * when the quality changes. Untagged objects keep their own material.
  */
-export type LookRole = 'slab-glass' | 'part-glass';
+export type LookRole = 'slab-glass' | 'part-glass' | 'part-edge';
 
 /**
  * Draw order of the see-through layers: slabs first, then the parts inside them, then outlines, then
@@ -26,6 +26,14 @@ export const RENDER_ORDER = { slab: 1, part: 2, edge: 3, gate: 4 } as const;
 
 const SLAB_OPACITY = 0.05;
 const PART_OPACITY = 0.2;
+/**
+ * Low has no fresnel rim and no bloom, so the tint of a part must come from the glass body alone:
+ * a denser body and fainter outlines keep experts green and routers violet at overview distance,
+ * where the dense white outlines of 12 small boxes would otherwise merge into a white blob.
+ */
+const PART_OPACITY_LOW = 0.38;
+const EDGE_OPACITY = 0.7;
+const EDGE_OPACITY_LOW = 0.3;
 
 /**
  * Alpha glass with a fresnel rim: faces seen edge-on get brighter and more opaque, faces seen
@@ -85,15 +93,27 @@ export function slabGlassMaterial(q: Quality): THREE.Material {
 export function partGlassMaterial(q: Quality): THREE.Material {
   if (q !== 'low') return fresnelGlass(0xffffff, PART_OPACITY, 2.5);
   const m = new THREE.MeshBasicMaterial({
-    color: 0xffffff, transparent: true, opacity: PART_OPACITY, depthWrite: false, side: THREE.DoubleSide,
+    color: 0xffffff, transparent: true, opacity: PART_OPACITY_LOW, depthWrite: false, side: THREE.DoubleSide,
   });
   m.name = 'part-glass-basic';
   return m;
 }
 
+/** Thin white outline of the instanced parts (instanced LineSegments, see instancedEdges). */
+export function partEdgeMaterial(q: Quality): THREE.LineBasicMaterial {
+  const mat = new THREE.LineBasicMaterial({
+    color: PALETTE.edge, transparent: true, opacity: q === 'low' ? EDGE_OPACITY_LOW : EDGE_OPACITY, depthWrite: false,
+  });
+  mat.defines = { USE_INSTANCING: '' };
+  mat.name = 'edge-instanced';
+  return mat;
+}
+
 /** Material for a tagged role at a quality. */
 export function lookMaterial(role: LookRole, q: Quality): THREE.Material {
-  return role === 'slab-glass' ? slabGlassMaterial(q) : partGlassMaterial(q);
+  if (role === 'slab-glass') return slabGlassMaterial(q);
+  if (role === 'part-edge') return partEdgeMaterial(q);
+  return partGlassMaterial(q);
 }
 
 /**
@@ -101,7 +121,11 @@ export function lookMaterial(role: LookRole, q: Quality): THREE.Material {
  * shares the mesh's instanceMatrix attribute, so hiding an instance (explode.ts scales it to 0)
  * hides its outline too. Added as a child of the mesh; not pickable.
  */
-export function instancedEdges(mesh: THREE.InstancedMesh, thresholdDeg = 30, opacity = 0.7): THREE.LineSegments {
+export function instancedEdges(
+  mesh: THREE.InstancedMesh,
+  material: THREE.Material = partEdgeMaterial('low'),
+  thresholdDeg = 30,
+): THREE.LineSegments {
   const eg = new THREE.EdgesGeometry(mesh.geometry, thresholdDeg);
   const ig = new THREE.InstancedBufferGeometry();
   ig.setAttribute('position', eg.getAttribute('position'));
@@ -110,12 +134,9 @@ export function instancedEdges(mesh: THREE.InstancedMesh, thresholdDeg = 30, opa
   // Same culling sphere as the parent, so the parent (which uploads the shared matrices) is drawn
   // whenever the outline is.
   ig.boundingSphere = mesh.boundingSphere!.clone();
-  const mat = new THREE.LineBasicMaterial({
-    color: PALETTE.edge, transparent: true, opacity, depthWrite: false,
-  });
-  mat.defines = { USE_INSTANCING: '' };
-  mat.name = 'edge-instanced';
-  const line = new THREE.LineSegments(ig, mat);
+  const line = new THREE.LineSegments(ig, material);
+  // Opacity per quality: look.ts swaps the material of every `part-edge` (shared, cached per preset).
+  line.userData.look = 'part-edge' satisfies LookRole;
   // WebGLBindingStates binds `object.instanceMatrix` for the instanceMatrix attribute.
   (line as unknown as { instanceMatrix: THREE.InstancedBufferAttribute }).instanceMatrix = mesh.instanceMatrix;
   line.raycast = (): void => {};

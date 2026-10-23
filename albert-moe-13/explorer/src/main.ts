@@ -13,7 +13,7 @@ import { attachDepthKeys } from './ui/depth';
 import { pickAction } from './ui/pickAction';
 import { APP_NAME } from './content/brand';
 import { PALETTE, cssHex } from './scene/palette';
-import { type Quality, createLook, createProbe, loadOverride, resolveQuality } from './scene/look';
+import { type Probe, type Quality, createLook, createProbe, loadOverride, resolveQuality } from './scene/look';
 import { QUALITY_MENU_CSS, createQualityMenu } from './ui/qualityMenu';
 import { LABEL_CSS } from './data/labeled';
 import { createAnimator } from './flow/animate';
@@ -28,6 +28,9 @@ async function main(): Promise<void> {
   const arch = await loadArchitecture();
   const tower = buildTower(arch, await loadModules());
 
+  // Canvas MSAA stays on: Low renders straight to the canvas and relies on it for the thin edges, and
+  // the preset can change at runtime without recreating the context. On High and Medium the composer
+  // renders into its own MSAA target and the canvas AA only costs the final full-screen copy.
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -53,7 +56,7 @@ async function main(): Promise<void> {
     .slab-rail-item { font: 10px monospace; min-width: 20px; padding: 3px 0; color: #cfd8e8; background: #14161b;
       border: 1px solid #333a46; border-radius: 3px; cursor: pointer; }
     .slab-rail-item.fusion { border-color: ${cssHex(PALETTE.gate)}; color: ${cssHex(PALETTE.gate)}; }
-    .slab-rail-item.active { background: #58c4dd; color: #000; }
+    .slab-rail-item.active { background: ${cssHex(PALETTE.accent)}; color: #000; }
     ${PANEL_CSS}
     ${LABEL_CSS}
     ${PLAYER_CSS}
@@ -146,19 +149,37 @@ async function main(): Promise<void> {
   // Look and quality: a persisted choice wins; otherwise the first frames run at High and a
   // probe of their render work time picks the preset (weak GPU -> Low, never a black screen).
   const look = createLook({ renderer, scene, camera, root: tower.root });
+  // Every preset switch goes through the explode view, so an open level keeps the row dimmed.
+  const applyQuality = (q: Quality): void => view.refreshLook(() => look.applyQuality(q));
   const override = loadOverride();
-  look.applyQuality(override ?? 'high');
-  let probe = override ? null : createProbe();
+  applyQuality(override ?? 'high');
+  let probe: Probe | null = null;
+  let probeToken = 0;
+  // Compile the High shaders first (where supported), so the probe measures frames, not compiles.
+  const startProbe = (): void => {
+    const token = ++probeToken;
+    probe = null;
+    const compiled = typeof renderer.compileAsync === 'function'
+      ? renderer.compileAsync(scene, camera).catch(() => undefined) : Promise.resolve();
+    void compiled.then(() => {
+      if (token === probeToken) probe = createProbe();
+    });
+  };
+  const stopProbe = (): void => {
+    probeToken++;
+    probe = null;
+  };
+  if (!override) startProbe();
   let lastAuto: Quality | null = null;
   const menu = createQualityMenu((q) => {
     if (q) {
-      probe = null;
-      look.applyQuality(q);
+      stopProbe();
+      applyQuality(q);
     } else if (lastAuto) {
-      look.applyQuality(lastAuto);
+      applyQuality(lastAuto);
     } else {
-      look.applyQuality('high');
-      probe = createProbe();
+      applyQuality('high');
+      startProbe();
     }
   });
   document.body.appendChild(menu.element);
@@ -180,11 +201,13 @@ async function main(): Promise<void> {
     animator.update(dt);
     const ms = look.render(dt, probe !== null);
     const picked = probe?.add(ms) ?? null;
-    if (picked) {
-      probe = null;
+    if (picked && probe) {
+      // Calibration data for Task 16: the measured median render work time and the pick.
+      console.debug(`[albert] quality probe: median ${probe.medianMs().toFixed(2)} ms over ${probe.count()} frames -> ${picked}`);
+      stopProbe();
       lastAuto = picked;
       menu.setAuto(picked);
-      look.applyQuality(resolveQuality(picked));
+      applyQuality(resolveQuality(picked));
     }
   });
 }

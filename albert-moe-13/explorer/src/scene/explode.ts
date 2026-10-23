@@ -50,6 +50,12 @@ export interface ExplodeView {
   pickRoot(): THREE.Object3D;
   pick(hit: THREE.Intersection): ComponentId | null;
   tile(): TileInfo | null;
+  /**
+   * Runs `swap` (a quality change that replaces row materials) with the row undimmed, then dims the
+   * new materials again if a level is open, so the intact row stays faded behind the exploded parts
+   * and reassembling restores the new materials (not the old ones) to full opacity.
+   */
+  refreshLook(swap: () => void): void;
   update(dt: number): void;
   dispose(): void;
 }
@@ -172,7 +178,10 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
     }
     hidden = [];
   };
+  let isDimmed = false;
   const dim = (): void => {
+    if (isDimmed) return;
+    isDimmed = true;
     const seen = new Set<THREE.Material>();
     tower.root.traverse((o) => {
       const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
@@ -196,6 +205,7 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
       d.mat.needsUpdate = true;
     }
     dimmed = [];
+    isDimmed = false;
   };
 
   // --- tweens ---
@@ -415,6 +425,16 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
           tweens.splice(i, 1);
           tw.done();
         }
+      }
+    },
+
+    refreshLook(swap) {
+      const was = isDimmed;
+      if (was) undim();
+      try {
+        swap();
+      } finally {
+        if (was) dim();
       }
     },
 

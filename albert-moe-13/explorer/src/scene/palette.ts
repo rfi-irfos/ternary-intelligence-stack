@@ -30,6 +30,12 @@ export const PALETTE = {
   glass: 0x9fb8d9,
   /** Neutral parts without a role (embed, ln_f, lm_head, weight matrices). */
   neutral: 0xdfe6f2,
+  /**
+   * UI accent for "measured" badges, caveat chips, formulas, chosen bars, links and active buttons.
+   * Near-white (contrast about 17:1 on the dark panels) and used with a solid border, so it never
+   * reads as a role colour (the old yellow accent read as stream B amber). Not a scene colour.
+   */
+  accent: 0xf3f0e8,
 } as const;
 
 export type PaletteRole = keyof typeof PALETTE;

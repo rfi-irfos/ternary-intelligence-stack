@@ -1,3 +1,5 @@
+import { PALETTE, cssHex } from '../scene/palette';
+
 /** Provenance of a measured value: one forward pass of a named prompt (Task 7 emits exactly these fields). */
 export interface TraceProvenance {
   prompt_id: string;
@@ -140,7 +142,7 @@ export function richHtml(text: string, o: RichOptions = {}): string {
 export const LABEL_CSS = `
 .lv { white-space: nowrap; }
 .badge { display: none; width: 0.7em; height: 0.7em; margin-left: 0.2em; border-radius: 50%; vertical-align: baseline; }
-.badge--measured { display: inline-block; background: #ffd940; }
+.badge--measured { display: inline-block; background: ${cssHex(PALETTE.accent)}; border: 1px solid ${cssHex(PALETTE.accent)}; }
 .badge--illustrative { display: inline-block; border: 1px solid #cfd8e8;
   background: repeating-linear-gradient(45deg, #cfd8e8 0 2px, transparent 2px 4px); }
 .lv-block { position: relative; }

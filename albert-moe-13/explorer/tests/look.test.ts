@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import arch from '../public/data/architecture.json';
 import { validateArchitecture } from '../src/data/architecture';
 import {
-  HAZE_DENSITY, PRESETS, QUALITY_STORAGE_KEY, type KeyValueStore,
+  HAZE_DENSITY, PRESETS, PROBE_WARMUP, QUALITY_STORAGE_KEY, type KeyValueStore,
   chooseQuality, createProbe, hazeDensity, loadOverride, resolveQuality, saveOverride, usesPost,
 } from '../src/scene/look';
 import { BLOOM_LAYER, lookMaterial } from '../src/scene/materials';
@@ -48,6 +48,16 @@ describe('quality probe', () => {
     expect(results.slice(0, 4)).toEqual([null, null, null, null]); // warm-up frame ignored
     expect(results[4]).toBe('high');
     expect(p.add(100)).toBeNull(); // reports once
+    expect(p.medianMs()).toBe(9); // logged with console.debug for calibration
+    expect(p.count()).toBe(4);
+  });
+
+  it('default probe skips 8 warm-up frames', () => {
+    expect(PROBE_WARMUP).toBe(8);
+    const p = createProbe(3);
+    const out = [...Array(PROBE_WARMUP).fill(500), 9, 9, 9].map((ms) => p.add(ms));
+    expect(out.slice(0, PROBE_WARMUP + 2).every((r) => r === null)).toBe(true);
+    expect(out[PROBE_WARMUP + 2]).toBe('high');
   });
 
   it('middle band selects medium', () => {
@@ -93,7 +103,9 @@ describe('presets', () => {
   it('low has no post-processing and no transmission; high has both', () => {
     expect(usesPost('low')).toBe(false);
     expect(PRESETS.low.transmission).toBe(false);
-    expect(PRESETS.low.haze).toBe(false);
+    // Low keeps the haze (fog is a per-fragment term, not post-processing) and the identity.
+    expect(PRESETS.low.haze).toBe(true);
+    expect(PRESETS.low.fresnel).toBe(false);
     expect(usesPost('medium')).toBe(true);
     expect(PRESETS.medium.transmission).toBe(false);
     expect(usesPost('high')).toBe(true);
@@ -104,6 +116,21 @@ describe('presets', () => {
     }
     expect((lookMaterial('slab-glass', 'high') as THREE.MeshPhysicalMaterial).transmission).toBeGreaterThan(0);
     expect(lookMaterial('part-glass', 'low')).toBeInstanceOf(THREE.MeshBasicMaterial);
+  });
+
+  it('low keeps the 3Blue1Brown identity: thin white edges, low-alpha slab glass, tinted parts', () => {
+    const slab = lookMaterial('slab-glass', 'low') as THREE.MeshBasicMaterial;
+    expect(slab.transparent).toBe(true);
+    expect(slab.opacity).toBeLessThanOrEqual(0.1); // glass, never a white fill
+    expect(slab.depthWrite).toBe(false);
+    const part = lookMaterial('part-glass', 'low') as THREE.MeshBasicMaterial;
+    const edge = lookMaterial('part-edge', 'low') as THREE.LineBasicMaterial;
+    const edgeHigh = lookMaterial('part-edge', 'high') as THREE.LineBasicMaterial;
+    expect(edge.color.getHex()).toBe(PALETTE.edge);
+    // Fainter outlines and a denser tinted body on low: the role colour wins over the white lines.
+    expect(edge.opacity).toBeLessThan(edgeHigh.opacity);
+    expect(part.opacity).toBeGreaterThan(edge.opacity);
+    expect(part.opacity).toBeLessThan(0.5);
   });
 
   it('reduced motion holds the haze still', () => {
@@ -121,6 +148,16 @@ describe('palette in the scene', () => {
     m.getColorAt(i, c);
     return c.getHex();
   };
+
+  it('stream and ternary hues: A cyan near 185 deg, B amber near 40 deg, +1 warm, -1 cold', () => {
+    const hue = (hex: number): number => new THREE.Color(hex).getHSL({ h: 0, s: 0, l: 0 }, THREE.SRGBColorSpace).h * 360; // hue as authored (sRGB)
+    expect(Math.abs(hue(PALETTE.streamA) - 185)).toBeLessThan(8);
+    expect(Math.abs(hue(PALETTE.streamB) - 40)).toBeLessThan(8);
+    const plus = new THREE.Color(PALETTE.ternaryPlus);
+    const minus = new THREE.Color(PALETTE.ternaryMinus);
+    expect(plus.r).toBeGreaterThan(plus.b);
+    expect(minus.b).toBeGreaterThan(minus.r);
+  });
 
   it('streamColor for A and B uses palette.streamA / palette.streamB', () => {
     expect(streamColor('A')).toBe(PALETTE.streamA);
@@ -152,6 +189,7 @@ describe('palette in the scene', () => {
       expect(edges).toBeDefined();
       expect(edges.instanceMatrix).toBe(m.instanceMatrix);
       expect((edges.geometry as THREE.InstancedBufferGeometry).instanceCount).toBe(m.count);
+      expect(edges.userData.look).toBe('part-edge');
     }
     expect(mesh('slabs').userData.look).toBe('slab-glass');
   });

@@ -192,7 +192,7 @@ export const COMPONENTS: Record<ComponentType, ComponentContent> = {
     title: 'Weight matrix',
     text: {
       intuition:
-        'A grid of numbers the model learned. Ternary matrices only hold three values: −1 (red), 0 (dark) and +1 (cyan).',
+        'A grid of numbers the model learned. Ternary matrices only hold three values: −1 (cold blue), 0 (dark) and +1 (warm).',
       technical:
         'The checkpoint stores F32 latent weights. When the model runs, each ternary matrix is turned into γ · sign(w) · [|w| > τ] ' +
         'with γ = mean(|w|) per matrix. The router gate stays F32. The tile shows a cut-out of the matrix, not all of it.',

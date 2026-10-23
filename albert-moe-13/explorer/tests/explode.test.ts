@@ -97,6 +97,28 @@ describe('explode view', () => {
     expect(snapshot(tower)).toEqual(before);
   });
 
+  it('a quality change while exploded dims the new materials and reassemble restores them', async () => {
+    const { tower, view } = setup(0);
+    const slabs = tower.root.getObjectByName('slabs') as THREE.Mesh;
+    const oldMat = slabs.material as THREE.Material;
+    const oldOpacity = oldMat.opacity;
+    await view.explode('L12');
+    expect(oldMat.opacity).toBeCloseTo(oldOpacity * 0.15);
+    const fresh = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.4, depthWrite: false });
+    view.refreshLook(() => {
+      slabs.material = fresh; // what look.applyQuality does to every tagged mesh
+    });
+    expect(oldMat.opacity).toBe(oldOpacity); // the cached old preset is left clean
+    expect(fresh.opacity).toBeCloseTo(0.4 * 0.15); // the row stays faded behind the open level
+    view.refreshLook(() => {}); // a second switch does not dim twice
+    expect(fresh.opacity).toBeCloseTo(0.4 * 0.15);
+    await view.reassemble();
+    expect(fresh.opacity).toBe(0.4);
+    // Without an open level the swap runs as is.
+    view.refreshLook(() => {});
+    expect(fresh.opacity).toBe(0.4);
+  });
+
   it('restores through animated tweens', async () => {
     const { tower, view } = setup(500);
     const before = snapshot(tower);
@@ -271,6 +293,41 @@ describe('click picking', () => {
       dom.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, button: 0, buttons }));
     return { h, fire };
   }
+
+  it('pointerup or click without a canvas pointerdown never picks (tab activation, focus click)', () => {
+    let t = 0;
+    const dom = document.createElement('canvas');
+    document.body.append(dom);
+    const h = { pickAt: vi.fn(() => 'L23.expert.6' as string | null), onPick: vi.fn(), onEmpty: vi.fn() };
+    cleanup.push(attachPicking(dom, h, () => t), () => dom.remove());
+    const fire = (type: string, x: number, y: number, target: EventTarget = dom) =>
+      target.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true }));
+    fire('pointerup', 100, 100);
+    fire('click', 100, 100);
+    fire('mouseup', 100, 100);
+    // Press elsewhere on the page, release on the canvas.
+    fire('pointerdown', 100, 100, document.body);
+    fire('pointerup', 100, 100);
+    // Press on the canvas, window loses focus, release.
+    fire('pointerdown', 100, 100);
+    window.dispatchEvent(new Event('blur'));
+    fire('pointerup', 100, 100);
+    // Press, cancelled by the browser, release.
+    fire('pointerdown', 100, 100);
+    fire('pointercancel', 100, 100);
+    fire('pointerup', 100, 100);
+    // A long hold is not a click.
+    fire('pointerdown', 100, 100);
+    t += 1500;
+    fire('pointerup', 100, 100);
+    // One press releases once: a second pointerup does not pick again.
+    fire('pointerdown', 100, 100);
+    fire('pointerup', 101, 100);
+    fire('pointerup', 101, 100);
+    expect(h.pickAt).toHaveBeenCalledTimes(1);
+    expect(h.onPick).toHaveBeenCalledTimes(1);
+    expect(h.onEmpty).not.toHaveBeenCalled();
+  });
 
   it('isClick allows up to 4 px', () => {
     expect(isClick({ x: 0, y: 0 }, { x: 3, y: 2 })).toBe(true);
