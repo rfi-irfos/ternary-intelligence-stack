@@ -12,6 +12,8 @@ export interface TraceProvenance {
   mode: 'eval';
   path: 'forward_prefill';
   attention_window?: number;
+  /** What the router `weights` are: softmax top-3 probabilities before traffic-light output scales. */
+  router_weights_note?: string;
   date: string;
 }
 

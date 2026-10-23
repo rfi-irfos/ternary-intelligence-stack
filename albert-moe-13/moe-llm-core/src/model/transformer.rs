@@ -220,6 +220,12 @@ impl Transformer {
     /// Prefill: process full prompt through all layers, populate KV-cache in each attention block.
     /// Returns full logit tensor [1, seq_len, vocab]; caller takes the last position.
     pub fn forward_prefill(&self, x: &Tensor) -> Result<Tensor> {
+        let r = self.forward_prefill_inner(x);
+        crate::trace::clear_site(); // also on the error path: later forward() adds no events
+        r
+    }
+
+    fn forward_prefill_inner(&self, x: &Tensor) -> Result<Tensor> {
         let embed = self.embedding.forward(x)?;
 
         if let Some(blocks_b) = &self.blocks_b {

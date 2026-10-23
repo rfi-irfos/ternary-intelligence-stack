@@ -15,6 +15,11 @@ name = "albert_serve"
 path = "src/bin/albert_serve.rs"
 required-features = ["serve"]
 
+[[bin]]
+name = "albert_trace"
+path = "src/bin/albert_trace.rs"
+required-features = ["trace"]
+
 [features]
 cuda  = ["candle-core/cuda", "candle-nn/cuda"]
 trace = []

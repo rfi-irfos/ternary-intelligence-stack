@@ -5,6 +5,7 @@ use candle_core::{DType, Device, Tensor};
 use candle_nn::{VarBuilder, VarMap};
 use moe_llm_core::model::{Transformer, TransformerConfig};
 
+// NOTE: the LCG builder below must stay identical to seeded_model() in tests/trace_parity.rs.
 fn main() {
     let cfg = TransformerConfig {
         vocab_size: 64,

@@ -339,6 +339,8 @@ impl MoeBlock {
         )?;
         let top3_probs = candle_nn::ops::softmax(&top3_logits, 1)?;
 
+        let output_scales = self.traffic_light.borrow().output_scales();
+
         crate::trace_event! {
             let (layer, stream) = crate::trace::site();
             let idx = |t: &Tensor| t.flatten_all().and_then(|t| t.to_vec1::<u32>()).unwrap_or_default();
@@ -354,7 +356,7 @@ impl MoeBlock {
             crate::trace::push(crate::trace::TraceEvent::Router {
                 layer, stream,
                 logits: crate::trace::rows(&gate_logits, self.num_experts),
-                top3, weights, a3_clamped,
+                top3, weights, a3_clamped, output_scales: output_scales.clone(),
             });
         }
 
@@ -369,7 +371,6 @@ impl MoeBlock {
         let p3 = top3_probs.narrow(1, 2, 1)?.flatten_all()?;
 
         // 9. Sequential expert execution with ternary execution budget.
-        let output_scales = self.traffic_light.borrow().output_scales();
 
         for expert_idx in 0..self.num_experts {
             // @sparseskip: skip non-routed experts entirely — whitepaper §5.2.

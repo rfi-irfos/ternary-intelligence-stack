@@ -18,6 +18,7 @@ fn tiny_config() -> TransformerConfig {
     }
 }
 
+/// NOTE: this LCG builder must stay identical to the one in examples/logits_hash.rs.
 /// Deterministic model: candle's CPU RNG cannot be seeded, so every variable is
 /// overwritten with values from a fixed LCG (sorted by name).
 fn seeded_model() -> Transformer {
@@ -71,9 +72,18 @@ fn recording_is_bit_identical_and_complete() {
     assert_eq!(count(|e| matches!(e, E::Attention { .. })), 4 * 2 * 2);
     assert_eq!(count(|e| matches!(e, E::Gate { .. })), 2);
     assert_eq!(count(|e| matches!(e, E::Final { .. })), 1);
+    assert_eq!(count(|e| matches!(e, E::Residual { .. })), 4 * 2 * 2 + 2 * 2);
+    let mut pairs: Vec<(usize, char)> = events.iter().filter_map(|e| match e {
+        E::Router { layer, stream, .. } => Some((*layer, *stream)),
+        _ => None,
+    }).collect();
+    pairs.sort();
+    let want: Vec<(usize, char)> = (0..4).flat_map(|l| ['a', 'b'].map(|s| (l, s))).collect();
+    assert_eq!(pairs, want);
     for e in &events {
         match e {
-            E::Router { logits, top3, weights, a3_clamped, .. } => {
+            E::Router { logits, top3, weights, a3_clamped, output_scales, .. } => {
+                assert_eq!(output_scales.len(), 12);
                 assert_eq!((logits.len(), logits[0].len()), (8, 12));
                 assert_eq!((top3.len(), weights.len(), a3_clamped.len()), (8, 8, 8));
             }
@@ -85,6 +95,19 @@ fn recording_is_bit_identical_and_complete() {
             _ => {}
         }
     }
+}
+
+/// forward() after forward_prefill, recording still on, must add no events.
+#[cfg(feature = "trace")]
+#[test]
+fn forward_after_prefill_adds_no_events() {
+    let model = seeded_model();
+    let ids = Tensor::from_vec(vec![3u32, 17, 5, 60, 22, 9, 41, 1], (1, 8), &Device::Cpu).unwrap();
+    moe_llm_core::trace::begin();
+    model.forward_prefill(&ids).unwrap();
+    model.forward(&ids).unwrap();
+    // prefill only: 8 router + 16 attention + 2 gate + 20 residual + 1 final
+    assert_eq!(moe_llm_core::trace::take().len(), 8 + 16 + 2 + 20 + 1);
 }
 
 #[cfg(not(feature = "trace"))]

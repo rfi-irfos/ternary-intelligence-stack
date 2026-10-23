@@ -1,0 +1,5 @@
+[
+  { "id": "kjv", "prompt": "In the beginning God created the heaven and the earth." },
+  { "id": "de", "prompt": "Der Hund läuft über die Straße." },
+  { "id": "ternary", "prompt": "A ternary weight can be minus one, zero or plus one." }
+]

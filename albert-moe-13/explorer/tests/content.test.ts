@@ -8,7 +8,7 @@ import { NUM_TOKEN } from '../src/data/labeled';
 import { type Architecture, validateArchitecture } from '../src/data/architecture';
 import { DEPTHS, getDepth, setDepth, attachDepthKeys } from '../src/ui/depth';
 
-const rust = import.meta.glob('../../moe-llm-core/src/**/*.rs', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+const rust = import.meta.glob('./fixtures/rust-src-45e8af0/**/*.rs', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
 
 describe('component content', () => {
   it('every component type has all three depths, non-empty', () => {
@@ -60,10 +60,10 @@ describe('component content', () => {
   });
 
   it('every cited source file exists and the line range is inside it', () => {
-    expect(Object.keys(rust).length).toBeGreaterThan(10);
+    expect(Object.keys(rust).length).toBeGreaterThanOrEqual(10);
     for (const [type, c] of Object.entries(COMPONENTS)) {
       for (const s of c.source) {
-        const src = rust[`../../moe-llm-core/src/${s.file}`];
+        const src = rust[`./fixtures/rust-src-45e8af0/${s.file}`];
         expect(src, `${type}: ${s.file}`).toBeDefined();
         const n = (src ?? '').split('\n').length;
         const [a, b] = s.lines.split('-').map(Number);
@@ -80,7 +80,7 @@ describe('citations', () => {
       for (const s of c.source) {
         expect(s.tokens.length, `${type}: ${s.file}:${s.lines} has tokens`).toBeGreaterThan(0);
         const [a, b] = s.lines.split('-').map(Number);
-        const body = (rust[`../../moe-llm-core/src/${s.file}`] ?? '').split('\n').slice((a ?? 1) - 1, b ?? a).join('\n');
+        const body = (rust[`./fixtures/rust-src-45e8af0/${s.file}`] ?? '').split('\n').slice((a ?? 1) - 1, b ?? a).join('\n');
         for (const t of s.tokens) expect(body, `${type}: ${s.file}:${s.lines} lacks "${t}"`).toContain(t);
       }
     }

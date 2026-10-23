@@ -4,10 +4,17 @@
 //! nothing, so the model is bit-identical to a build without this module.
 //! With the feature ON but `begin()` not called, hooks return immediately.
 //! Hooks only clone / `to_vec` existing tensors; they never feed values back.
+//!
+//! Only `Transformer::forward_prefill` (dual-stream CPU path) is traced. It sets the
+//! (layer, stream) site as it goes and resets it to "unset" when it returns (also on the
+//! error path); while the site is unset every hook skips, so a later `forward()` or
+//! `forward_decode()` adds no events. Call `take()` right after `forward_prefill`.
 use serde::Serialize;
 
-/// One recorded observation. Positions are batch element 0, in sequence order.
+/// One recorded observation, in sequence order. Only Attention narrows to batch element 0;
+/// the other hooks flatten B x S rows (B = 1 in prefill).
 #[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum TraceEvent {
     Router {
         layer: usize,
@@ -18,6 +25,9 @@ pub enum TraceEvent {
         weights: Vec<[f32; 3]>,
         /// True if any top-3 slot with expert index < 4 had a logit < 0 before the safety gate.
         a3_clamped: Vec<bool>,
+        /// Traffic-light output scale per expert (`[E]`); the model multiplies the expert
+        /// outputs by it on top of `weights` (softmax top-3 probabilities).
+        output_scales: Vec<f32>,
     },
     Attention { layer: usize, stream: char, head: usize, weights: Vec<Vec<f32>> },
     Gate { layer: usize, g_a: Vec<f32>, g_b: Vec<f32> },
@@ -31,9 +41,12 @@ mod imp {
     use candle_core::Tensor;
     use std::cell::RefCell;
 
+    /// Sentinel layer index meaning "no traced forward_prefill is running".
+    const UNSET: usize = usize::MAX;
+
     thread_local! {
         static REC: RefCell<Option<Vec<TraceEvent>>> = const { RefCell::new(None) };
-        static SITE: RefCell<(usize, char)> = const { RefCell::new((0, 'a')) };
+        static SITE: RefCell<(usize, char)> = const { RefCell::new((UNSET, 'a')) };
     }
 
     pub fn begin() { REC.with(|r| *r.borrow_mut() = Some(Vec::new())); }
@@ -41,13 +54,18 @@ mod imp {
         REC.with(|r| r.borrow_mut().take().unwrap_or_default())
     }
     pub fn set_site(layer: usize, stream: char) { SITE.with(|s| *s.borrow_mut() = (layer, stream)); }
+    /// Back to "unset": hooks skip until the next `set_site`.
+    pub fn clear_site() { SITE.with(|s| *s.borrow_mut() = (UNSET, 'a')); }
     pub fn site() -> (usize, char) { SITE.with(|s| *s.borrow()) }
-    pub fn recording() -> bool { REC.with(|r| r.borrow().is_some()) }
+    /// True only while recording AND inside a traced `forward_prefill` (site set).
+    pub fn recording() -> bool {
+        REC.with(|r| r.borrow().is_some()) && SITE.with(|s| s.borrow().0 != UNSET)
+    }
     pub fn push(ev: TraceEvent) {
         REC.with(|r| { if let Some(v) = r.borrow_mut().as_mut() { v.push(ev); } });
     }
 
-    /// Rows of a tensor flattened to `[N, width]` (batch element 0 first for `[1, S, W]`).
+    /// Rows of a tensor flattened to `[N, width]`.
     pub fn rows(t: &Tensor, width: usize) -> Vec<Vec<f32>> {
         let flat = t.detach().flatten_all().and_then(|f| f.to_dtype(candle_core::DType::F32))
             .and_then(|f| f.to_vec1::<f32>()).unwrap_or_default();
@@ -76,6 +94,7 @@ mod noop {
     pub fn begin() {}
     pub fn take() -> Vec<TraceEvent> { Vec::new() }
     pub fn set_site(_layer: usize, _stream: char) {}
+    pub fn clear_site() {}
 }
 #[cfg(not(feature = "trace"))]
 pub use noop::*;
