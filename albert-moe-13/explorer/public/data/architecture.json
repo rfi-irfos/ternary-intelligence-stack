@@ -1,0 +1,494 @@
+{
+  "schema": 1,
+  "checkpoint": {
+    "file": "albert_v3.0.best.safetensors",
+    "bytes": 1324935080,
+    "sha256": "349951c645a4ce2b65df245a1341311a1d6ca4d4f05254a109fa6602fc4061a7",
+    "tensor_count": 3606
+  },
+  "model": {
+    "num_layers": 46,
+    "num_streams": 2,
+    "num_experts": 12,
+    "hidden": 256,
+    "ffn_inner": 1024,
+    "num_heads": 4,
+    "head_dim": 64,
+    "vocab": 32000,
+    "fusion_layers": [
+      2,
+      3,
+      5,
+      8,
+      13,
+      21,
+      34
+    ],
+    "params": 331140622,
+    "tau_top": 0.03
+  },
+  "layers": [
+    {
+      "index": 0,
+      "fusion": false,
+      "tau": 0.01
+    },
+    {
+      "index": 1,
+      "fusion": false,
+      "tau": 0.010444444444444444
+    },
+    {
+      "index": 2,
+      "fusion": true,
+      "tau": 0.010888888888888889
+    },
+    {
+      "index": 3,
+      "fusion": true,
+      "tau": 0.011333333333333334
+    },
+    {
+      "index": 4,
+      "fusion": false,
+      "tau": 0.011777777777777778
+    },
+    {
+      "index": 5,
+      "fusion": true,
+      "tau": 0.012222222222222221
+    },
+    {
+      "index": 6,
+      "fusion": false,
+      "tau": 0.012666666666666666
+    },
+    {
+      "index": 7,
+      "fusion": false,
+      "tau": 0.013111111111111112
+    },
+    {
+      "index": 8,
+      "fusion": true,
+      "tau": 0.013555555555555555
+    },
+    {
+      "index": 9,
+      "fusion": false,
+      "tau": 0.013999999999999999
+    },
+    {
+      "index": 10,
+      "fusion": false,
+      "tau": 0.014444444444444444
+    },
+    {
+      "index": 11,
+      "fusion": false,
+      "tau": 0.014888888888888889
+    },
+    {
+      "index": 12,
+      "fusion": false,
+      "tau": 0.015333333333333332
+    },
+    {
+      "index": 13,
+      "fusion": true,
+      "tau": 0.015777777777777776
+    },
+    {
+      "index": 14,
+      "fusion": false,
+      "tau": 0.01622222222222222
+    },
+    {
+      "index": 15,
+      "fusion": false,
+      "tau": 0.016666666666666666
+    },
+    {
+      "index": 16,
+      "fusion": false,
+      "tau": 0.01711111111111111
+    },
+    {
+      "index": 17,
+      "fusion": false,
+      "tau": 0.017555555555555553
+    },
+    {
+      "index": 18,
+      "fusion": false,
+      "tau": 0.018
+    },
+    {
+      "index": 19,
+      "fusion": false,
+      "tau": 0.018444444444444444
+    },
+    {
+      "index": 20,
+      "fusion": false,
+      "tau": 0.018888888888888886
+    },
+    {
+      "index": 21,
+      "fusion": true,
+      "tau": 0.019333333333333334
+    },
+    {
+      "index": 22,
+      "fusion": false,
+      "tau": 0.019777777777777776
+    },
+    {
+      "index": 23,
+      "fusion": false,
+      "tau": 0.020222222222222218
+    },
+    {
+      "index": 24,
+      "fusion": false,
+      "tau": 0.020666666666666667
+    },
+    {
+      "index": 25,
+      "fusion": false,
+      "tau": 0.02111111111111111
+    },
+    {
+      "index": 26,
+      "fusion": false,
+      "tau": 0.021555555555555553
+    },
+    {
+      "index": 27,
+      "fusion": false,
+      "tau": 0.022
+    },
+    {
+      "index": 28,
+      "fusion": false,
+      "tau": 0.022444444444444444
+    },
+    {
+      "index": 29,
+      "fusion": false,
+      "tau": 0.02288888888888889
+    },
+    {
+      "index": 30,
+      "fusion": false,
+      "tau": 0.02333333333333333
+    },
+    {
+      "index": 31,
+      "fusion": false,
+      "tau": 0.023777777777777776
+    },
+    {
+      "index": 32,
+      "fusion": false,
+      "tau": 0.02422222222222222
+    },
+    {
+      "index": 33,
+      "fusion": false,
+      "tau": 0.024666666666666663
+    },
+    {
+      "index": 34,
+      "fusion": true,
+      "tau": 0.025111111111111112
+    },
+    {
+      "index": 35,
+      "fusion": false,
+      "tau": 0.025555555555555554
+    },
+    {
+      "index": 36,
+      "fusion": false,
+      "tau": 0.025999999999999995
+    },
+    {
+      "index": 37,
+      "fusion": false,
+      "tau": 0.026444444444444444
+    },
+    {
+      "index": 38,
+      "fusion": false,
+      "tau": 0.026888888888888886
+    },
+    {
+      "index": 39,
+      "fusion": false,
+      "tau": 0.027333333333333334
+    },
+    {
+      "index": 40,
+      "fusion": false,
+      "tau": 0.027777777777777776
+    },
+    {
+      "index": 41,
+      "fusion": false,
+      "tau": 0.028222222222222218
+    },
+    {
+      "index": 42,
+      "fusion": false,
+      "tau": 0.028666666666666667
+    },
+    {
+      "index": 43,
+      "fusion": false,
+      "tau": 0.02911111111111111
+    },
+    {
+      "index": 44,
+      "fusion": false,
+      "tau": 0.02955555555555555
+    },
+    {
+      "index": 45,
+      "fusion": false,
+      "tau": 0.03
+    }
+  ],
+  "components": {
+    "embed": {
+      "instances": 1,
+      "params_per_instance": 8192000,
+      "tensors": [
+        {
+          "pattern": "embed.weight",
+          "shape": [
+            32000,
+            256
+          ],
+          "dtype": "F32",
+          "ternary": false
+        }
+      ]
+    },
+    "ln1": {
+      "instances": 92,
+      "params_per_instance": 512,
+      "tensors": [
+        {
+          "pattern": "blocks.{i}.stream_{s}.ln1.weight",
+          "shape": [
+            256
+          ],
+          "dtype": "F32",
+          "ternary": false
+        },
+        {
+          "pattern": "blocks.{i}.stream_{s}.ln1.bias",
+          "shape": [
+            256
+          ],
+          "dtype": "F32",
+          "ternary": false
+        }
+      ]
+    },
+    "attn": {
+      "instances": 92,
+      "params_per_instance": 262144,
+      "tensors": [
+        {
+          "pattern": "blocks.{i}.stream_{s}.attn.q_proj.weight",
+          "shape": [
+            256,
+            256
+          ],
+          "dtype": "F32",
+          "ternary": true
+        },
+        {
+          "pattern": "blocks.{i}.stream_{s}.attn.k_proj.weight",
+          "shape": [
+            256,
+            256
+          ],
+          "dtype": "F32",
+          "ternary": true
+        },
+        {
+          "pattern": "blocks.{i}.stream_{s}.attn.v_proj.weight",
+          "shape": [
+            256,
+            256
+          ],
+          "dtype": "F32",
+          "ternary": true
+        },
+        {
+          "pattern": "blocks.{i}.stream_{s}.attn.o_proj.weight",
+          "shape": [
+            256,
+            256
+          ],
+          "dtype": "F32",
+          "ternary": true
+        }
+      ]
+    },
+    "ln2": {
+      "instances": 92,
+      "params_per_instance": 512,
+      "tensors": [
+        {
+          "pattern": "blocks.{i}.stream_{s}.ln2.weight",
+          "shape": [
+            256
+          ],
+          "dtype": "F32",
+          "ternary": false
+        },
+        {
+          "pattern": "blocks.{i}.stream_{s}.ln2.bias",
+          "shape": [
+            256
+          ],
+          "dtype": "F32",
+          "ternary": false
+        }
+      ]
+    },
+    "router": {
+      "instances": 92,
+      "params_per_instance": 3072,
+      "tensors": [
+        {
+          "pattern": "blocks.{i}.stream_{s}.moe.gate.weight",
+          "shape": [
+            12,
+            256
+          ],
+          "dtype": "F32",
+          "ternary": false
+        }
+      ]
+    },
+    "expert": {
+      "instances": 552,
+      "params_per_instance": 525568,
+      "tensors": [
+        {
+          "pattern": "blocks.{i}.experts.{e}.c_fc.weight",
+          "shape": [
+            1024,
+            256
+          ],
+          "dtype": "F32",
+          "ternary": true
+        },
+        {
+          "pattern": "blocks.{i}.experts.{e}.c_fc.bias",
+          "shape": [
+            1024
+          ],
+          "dtype": "F32",
+          "ternary": false
+        },
+        {
+          "pattern": "blocks.{i}.experts.{e}.c_proj.weight",
+          "shape": [
+            256,
+            1024
+          ],
+          "dtype": "F32",
+          "ternary": true
+        },
+        {
+          "pattern": "blocks.{i}.experts.{e}.c_proj.bias",
+          "shape": [
+            256
+          ],
+          "dtype": "F32",
+          "ternary": false
+        }
+      ]
+    },
+    "seed_bias": {
+      "instances": 552,
+      "params_per_instance": 256,
+      "tensors": [
+        {
+          "pattern": "blocks.{i}.experts.{e}.seed_bias",
+          "shape": [
+            256
+          ],
+          "dtype": "F32",
+          "ternary": false
+        }
+      ]
+    },
+    "anastomosis": {
+      "instances": 7,
+      "params_per_instance": 1026,
+      "tensors": [
+        {
+          "pattern": "anastomosis.{k}.gate.weight",
+          "shape": [
+            2,
+            512
+          ],
+          "dtype": "F32",
+          "ternary": false
+        },
+        {
+          "pattern": "anastomosis.{k}.gate.bias",
+          "shape": [
+            2
+          ],
+          "dtype": "F32",
+          "ternary": false
+        }
+      ]
+    },
+    "ln_f": {
+      "instances": 1,
+      "params_per_instance": 512,
+      "tensors": [
+        {
+          "pattern": "ln_f.weight",
+          "shape": [
+            256
+          ],
+          "dtype": "F32",
+          "ternary": false
+        },
+        {
+          "pattern": "ln_f.bias",
+          "shape": [
+            256
+          ],
+          "dtype": "F32",
+          "ternary": false
+        }
+      ]
+    },
+    "lm_head": {
+      "instances": 1,
+      "params_per_instance": 8192000,
+      "tensors": [
+        {
+          "pattern": "lm_head.weight",
+          "shape": [
+            32000,
+            256
+          ],
+          "dtype": "F32",
+          "ternary": true
+        }
+      ]
+    }
+  }
+}
