@@ -198,6 +198,31 @@ describe('explode view', () => {
     expect(overview).toHaveBeenCalledTimes(1);
   });
 
+  it('Esc with the rig created before explode: animated closes swallow extra Esc, overview only after settling', async () => {
+    const tower = buildTower(a);
+    const camera = new THREE.PerspectiveCamera(45, 1.5, 0.1, 1000);
+    const rig = createControls(camera, document.createElement('canvas'), tower.rowExtent);
+    cleanup.push(() => rig.dispose());
+    const overview = vi.spyOn(rig, 'overview');
+    const view = createExplode({ tower, arch: a, rig, loadWeights, label: noLabel, ms: 700 });
+    cleanup.push(() => view.dispose());
+    const tick = (s: number) => { for (let i = 0; i < 20; i++) view.update(s / 20); };
+    const open = async (id: string) => { const p = view.explode(id); tick(1); await p; };
+    const esc = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await open('L12');
+    await open('L12.A.attn');
+    esc();
+    expect(view.depth()).toBe(1);
+    esc();
+    expect(view.depth()).toBe(0);
+    esc(); // during the reassemble animation
+    expect(overview).not.toHaveBeenCalled();
+    tick(1);
+    await new Promise((r) => setTimeout(r, 0));
+    esc();
+    expect(overview).toHaveBeenCalledTimes(1);
+  });
+
   it('tile captions are structure labels and fit: one short line each, never a long single line', async () => {
     const calls: [string, string | undefined][] = [];
     const tower = buildTower(a);

@@ -31,15 +31,24 @@ export const illustrative = <T>(value: T): Labeled<T> => ({ kind: 'illustrative'
 
 export function measured<T>(value: T, provenance: TraceProvenance): Labeled<T> {
   const p = provenance as Partial<TraceProvenance> | undefined | null;
-  if (!p || typeof p.prompt_id !== 'string' || !Array.isArray(p.token_ids) || typeof p.checkpoint_sha256 !== 'string') {
-    throw new Error('measured value needs provenance (prompt_id, token_ids, checkpoint_sha256)');
-  }
+  const strings = ['prompt_id', 'prompt', 'checkpoint_sha256', 'git_commit', 'ttl_rule', 'date'] as const;
+  const arrays = ['token_ids', 'tokens', 'tau_schedule'] as const;
+  const bad = !p
+    || strings.some((k) => typeof p[k] !== 'string')
+    || arrays.some((k) => !Array.isArray(p[k]))
+    || typeof p.num_layers !== 'number'
+    || p.mode !== 'eval'
+    || p.path !== 'forward_prefill'
+    || (p.attention_window !== undefined && typeof p.attention_window !== 'number');
+  if (bad) throw new Error('measured value needs complete provenance (every TraceProvenance field)');
   return { kind: 'measured', value, provenance };
 }
 
 export interface FmtOptions {
   /** Custom text for the value (e.g. a percentage). */
   format?: (v: LabeledValue) => string;
+  /** Tooltip note replacing the default wording of the kind. */
+  note?: string;
 }
 
 /** Plain text of a value: integers with thousands separators, other numbers to 5 significant digits, shapes as [a × b]. */
@@ -62,11 +71,11 @@ function provenanceTitle(p: TraceProvenance): string {
 }
 
 /** Empty badge element; the look comes from CSS (LABEL_CSS) so textContent stays the bare value. */
-export function badge(kind: LabelKind, provenance?: TraceProvenance): HTMLElement {
+export function badge(kind: LabelKind, provenance?: TraceProvenance, note?: string): HTMLElement {
   const b = document.createElement('i');
   b.className = `badge badge--${kind}`;
   b.setAttribute('aria-hidden', 'true');
-  b.title = kind === 'measured' && provenance ? provenanceTitle(provenance) : KIND_TITLE[kind];
+  b.title = note ?? (kind === 'measured' && provenance ? provenanceTitle(provenance) : KIND_TITLE[kind]);
   return b;
 }
 
@@ -78,8 +87,8 @@ export function fmt(l: Labeled<LabeledValue>, opts: FmtOptions = {}): HTMLElemen
   const v = document.createElement('span');
   v.className = 'lv-v';
   v.textContent = fmtText(l, opts);
-  root.append(v, badge(l.kind, l.provenance));
-  root.title = l.kind === 'measured' && l.provenance ? provenanceTitle(l.provenance) : KIND_TITLE[l.kind];
+  root.append(v, badge(l.kind, l.provenance, opts.note));
+  root.title = opts.note ?? (l.kind === 'measured' && l.provenance ? provenanceTitle(l.provenance) : KIND_TITLE[l.kind]);
   if (l.provenance) root.dataset.promptId = l.provenance.prompt_id;
   return root;
 }
@@ -102,13 +111,24 @@ const escHtml = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 /** Escapes prose and wraps every number token in fmt(structure(token)). Returns HTML. */
-export function richHtml(text: string, kind: LabelKind = 'structure'): string {
+export interface RichOptions {
+  kind?: LabelKind;
+  /** Tooltip for number tokens, except those listed in `plain`. */
+  note?: string;
+  /** Tokens that keep the default tooltip of the kind (architecture facts). */
+  plain?: Set<string>;
+}
+
+export const CITED_NOTE = 'stated in the cited investigation / source';
+
+export function richHtml(text: string, o: RichOptions = {}): string {
+  const kind = o.kind ?? 'structure';
   let out = '';
   let last = 0;
   for (const m of text.matchAll(NUM_TOKEN)) {
     const at = m.index ?? 0;
     out += escHtml(text.slice(last, at));
-    out += fmt({ kind, value: m[0] }).outerHTML;
+    out += fmt({ kind, value: m[0] }, o.plain?.has(m[0]) ? {} : { note: o.note }).outerHTML;
     last = at + m[0].length;
   }
   return out + escHtml(text.slice(last));

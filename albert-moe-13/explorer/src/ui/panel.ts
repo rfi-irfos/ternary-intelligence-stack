@@ -3,7 +3,7 @@ import type { CameraRig } from '../camera/controls';
 import { findMatrix, findVector, type WeightsLoader, weightKey } from '../data/weights';
 import { CAVEATS } from '../content/caveats';
 import { COMPONENTS, type ComponentType, type ResolvedContent, componentTypeOf, contentFor, sourceUrl } from '../content/components';
-import { fmt, fmtText, labelBlock, richHtml, structure } from '../data/labeled';
+import { CITED_NOTE, fmt, fmtText, labelBlock, richHtml, structure } from '../data/labeled';
 import {
   type ComponentId, type ParsedId, type Stream,
   attnId, bankId, embedId, expertId, lmHeadId, lnFId, ln1Id, ln2Id, parseId, routerId, slabId,
@@ -165,7 +165,7 @@ function visual(type: ComponentType, a: Architecture, id: ComponentId, rc: Resol
     const n = a.model.num_experts;
     const bars = Array.from({ length: n }, (_, i) =>
       `<rect x="${6 + i * 14}" y="${i < 3 ? 6 : 24}" width="10" height="${i < 3 ? 30 : 12}" fill="${i < 3 ? '#58c4dd' : '#2a2e36'}"/>`).join('');
-    return `<svg viewBox="0 0 ${12 + n * 14} 44" role="img" aria-label="router lights 3 of ${n} outputs"><title>schematic: top 3 of ${n} lit</title>${bars}</svg>`;
+    return `<svg viewBox="0 0 ${12 + n * 14} 44" role="img" aria-label="router outputs, a few lit"><title>schematic: a few router outputs lit</title>${bars}</svg>`;
   }
   if (type === 'anastomosis') {
     return '<svg viewBox="0 0 160 44" role="img" aria-label="two streams exchange"><title>schematic</title>' +
@@ -181,10 +181,11 @@ function visual(type: ComponentType, a: Architecture, id: ComponentId, rc: Resol
       '<rect x="74" y="8" width="28" height="28" fill="#58c4dd"/><text x="88" y="27" text-anchor="middle" font-size="14" fill="#000">+1</text>' +
       '<text x="108" y="27" font-size="14" fill="#fff">× γ</text></svg>';
   }
+  // Words only: counts of the real tensors are shown (as structure) in the text around the schematic.
   return `<svg viewBox="0 0 260 44" role="img" aria-label="in, operation, out"><title>schematic</title>` +
-    `<text x="4" y="18" font-size="10" fill="#cfd8e8">${esc(rc.inputs.slice(0, 40))}</text>` +
+    `<text x="4" y="18" font-size="10" fill="#cfd8e8">in</text>` +
     `<path d="M4 26 H256" stroke="#fff" stroke-width="1.5"/>` +
-    `<text x="4" y="40" font-size="10" fill="#cfd8e8">${esc(rc.outputs.slice(0, 40))}</text></svg>`;
+    `<text x="4" y="40" font-size="10" fill="#cfd8e8">out</text></svg>`;
 }
 
 const pctText = (v: unknown): string => (typeof v === 'number' ? `${(v * 100).toFixed(1)} %` : '—');
@@ -215,9 +216,21 @@ export function createPanel(deps: PanelDeps): Panel {
     return tower.has(cand) ? cand : id;
   };
 
+  /** The real counts behind the router schematic, outside the illustrative figure. */
+  function routerCaption(): string {
+    const top = fmt(structure(3)); // top-3 selection, moe.rs:197-381
+    top.dataset.v = 'top_k';
+    const n = fmt(structure(arch.model.num_experts));
+    n.dataset.v = 'experts';
+    return `<p class="schematic-note">Top ${top.outerHTML} of ${n.outerHTML} experts lit per stream.</p>`;
+  }
+
   function html(id: ComponentId, type: ComponentType, p: ParsedId): string {
     const c = COMPONENTS[type];
     const rc = contentFor(type, arch);
+    // Caveat numbers are findings of the cited investigation; only architecture facts keep the default tooltip.
+    const facts = new Set([String(arch.model.num_layers), String(arch.model.fusion_layers.length)]);
+    const cited = (t: string): string => richHtml(t, { note: CITED_NOTE, plain: facts });
     const depth = getDepth();
     const rows = tensorRows(id, arch);
     const tau = 'layer' in p ? arch.layers[p.layer]?.tau : undefined;
@@ -227,15 +240,15 @@ export function createPanel(deps: PanelDeps): Panel {
     const tensors = rows.length === 0
       ? '<p>No tensors of its own.</p>'
       : `<table><tbody>${rows.map((r) =>
-        `<tr data-tensor="${esc(r.name)}" data-dtype="${r.ternary ? 'ternary' : 'F32'}"><td>${fmt(structure(r.name)).outerHTML}</td>` +
-        `<td>${fmt(structure(r.shape)).outerHTML}</td><td>${r.ternary ? 'ternary' : 'F32'}</td>` +
-        `<td>${fmt(structure(r.params)).outerHTML}</td></tr>`).join('')}</tbody></table>`;
+        `<tr data-tensor="${esc(r.name)}" data-dtype="${r.ternary ? 'ternary' : 'F32'}"><td class="t-name">${fmt(structure(r.name)).outerHTML}</td>` +
+        `<td class="t-shape">${fmt(structure(r.shape)).outerHTML}</td><td class="t-dtype">${r.ternary ? 'ternary' : 'F32'}</td>` +
+        `<td class="t-params">${fmt(structure(r.params)).outerHTML}</td></tr>`).join('')}</tbody></table>`;
     const caveats = c.caveats.length === 0
       ? '<p>None recorded for this component.</p>'
       : c.caveats.map((cid) => {
         const cv = CAVEATS[cid];
-        return `<details open data-caveat="${cid}"><summary>${cid} · ${richHtml(cv.title)}</summary><p>${richHtml(cv.body)}</p>` +
-          (depth === 'intuition' ? '' : `<p class="evidence">Evidence: ${richHtml(cv.evidence)}</p>`) + '</details>';
+        return `<details open data-caveat="${cid}"><summary>${cid} · ${cited(cv.title)}</summary><p>${cited(cv.body)}</p>` +
+          (depth === 'intuition' ? '' : `<p class="evidence">Evidence: ${cited(cv.evidence)}</p>`) + '</details>';
       }).join('');
     const sources = c.source.map((s) =>
       `<li><a href="${esc(sourceUrl(s.file, s.lines))}" target="_blank" rel="noopener noreferrer">${richHtml(`${s.file}:${s.lines}`)}</a></li>`).join('');
@@ -249,7 +262,7 @@ export function createPanel(deps: PanelDeps): Panel {
         <p><b>In:</b> ${richHtml(rc.inputs)}</p><p class="formula">${richHtml(rc.formula)}</p><p><b>Out:</b> ${richHtml(rc.outputs)}</p></section>
       <section data-section="connections"><h3>Connections</h3>${links.length === 0 ? '<p>None.</p>' :
         `<ul>${links.map((l) => `<li><a href="#" data-link="${esc(l.id)}">${richHtml(l.label)}</a></li>`).join('')}</ul>`}</section>
-      <section data-section="visual"><h3>The maths, schematic</h3>${labelBlock('illustrative', visual(type, arch, id, rc)).outerHTML}</section>
+      <section data-section="visual"><h3>The maths, schematic</h3>${labelBlock('illustrative', visual(type, arch, id, rc)).outerHTML}${type === 'router' ? routerCaption() : ''}</section>
       <section data-section="caveats"><h3>Caveats</h3>${caveats}</section>
       <section data-section="source"><h3>Source</h3><ul>${sources}</ul></section>
       <section data-section="tour"><h3>Walkthrough</h3>${c.tour
@@ -359,8 +372,15 @@ export const PANEL_CSS = `
   border-radius: 4px; font: 13px/1.45 Georgia, 'Times New Roman', serif; backdrop-filter: blur(6px); }
 .inspect-panel h2 { margin: 0 0 6px; font-weight: normal; font-style: italic; font-size: 20px; }
 .inspect-panel h3 { margin: 12px 0 4px; font: 11px monospace; letter-spacing: 0.08em; text-transform: uppercase; color: #cfd8e8; }
-.inspect-panel table { width: 100%; border-collapse: collapse; font: 11px monospace; }
-.inspect-panel td { padding: 2px 4px; border-bottom: 1px solid rgba(255,255,255,0.12); word-break: break-all; }
+.inspect-panel table { width: 100%; table-layout: fixed; border-collapse: collapse; font: 11px monospace; }
+.inspect-panel td { padding: 2px 4px; border-bottom: 1px solid rgba(255,255,255,0.12); vertical-align: top; }
+.inspect-panel td.t-name { overflow-wrap: anywhere; }
+.inspect-panel td.t-name .lv { white-space: normal; }
+.inspect-panel td.t-shape, .inspect-panel td.t-dtype, .inspect-panel td.t-params { white-space: nowrap; }
+.inspect-panel td.t-shape { width: 26%; }
+.inspect-panel td.t-dtype { width: 15%; }
+.inspect-panel td.t-params { width: 20%; text-align: right; }
+.inspect-panel { overflow-x: hidden; }
 .inspect-panel .formula { font-style: italic; }
 .inspect-panel a { color: #58c4dd; }
 .inspect-panel .panel-close { position: absolute; right: 10px; top: 8px; background: none; border: 0; color: #fff; font-size: 20px; cursor: pointer; }

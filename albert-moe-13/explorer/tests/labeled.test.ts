@@ -10,7 +10,8 @@ import {
 import { validateArchitecture } from '../src/data/architecture';
 import { validateLayerWeights } from '../src/data/weights';
 import { buildTower } from '../src/scene/tower';
-import { createPanel } from '../src/ui/panel';
+import { PANEL_CSS, createPanel } from '../src/ui/panel';
+import { CITED_NOTE, LABEL_CSS } from '../src/data/labeled';
 import { DEPTHS, setDepth } from '../src/ui/depth';
 
 const a = validateArchitecture(arch);
@@ -33,6 +34,15 @@ describe('labelled values', () => {
     expect(() => measured(1, undefined as unknown as TraceProvenance)).toThrow(/provenance/);
     expect(() => measured(1, {} as TraceProvenance)).toThrow(/provenance/);
     expect(measured(0.5, prov).provenance).toBe(prov);
+  });
+
+  it('measured validates every provenance field the tooltip reads', () => {
+    for (const k of Object.keys(prov).filter((x) => x !== 'attention_window')) {
+      const broken = { ...prov, [k]: undefined } as unknown as TraceProvenance;
+      expect(() => measured(1, broken), k).toThrow(/provenance/);
+    }
+    expect(() => measured(1, { ...prov, git_commit: null } as unknown as TraceProvenance)).toThrow(/provenance/);
+    expect(() => fmt(measured(1, { ...prov, attention_window: 8 }))).not.toThrow();
   });
 
   it('fmt adds data-kind attribute', () => {
@@ -126,5 +136,58 @@ describe('app name', () => {
     expect(doc.title).toBe(APP_NAME);
     expect(doc.getElementById('app-name')?.textContent).toBe(APP_NAME);
     expect(indexHtml).toMatch(/FreeSerif/);
+  });
+});
+
+describe('panel layout and schematic labels', () => {
+  const rig = { flyTo: vi.fn(() => Promise.resolve()) };
+
+  it('tensor table columns do not wrap: dtype, shape and params are nowrap in a fixed layout', async () => {
+    const style = document.createElement('style');
+    style.textContent = PANEL_CSS + LABEL_CSS;
+    document.head.appendChild(style);
+    const panel = createPanel({ arch: a, tower, rig, loadWeights });
+    document.body.appendChild(panel.element);
+    await panel.openPanel('L12.expert.7');
+    const row = panel.element.querySelector('tr[data-tensor]')!;
+    for (const c of ['t-shape', 't-dtype', 't-params']) {
+      const td = row.querySelector(`td.${c}`) as HTMLElement;
+      expect(td, c).not.toBeNull();
+      expect(getComputedStyle(td).whiteSpace, c).toBe('nowrap');
+    }
+    expect(getComputedStyle(panel.element.querySelector('table')!).tableLayout).toBe('fixed');
+    expect(getComputedStyle(row.querySelector('td.t-name .lv')!).whiteSpace).toBe('normal');
+    style.remove();
+  });
+
+  it('router schematic: the expert count is a structure value outside the illustrative figure', async () => {
+    const panel = createPanel({ arch: a, tower, rig, loadWeights });
+    document.body.appendChild(panel.element);
+    await panel.openPanel('L12.A.router');
+    const n = panel.element.querySelector<HTMLElement>('[data-v="experts"]');
+    expect(n?.dataset.kind).toBe('structure');
+    expect(n?.textContent).toBe(String(a.model.num_experts));
+    expect(n?.closest('.lv-block--illustrative')).toBeNull();
+    for (const t of ['router', 'anastomosis', 'attn', 'matrix', 'expert', 'ln1']) {
+      const id = { router: 'L12.A.router', anastomosis: 'L5.gate', attn: 'L12.A.attn', matrix: 'L12.A.attn.q', expert: 'L12.expert.7', ln1: 'L12.A.ln1' }[t]!;
+      await panel.openPanel(id);
+      const fig = panel.element.querySelector('.lv-block--illustrative')!;
+      const texts = [...fig.querySelectorAll('text,title')].map((x) => x.textContent ?? '').join(' ') + (fig.querySelector('svg')?.getAttribute('aria-label') ?? '');
+      const digits = texts.replace(/[−+]?[01]\b/g, '');
+      expect(/\d/.test(digits), `${t}: ${texts}`).toBe(false);
+    }
+  });
+
+  it('caveat numbers carry the cited-source tooltip, architecture facts keep the default one', async () => {
+    const panel = createPanel({ arch: a, tower, rig, loadWeights });
+    document.body.appendChild(panel.element);
+    await panel.openPanel('L12'); // slab: A6 (46 vs 38 layers), A7, A8
+    const a6 = panel.element.querySelector('[data-caveat="A6"]')!;
+    const byText = (t: string) => [...a6.querySelectorAll<HTMLElement>('.lv')].find((x) => x.textContent === t)!;
+    expect(byText('38').title).toBe(CITED_NOTE);
+    expect(byText('46').title).toContain('read from the checkpoint');
+    await panel.openPanel('L12.A.router');
+    const a9 = panel.element.querySelector('[data-caveat="A9"]')!;
+    expect([...a9.querySelectorAll<HTMLElement>('.lv')].find((x) => x.textContent === '50')?.title).toBe(CITED_NOTE);
   });
 });
