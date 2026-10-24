@@ -4,8 +4,8 @@ A museum-style 3D model card of albert. in the browser: 46 layers in one row, tw
 12 shared experts per layer, and recorded token runs of the real model. Built with three.js,
 Vite and TypeScript. Mouse first, German and English (DE | EN switch in the top bar).
 
-> Status: built on branch `feat/albert-explorer`, not public yet. The live URL follows at launch
-> (see `docs/launch-links.md` in the repository root).
+> Live: https://albert.rfi-irfos.com/ (GitHub Pages, deployed from `main` by
+> `.github/workflows/albert-explorer-pages.yml`; DNS at Cloudflare, CNAME `albert` to `rfi-irfos.github.io`, proxy off).
 
 <!-- Screenshots: added later by the maintainers. -->
 *Screenshot placeholder: lobby, overview row, layer step view.*
