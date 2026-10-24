@@ -10,7 +10,7 @@ Evidence: transformer.rs:184-215, 282-295; train_bible.rs:1582 calls model.forwa
 
 ## A2. Gate weights sit at initialisation scale
 
-RMS 0.010-0.012 against an init of N(0, 0.01); biases within +-0.009; gate 6 (layer 34) has bias exactly 0. This is consistent with A1. At inference sigma(~0) is about 0.5, so each stream adds about half of the other at 7 layers, a mixing the training path never saw.
+RMS 0.010-0.012 against an init of N(0, 0.01); biases within +-0.009; gate 6 (layer 35, index 34) has bias exactly 0. This is consistent with A1. At inference sigma(~0) is about 0.5, so each stream adds about half of the other at 7 layers, a mixing the training path never saw.
 
 Evidence: checkpoint read 2026-10-23
 
