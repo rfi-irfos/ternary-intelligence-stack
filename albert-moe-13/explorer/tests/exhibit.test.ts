@@ -50,7 +50,7 @@ describe('exhibit scene object', () => {
       expect({ aspect, hit: frustum.intersectsBox(box) }).toEqual({ aspect, hit: false });
     }
     // the exhibit adds nothing to the row extent that the overview frames
-    expect(exhibitAnchor(extent).x).toBeGreaterThan(extent.maxX + 100);
+    expect(exhibitAnchor(extent).x).toBeGreaterThan(extent.maxX + 400);
   });
 
   it('creates its texture at most once, only on request, and disposes it', async () => {

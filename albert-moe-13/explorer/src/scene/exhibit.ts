@@ -32,13 +32,13 @@ export interface Exhibit {
 }
 
 /**
- * Where the exhibit hangs: far beyond the output end of the row (a full row length plus 30 units to +x), facing
+ * Where the exhibit hangs: far beyond the output end of the row (two and a half row lengths plus 60 units to +x), facing
  * the default overview camera (-y). The overview bounds are the row ends only, so the exhibit lies outside every
  * overview frame; the visitor reaches it with the "show exhibit" button of the side panel.
  */
 export function exhibitAnchor(extent: RowExtent): THREE.Vector3 {
   const len = extent.maxX - extent.minX;
-  return new THREE.Vector3(extent.maxX + len * 1.2 + 30, 0, 0);
+  return new THREE.Vector3(extent.maxX + len * 2.5 + 60, 0, 0);
 }
 
 const defaultLoad = (url: string): Promise<TexImageSource> =>
