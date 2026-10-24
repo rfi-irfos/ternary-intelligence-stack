@@ -2,7 +2,17 @@
 
 Empirical training-loss history for native ternary training from random initialization. The tracked metric is **EP-AVG ATL** — the all-time-low of the per-epoch average loss. Intra-batch ("chip") lows are noted separately where recorded.
 
-## Current state (2026-06-15)
+Last updated: 2026-10-24 (S30–S33 and the last recorded state added from `epoch_history.log` and the 5-minute watch recorder; the sections below the next one keep their original dates).
+
+## Current state (last recorded: epoch 9270, training stopped)
+
+- **46L dual-stream** · 2×256H · 12 experts/stream · Top-3 routing · 512 ctx · 32k vocab · 7 anastomosis gates at layers [2,3,5,8,13,21,34] · 331,140,622 parameters (checkpoint header of `albert_v3.0.best.safetensors`, 46 layers, 3606 tensors; checkpoint file dated 2026-09-23, header read 2026-10-24).
+- **Last recorded epoch 9270: loss_avg 3.9353, loss_best 3.8420** (`~/.albert/epoch_history.log`, last write 2026-09-23 03:40 local). Lowest `loss_avg` in the whole file (epochs 3499–9270): **3.8420 at ep9265**.
+- **Training stopped** (Modal workspace paused). The 5-minute recorder repeats ep9270 until 2026-10-12T14:55Z.
+- Depth surgeries S30–S33 (42L→46L) are listed in the ledger below. They were found on 2026-10-24; the S29 and later transitions are reconstructed from the +78 tensors per layer in the log's `tns` field.
+- Metric naming: from this entry on, values carry the names used in `epoch_history.log` (`loss_avg`, `loss_best`). The older "EP-AVG ATL" values below equal `loss_avg` (for example 5.6077 at ep6700 is the `loss_avg` of that epoch).
+
+## State on 2026-06-15 (historical)
 
 - **32L dual-stream @ 128 ctx** · 2×256H · 12 experts/stream · Top-3 routing · 32k vocab · RoPE. (Just expanded from 31L — S19 below.)
 - Re-loading the 451,418,681-token corpus to resume at 32L on Modal · Gen 1 step 1/6 · ceiling 34L (next Fibonacci ceiling 55L) · BATCH=1.
@@ -14,13 +24,14 @@ Empirical training-loss history for native ternary training from random initiali
 
 | Metric | Value | Epoch | Arch |
 |---|---|---|---|
-| **Best EP-AVG ATL** (epoch-average aggregate) | **5.6077** | ~ep6700 | 31L dual-stream (pre-S19) |
-| **Best chip ATL** (best single intra-batch loss) | **1.2637** | ~ep6300 | 30L — distinct metric from EP-AVG; the gap between them is expected; not yet beaten |
+| **Best EP-AVG ATL** (epoch-average aggregate), updated 2026-10-24: lowest `loss_avg` in `epoch_history.log` | **3.8420** | ep9265 | 46L dual-stream (after S33) |
+| Best EP-AVG ATL as of 2026-06-15 (superseded) | 5.6077 | ~ep6700 | 31L dual-stream (pre-S19) |
+| **Best chip ATL** (best single intra-batch loss) | **1.2637** | ~ep6300 | 30L — distinct metric from EP-AVG; the gap between them is expected; value as of 2026-06-15, not re-checked after ep6700 |
 | v2.0.0 best (3L, 8k vocab) | 6.9542 | ep11 | 3L single-stream |
 
 Random baseline: `ln(32000) = 10.373` — expected starting loss with no prior knowledge over a 32k vocabulary.
 
-## Surgery ledger (12L → 32L, + 1 cord)
+## Surgery ledger (12L → 46L, + 1 cord; rows S1–S19 as of 2026-06-15, S30–S33 added 2026-10-24)
 
 Reconciled from three sources: contemporaneous doc entries, the live dashboard annotations, and **checkpoint-mtime ground truth** — the per-layer `best.NNL.safetensors` archives, each written the instant its surgery fired. **✓ = mtime-verified.** Note: the dashboard's early "April" date labels are a month-typo artifact and are NOT used here — the first surgery (12→13L) is mtime-stamped 2026-05-13, so nothing in the run predates mid-May.
 
@@ -43,6 +54,13 @@ Reconciled from three sources: contemporaneous doc entries, the live dashboard a
 | S17 | 29L→30L | ep5610 | 2026-06-06 | **✓ checkpoint mtime (21:08)** |
 | S18 | 30L→31L | ep6339 | 2026-06-13 | dashboard + obs-log FN179 — Gen 1 step 1/6, plateau-gated (Δ-0.0101/34ep < 0.0200); pre-surgery best archived |
 | S19 | 31L→32L | ~ep6709 | 2026-06-15 | dashboard + obs-log FN180 — Gen 1 step 1/6, plateau-gated (Δ0.0160/55ep < 0.0200, late_mean 5.6347); new L0 grad-norm 0.757 = inserted layer warming off identity init |
+| S20–S29 | 32L→42L | ~ep7000–ep8906 | 2026-06-21 to 2026-09-19 | not in this ledger; see the surgery log in `albert-moe-13/README.md` (S29 = 41L→42L, loss_avg 3.9625 before, 5.1015 after, ep8906→8907) |
+| S30 | 42L→43L | ep8937→8938 | 2026-09-19, between 13:55Z and 14:00Z | `epoch_history.log` (tns 3294→3372) + 5-min recorder. loss_avg 3.9972 → 4.1694 |
+| S31 | 43L→44L | ep8941→8942 | 2026-09-19, between 15:00Z and 15:05Z | same sources (tns 3372→3450). loss_avg 3.9978 → 4.1686 |
+| S32 | 44L→45L | ep8957→8958 | 2026-09-19, between 18:50Z and 18:55Z | same sources (tns 3450→3528). loss_avg 3.9947 → 4.2715 |
+| S33 | 45L→46L | ep8986→8987 | 2026-09-20, between 01:05Z and 01:10Z | same sources (tns 3528→3606). loss_avg 3.9810 → 5.1995. Last surgery; checkpoint header shows 46 layers |
+
+The recorder gives a five-minute window, not an exact event time. Known discrepancy: the README gives S29 as 2026-09-19 02:58:32 CEST, the recorder shows the S29 jump between 03:20Z and 03:25Z (05:20–05:25 CEST), about 2.4 h later. The loss value 3.9625 agrees in both sources. The checkpoint header has 3606 tensors, equal to the log's final `tns` value (re-read 2026-10-24; an earlier note counted 3605).
 
 ---
 
@@ -197,6 +215,53 @@ EP-AVG ATL values below are **real**, recovered from the canonical `~/.albert/ep
 ¹ S14–S17 (26L→27→28→29→30L) fired somewhere across ep~4900–6100; exact surgery epochs were not preserved in `epoch_history.log`.
 
 **Current checkpoint (ep6191; resumed training at ep6192, 2026-06-12):** 30L dual-stream · 221,661,708 params · 2,356 tensors · ~845 MB safetensors · fib_index=7 · window=34 · Gen3 step1/6. Training resumed after a ~1-week Anthropic billing-migration gap; checkpoints verified clean (no NaN/Inf).
+
+---
+
+### Post-S29 descent and 42L→46L surgeries (ep8906 → ep9270, added 2026-10-24)
+
+Every 10th epoch from `epoch_history.log` (real values, no interpolation; ep9110 is not in the file). `layers` is derived from the tensor count `tns` (3294 = 42L, 3372 = 43L, 3450 = 44L, 3528 = 45L, 3606 = 46L; +78 tensors per layer). Rows at the surgery epochs (ep8906/8907, 8937/8938, 8941/8942, 8957/8958, 8986/8987) are in the ledger above.
+
+| Epoch | loss_avg | loss_best | layers |
+|---|---|---|---|
+| 8910 | 4.6287 | 3.9334 | 42 |
+| 8920 | 4.1763 | 3.9334 | 42 |
+| 8930 | 4.0751 | 3.9334 | 42 |
+| 8940 | 4.0426 | 3.9334 | 43 |
+| 8950 | 4.2417 | 3.9334 | 44 |
+| 8960 | 4.2782 | 3.9334 | 45 |
+| 8970 | 4.0996 | 3.9334 | 45 |
+| 8980 | 4.0908 | 3.9334 | 45 |
+| 8990 | 4.5878 | 3.9334 | 46 |
+| 9000 | 4.2339 | 3.9334 | 46 |
+| 9010 | 4.3481 | 3.9334 | 46 |
+| 9020 | 4.1794 | 3.9334 | 46 |
+| 9030 | 4.1997 | 3.9334 | 46 |
+| 9040 | 4.1588 | 3.9334 | 46 |
+| 9050 | 4.2497 | 3.9251 | 46 |
+| 9060 | 4.1635 | 3.9251 | 46 |
+| 9070 | 4.0234 | 3.9251 | 46 |
+| 9080 | 3.9090 | 3.9090 | 46 |
+| 9090 | 4.0171 | 3.9090 | 46 |
+| 9100 | 4.0192 | 3.9090 | 46 |
+| 9120 | 4.1887 | 3.9090 | 46 |
+| 9130 | 4.1004 | 3.9090 | 46 |
+| 9140 | 4.0966 | 3.9090 | 46 |
+| 9150 | 4.0686 | 3.9090 | 46 |
+| 9160 | 4.0163 | 3.8755 | 46 |
+| 9170 | 3.9911 | 3.8755 | 46 |
+| 9180 | 3.9752 | 3.8755 | 46 |
+| 9190 | 4.0709 | 3.8755 | 46 |
+| 9200 | 4.0990 | 3.8755 | 46 |
+| 9210 | 4.0472 | 3.8755 | 46 |
+| 9220 | 4.0257 | 3.8579 | 46 |
+| 9230 | 4.0230 | 3.8579 | 46 |
+| 9240 | 4.0820 | 3.8579 | 46 |
+| 9250 | 4.0213 | 3.8579 | 46 |
+| 9260 | 3.9943 | 3.8579 | 46 |
+| **9270** | **3.9353** | **3.8420** | 46 (last recorded; training stopped) |
+
+The README's earlier "best loss 3.9334 (ep8891)" is `loss_best` up to ep9040; later values are lower (3.9251 at ep9044, 3.8420 at ep9265).
 
 ---
 

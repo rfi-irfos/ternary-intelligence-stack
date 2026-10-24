@@ -13,16 +13,16 @@ Training artifacts for the Albert MoE-13 ternary language model.
 | Format | `.safetensors` (float32 weights, HuggingFace standard) |
 | Config | `albert_v3.0.config.json` |
 | Epoch counter | `albert_v3.0.meta` (plain text integer) |
-| Architecture | **Dual-stream 2×256H** · **32L** per stream · 4H/stream · **768 total expert-routing slots** (12E/layer × 32L × 2 streams, independent per-stream routing gate) · 6 anastomosis gates (Fibonacci [2,3,5,8,13,21]) · **128CTX** · 32000V |
-| Global Epoch | **~6500+** (training active, 2026-06-15) |
+| Architecture | **Dual-stream 2×256H** · **46L** per stream · 4H/stream · **1,104 total expert-routing slots** (12E/layer × 46L × 2 streams, independent per-stream routing gate) · 7 anastomosis gates (layers [2,3,5,8,13,21,34]) · **512CTX** · 32000V (source: checkpoint header 2026-09-23 and `albert_v3.0.config.json`; the config's `num_layers` still says 38, the checkpoint is ground truth) |
+| Global Epoch | **9270** (last recorded, training stopped; `epoch_history.log` last write 2026-09-23; `albert_v3.0.meta` here still holds the older value 8869) |
 | Sync | run `albert-train modal pull` to sync checkpoint |
 | Best chip loss | **1.2637** (post-S18, 2026-06-14) |
-| Best epoch avg | **5.8693** (ep6487, 2026-06-14, 32L) |
-| Evolution state | fib_index=7 · window=34 · Gen3 step1/6 |
+| Best epoch avg | **3.8420** (ep9265, 46L; lowest `loss_avg` in `epoch_history.log`). Last recorded epoch 9270: loss_avg 3.9353, loss_best 3.8420 |
+| Evolution state | as of 2026-06-15: fib_index=7 · window=34 · Gen3 step1/6 (not re-verified after S33) |
 | Corpus | 451,418,681 tokens — multilingual: Wikipedia CC BY-SA + Europarl + Gutenberg + chaos layer (EN/DE/FR/ES/PT/IT/NL/PL) |
-|| Tensors | **~2,180** (dual-stream blocks: stream_a/stream_b per layer; shared experts; 6 anastomosis gates; embed; lm_head) ||
-| Parameters | **~224M** |
-| Safetensors size | **~850 MB** |
+| Tensors | **3606** (dual-stream blocks: stream_a/stream_b per layer; shared experts; 7 anastomosis gates; embed; lm_head) |
+| Parameters | **331,140,622** (sum of tensor shapes in the checkpoint header) |
+| Safetensors size | **1,324,935,080 bytes (~1.32 GB)**, F32 (`albert_v3.0.best.safetensors`) |
 
 The checkpoint is overwritten at the end of every 300-batch epoch. The `.meta` file stores the global epoch count across all training sessions. Training runs on Modal T4 GPU; use `albert-train pull` to sync the latest checkpoint back to local `models/`.
 
@@ -52,7 +52,7 @@ The checkpoint is overwritten at the end of every 300-batch epoch. The `.meta` f
 
 | Version | Architecture | Key Event | Global Epoch |
 |---------|-------------|-----------|--------------|
-| v3.0 current | **2×256H dual-stream · 32L** · 4H/stream · **768 expert-routing slots** (12E/layer × 32L × 2 streams) · 6 anastomosis gates | Training active at ep~6500+; **19 depth surgeries** + 1 cord surgery complete; best EP-AVG ATL **5.8693** (ep6487); fib_index=7 · window=34 · Gen3 step1/6 | **~6500+** (active) |
+| v3.0 current | **2×256H dual-stream · 46L** · 4H/stream · **1,104 expert-routing slots** (12E/layer × 46L × 2 streams) · 7 anastomosis gates | Training stopped at ep9270; **33 depth surgeries** + 1 cord surgery complete; lowest loss_avg **3.8420** (ep9265) | **9270** (stopped) |
 | v3.0 cord | **2×256H dual-stream · 25L** | Cord surgery ep4202 — first ever autonomous bifurcation to dual-stream; Stream B Mandelbrot-perturbed | ep4202 (2026-05-27T16:44Z) |
 | v3.0 | 256H · **12L→25L** · 4H · 12E · 32000V | Multilingual launch; 12L weights transferred from v2.0.0; 32k ByteLevel BPE vocab; 13 depth surgeries | 0→4202 |
 | v2.0.0 · 12L | 256H · **12L** · 4H · 12E · 8000V | Max depth reached; layer crystallization (L0-L3 frozen, L11 hot); TTL cycling reds self-resolving | 454→477 (archived) |

@@ -1,5 +1,7 @@
 # Albert MoE-13
 
+**Xperience albert.** — [interactive 3D explorer of albert.'s architecture (46 layers, in the browser)](explorer/README.md). A museum-style walk through the real checkpoint structure, with recorded traces of the real model. Not public yet: the live URL follows at launch.
+
 **Ternary-native dual-stream Mixture-of-Experts language model** — weights constrained to {-1, 0, +1}, trained from scratch with real-time dashboard telemetry. GPU training via Modal (T4).
 
 **Architecture milestone (2026-05-27):** Single-stream architecture autonomously bifurcated into dual-stream 2×256H via cord surgery — the first documented instance of a live ternary MoE growing from one stream to two mid-training. No prior art.
@@ -66,7 +68,7 @@ This is not a failure mode. It is a measurable intermediate state between "knowi
 
 The architecture combines:
 - **Straight-Through Estimation (STE)** for end-to-end ternary training
-- **Mixture-of-Experts (MoE)** routing — **768 total expert-routing slots** (12 experts per layer × 32 layers × 2 independently-routing streams). Each stream selects Top-3 of its 12 experts per layer independently; the FFN weights are shared but the routing gate is per-stream. From the outside: 768 possible expert activations per forward pass; 192 active per token (Top-3 × 32 layers × 2 streams).
+- **Mixture-of-Experts (MoE)** routing — **1,104 total expert-routing slots** (12 experts per layer × 46 layers × 2 independently-routing streams). Each stream selects Top-3 of its 12 experts per layer independently; the FFN weights are shared but the routing gate is per-stream. From the outside: 1,104 possible expert activations per forward pass; 276 active per token (Top-3 × 46 layers × 2 streams).
 - **@sparseskip** — 9 of 12 experts are skipped per decode step at the routing level, compounding weight-level sparsity savings *(patent pending A50296/2026, TIS platform patent, 10 claims; @sparseskip = Claim 3)*
 - **Expert seed biases** — learnable F32 [256] bias per expert (Uniform[-0.01, 0.01] init) breaks routing Nash equilibria; weights persist and amplify expert specialisation over training
 - **Ternary Traffic Light Routing (TTL)** — per-expert trit execution budget (Green / Orange / Red) based on rolling EMA utilization, with anti-stagnation burst mechanism
@@ -82,24 +84,24 @@ The architecture combines:
 |-----------|-------|
 | **Streams** | **2 (dual-stream — cord surgery 2026-05-27)** |
 | Hidden size | **2×256H** (256H per stream) |
-| **Layers** | **42 per stream** (29 Net2Net depth surgeries + 1 cord surgery: 12L→42L dual-stream; see surgery log) |
+| **Layers** | **46 per stream** (33 Net2Net depth surgeries + 1 cord surgery: 12L→46L dual-stream; see surgery log). Source: checkpoint header, 46 layers (indices 0..45) |
 | Anastomosis gates | **7** — at Fibonacci layers [2,3,5,8,13,21,34]; `Linear(512,2)`, F32; cross-stream fusion soft-gated by gradient |
 | Attention heads | 4 per stream |
-| **Total expert capacity** | **1,008 expert-routing slots** = 12 experts/layer × 42 layers × 2 independently-routing streams |
+| **Total expert capacity** | **1,104 expert-routing slots** = 12 experts/layer × 46 layers × 2 independently-routing streams |
 | Experts per layer | 12 (shared FFN weights; independent per-stream routing gate) |
 | Context length | **512 tokens** |
 | Vocabulary | 32,000 tokens (ByteLevel BPE — EN/DE/FR/ES/PT/IT/NL/PL) |
-| Routing | Top-3 sparse — @sparseskip, 75% experts skipped per step · **252 expert activations per token** (3×42×2) |
-| TTL routing | EMA-based trit states per stream per layer — **84 TTL rows** (L0–L41 stream A, L0–L41 stream B) |
+| Routing | Top-3 sparse — @sparseskip, 75% experts skipped per step · **276 expert activations per token** (3×46×2) |
+| TTL routing | EMA-based trit states per stream per layer — **92 TTL rows** (L0–L45 stream A, L0–L45 stream B) |
 | Quantization | STE with gamma-scaled ternary, gamma cached every 20 steps |
 | Optimizer | AdamW, cosine LR 6e-5 → 2e-5 / 500 steps (sqrt-scaled to the real effective batch size 2026-09-19, see session log) · **BATCH=2** on Modal L40S |
-| **Total parameters** | grown past the 21L-era ~224M figure with 9 additional layers since; not yet re-measured post-42L |
-| **Safetensors (training)** | **~850 MB** (F32 reference checkpoint) at 21L; scales with layer count, current checkpoint larger |
-| **Packed footprint** | figures below are from the 21L architecture — see [docs/FOOTPRINT.md](docs/FOOTPRINT.md), not yet re-run at 42L: ~101 MB / 4.08 bits per param deployable (ternary weights 5-trit-packed + f32 embeddings); 39.7 MB / 1.6 bits weights-only |
+| **Total parameters** | **331,140,622** (measured from the checkpoint header `albert_v3.0.best.safetensors`, 46 layers, 3606 tensors; checkpoint file dated 2026-09-23, header read 2026-10-24) |
+| **Safetensors (training)** | **~850 MB** (F32 reference checkpoint) at 21L; scales with layer count, current checkpoint larger (46L; the size on disk was not re-measured) |
+| **Packed footprint** | figures below are from the 21L architecture — see [docs/FOOTPRINT.md](docs/FOOTPRINT.md), not yet re-run at 46L: ~101 MB / 4.08 bits per param deployable (ternary weights 5-trit-packed + f32 embeddings); 39.7 MB / 1.6 bits weights-only |
 | Corpus | **451,418,681 tokens** (stages 1–13, cache-loaded) |
 | GPU | Modal **L40S** (48GB, upgraded from T4→L4→L40S as the arch and batch size grew — see session log 2026-09-16/18) |
 
-**Surgery log — 29 Net2Net depth surgeries (12L→42L) + 1 cord surgery:**
+**Surgery log — 33 Net2Net depth surgeries (12L→46L) + 1 cord surgery:**
 
 | Surgery | Epoch | Layers | Note |
 |---------|-------|--------|------|
@@ -128,11 +130,19 @@ The architecture combines:
 | S26 | ~ep8879 | 38L→39L | 2026-09-18, mastery-triggered — first surgery after the LR-recalibration + surgery-reset-removal fixes, confirmed no LR snap-back |
 | S27 | ep8891 | 39L→40L | 2026-09-18 23:24:54 CEST · mastery loss 3.9334 |
 | S28 | ~ep8901 | 40L→41L | 2026-09-19 01:42:29 CEST · mastery loss 3.9409 |
-| **S29** | **~ep8906** | **41L→42L (current)** | **2026-09-19 02:58:32 CEST · mastery loss 3.9625** |
+| S29 | ~ep8906 | 41L→42L | 2026-09-19 02:58:32 CEST · mastery loss 3.9625 (see note below) |
+| S30 | ep8937→8938 | 42L→43L | 2026-09-19 between 13:55Z and 14:00Z · loss_avg 3.9972 → 4.1694 (first epoch after) |
+| S31 | ep8941→8942 | 43L→44L | 2026-09-19 between 15:00Z and 15:05Z · loss_avg 3.9978 → 4.1686 |
+| S32 | ep8957→8958 | 44L→45L | 2026-09-19 between 18:50Z and 18:55Z · loss_avg 3.9947 → 4.2715 |
+| **S33** | **ep8986→8987** | **45L→46L (current)** | **2026-09-20 between 01:05Z and 01:10Z · loss_avg 3.9810 → 5.1995** |
 
-**Evolution state:** Gen 2 step **4**/6 · fib_index=8 · window growing per-generation (last observed 610 epochs at S29) · ceiling=55L (F12)
+S30–S33 were found on 2026-10-24 and are reconstructed from `epoch_history.log` (epoch, loss_avg) and the machine-local 5-minute watch recorder (UTC window: last row before, first row after). Each surgery adds one layer, visible as +78 tensors in the log's `tns` field. The recorder gives a window of five minutes, not an exact event time.
 
-**Training state (live, 2026-09-19):** Global Epoch **~8917** · best loss **3.9334** (ep8891, pre-S27) · training **active** on Modal L40S · batch=2 · **512CTX** · cosine LR 6e-5→2e-5/500 steps (recalibrated 2026-09-19, see session log) · mastery gate=4.0 nats. Six surgeries (36L→42L) live-validated over ~24h of 15-minute monitoring with zero LR resets and zero errors — see `ternlang-root/docs/session_log.md` 2026-09-19 entry for the full fix-and-validation writeup.
+**Note on S29 time:** the S29 row above gives 2026-09-19 02:58:32 CEST. The 5-minute recorder shows the S29 jump (ep8906→8907, loss_avg 3.9625 → 5.1015) between 03:20Z and 03:25Z, which is 05:20 to 05:25 CEST. The README time is about 2.4 h earlier than the recorder. Not resolved; the row is left as first written. The loss value 3.9625 agrees in both sources.
+
+**Evolution state (as of the S29 entry, 2026-09-19, not re-verified after S33):** Gen 2 step **4**/6 · fib_index=8 · window growing per-generation (last observed 610 epochs at S29) · ceiling=55L (F12)
+
+**Training state (last recorded, training stopped):** Global Epoch **9270** · loss_avg **3.9353** · loss_best **3.8420** (source: `epoch_history.log`, last write 2026-09-23 03:40 local) · training **stopped** (Modal workspace paused; the 5-minute recorder repeats ep9270 until 2026-10-12T14:55Z) · batch=2 · **512CTX** · mastery gate=4.0 nats. The 2026-09-19 validation of six surgeries (36L→42L) is written up in `ternlang-root/docs/session_log.md`, 2026-09-19 entry.
 
 ---
 
@@ -256,6 +266,7 @@ albert-moe-13/
 ├── dashboard/
 │   ├── index.html                  # Live training dashboard
 │   └── run_server.py               # HTTP server with Range request support
+├── explorer/                       # Xperience albert.: 3D explorer (three.js + Vite), see explorer/README.md
 ├── data/
 │   ├── corpus/                     # Active training corpus (.txt files)
 │   ├── corpus/                     # Stage-aware corpus dirs (stage_3/ through stage_11/)
@@ -265,7 +276,7 @@ albert-moe-13/
 │   ├── chaos/                      # v3.0 — 10% chaos layer (~43 MB, invariant enforced)
 │   └── vocab_v3.json               # ByteLevel BPE vocabulary (32,000 tokens)
 ├── models/
-│   ├── albert_v3.0.safetensors     # Active checkpoint (v3.0, 21L)
+│   ├── albert_v3.0.safetensors     # Active checkpoint (v3.0, 46L per the checkpoint header; this tree holds older state files, see models/README.md)
 │   ├── albert_v3.0.config.json     # Architecture config
 │   ├── albert_v3.0.meta            # Global epoch counter
 │   └── README.md                   # Checkpoint registry
@@ -315,9 +326,9 @@ Albert automatically unlocks richer training data as it grows deeper via Net2Net
 | 256H · 12L | CPU (i7-4800MQ) | ~13 s |
 | 256H · 17L | CPU (i7-4800MQ) | ~18 s |
 | 2×30L, 512CTX | Modal T4 GPU (24GB) | ~450 ms |
-| 2×42L, 512CTX, batch=2 (current) | Modal L40S GPU (48GB) | ~2.1–2.6 s/batch |
+| 2×46L, 512CTX, batch=2 (last run, stopped) | Modal L40S GPU (48GB) | ~2.1–2.6 s/batch (measured at 42L; not re-measured at 46L) |
 
-GPU tier has moved T4 → L4 → L40S as depth, context length, and batch size grew (see session log 2026-09-16/18 for the upgrade rationale and VRAM headroom tracking — currently ~5–6GB free of 48GB at 42L). `albert-train` handles the full launch: image build with CUDA, volume-cached crate downloads, live log streaming to local dashboard.
+GPU tier has moved T4 → L4 → L40S as depth, context length, and batch size grew (see session log 2026-09-16/18 for the upgrade rationale and VRAM headroom tracking — ~5–6GB free of 48GB at 42L, not re-measured at 46L). `albert-train` handles the full launch: image build with CUDA, volume-cached crate downloads, live log streaming to local dashboard.
 
 ---
 

@@ -6,7 +6,7 @@
 
 ## What @sparseskip Does
 
-Albert uses **768 total expert-routing slots** (12 experts per layer × 32 layers × 2 independently-routing streams). Per step, each stream selects Top-3 of its 12 layer-experts. The remaining 9 receive a combined routing weight of exactly zero.
+Albert uses **1,104 total expert-routing slots** (12 experts per layer × 46 layers × 2 independently-routing streams). Per step, each stream selects Top-3 of its 12 layer-experts. The remaining 9 receive a combined routing weight of exactly zero.
 
 `@sparseskip` exploits this: when `combined_weight.max_all() == 0.0`, the entire expert MLP is skipped — not masked, not zeroed-out, **not executed**. The forward pass for that expert does not run.
 

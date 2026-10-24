@@ -2,7 +2,7 @@
 
 Consolidated record of all Net2Net depth-expansion events across the lifetime of the project.
 Primary source: `convergence_log.md` (v3.0), `EVOLUTION_EVIDENCE.md` (v2.0.0 surgeries 1–3).
-Last updated: 2026-05-25.
+Last updated: 2026-10-24 (S14–S33 and the 46L state added below; sections above that part keep their 2026-05-25 text).
 
 ---
 
@@ -49,7 +49,7 @@ Surgeries S1–S3 documented in `EVOLUTION_EVIDENCE.md`. S4–S9 individually un
 ## Version 3.0 — Multilingual Ternary (32k vocab, ternary STE from ep1)
 
 **Architecture start:** 12L · 256H · 12E · 32k vocab (weights transferred from v2.0.0 ep=best, loss 6.8821; embed + lm_head re-initialized for 32k)  
-**Architecture current:** 26L dual-stream (as of 2026-05-27 — 13 depth surgeries + 1 cord surgery)
+**Architecture current:** 46L dual-stream (as of the last recorded epoch 9270 — 33 depth surgeries + 1 cord surgery; training stopped). The S1–S13 table below is the 2026-05-27 state; S14–S33 follow in the later table.
 
 All surgeries documented in `convergence_log.md`.
 
@@ -85,6 +85,36 @@ Green surge = existing layers routing with high confidence. Red surge = new laye
 
 **AdamW buffer reset coincidence:** Modal pod restart reset the optimizer state at approximately the same epoch as the surgery. Fresh AdamW momentum on an already-explored loss landscape contributed to the aggressive descent rate (see restart acceleration pattern in project memory).
 
+### Surgeries S14–S33 (added 2026-10-24)
+
+Same columns as the table above. Sources: S14–S29 are transcribed from the surgery log in `albert-moe-13/README.md` (epoch and date as written there; "v3 epoch" holds the README epoch, "Global epoch" is not recorded). S30–S33 come from `~/.albert/epoch_history.log` (epoch, loss_avg, tns) and the machine-local 5-minute watch recorder (UTC window: last row before the jump, first row after). "Tensors" is the log's `tns` after the surgery. "not recorded" means no source was found.
+
+| # | v3 epoch | Global epoch | Transition | Date (UTC) | Fibonacci window | Mandelbrot c_im | Plateau Δ / epochs | Tensors | Pre-surgery EP_AVG | Post-surgery first ATL | Result |
+|---|----------|-------------|-----------|------------|-----------------|----------------|-------------------|---------|------------------|-----------------------|--------|
+| S14 | ~4280 | not recorded | 26L→27L | 2026-05-29 | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | Success; Gen3 step2/6 (README) |
+| S15 | ~4350 | not recorded | 27L→28L | 2026-05-29 | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | Success (README) |
+| S16 | ~4740 | not recorded | 28L→29L | 2026-05-31 | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | Success; checkpoint-mtime verified (README) |
+| S17 | 5610 | not recorded | 29L→30L | 2026-06-06 | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | Success; checkpoint-mtime verified (README) |
+| S18 | 6339 | not recorded | 30L→31L | 2026-06-14 (README); 2026-06-13 (convergence_log) | not recorded | not recorded | Δ-0.0101 / 34 ep (convergence_log) | 2434 | not recorded | not recorded | Success (tns 2356→2434 at ep6339→6340) |
+| S19 | ~6500 (README); ~6709 (convergence_log) | not recorded | 31L→32L | 2026-06-15 | not recorded | not recorded | Δ0.0160 / 55 ep (convergence_log) | 2512 | not recorded | not recorded | Success (tns 2434→2512 at ep6707→6708) |
+| S20 | ~7000 | not recorded | 32L→33L | 2026-06-21 | not recorded | not recorded | not recorded | 2590 | not recorded | not recorded | Success; CTX bumped 256→512 (README) |
+| S21 | 8711 | not recorded | 33L→34L | 2026-09-17T03:31:35Z | not recorded | not recorded | not recorded | 2668 | 3.9983 | 4.9064 | Success; first surgery after a 41-day dormancy (README) |
+| S22–S23 | ~8711–8856 (README) | not recorded | 34L→36L | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | Success; exact event log lost to local rotation (README) |
+| S24 | ~8865 | not recorded | 36L→37L | 2026-09-18 17:01:12 CEST | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | Success (README) |
+| S25 | ~8867 | not recorded | 37L→38L | 2026-09-18 17:37:36 CEST | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | Success (README) |
+| S26 | ~8879 | not recorded | 38L→39L | 2026-09-18 | not recorded | not recorded | mastery-triggered | not recorded | not recorded | not recorded | Success; no LR snap-back (README) |
+| S27 | 8891 | not recorded | 39L→40L | 2026-09-18 23:24:54 CEST | not recorded | not recorded | mastery loss 3.9334 | not recorded | 3.9334 | 4.0126 | Success |
+| S28 | ~8901 | not recorded | 40L→41L | 2026-09-19 01:42:29 CEST | not recorded | not recorded | mastery loss 3.9409 | not recorded | 3.9409 | 4.1164 | Success |
+| S29 | ~8906 | not recorded | 41L→42L | 2026-09-19 02:58:32 CEST (README); recorder: 03:20Z–03:25Z | not recorded | not recorded | mastery loss 3.9625 | 3294 | 3.9625 | 5.1015 | Success. The README time and the recorder differ by about 2.4 h; not resolved |
+| S30 | 8937→8938 | not recorded | 42L→43L | 2026-09-19, 13:55Z–14:00Z | not recorded | not recorded | not recorded | 3372 | 3.9972 | 4.1694 | Success |
+| S31 | 8941→8942 | not recorded | 43L→44L | 2026-09-19, 15:00Z–15:05Z | not recorded | not recorded | not recorded | 3450 | 3.9978 | 4.1686 | Success |
+| S32 | 8957→8958 | not recorded | 44L→45L | 2026-09-19, 18:50Z–18:55Z | not recorded | not recorded | not recorded | 3528 | 3.9947 | 4.2715 | Success |
+| S33 | 8986→8987 | not recorded | 45L→46L | 2026-09-20, 01:05Z–01:10Z | not recorded | not recorded | not recorded | 3606 | 3.9810 | 5.1995 | Success; last surgery. Checkpoint header: 46 layers, 3606 tensors, 331,140,622 parameters |
+
+Pre-surgery EP_AVG and post-surgery first value are `loss_avg` of the last epoch before and the first epoch after the jump in `epoch_history.log`. S21, S27, S28 values come from the same file (tns jumps at ep8711→8712, ep8891→8892, ep8901→8902); the README's mastery losses for S27 and S28 equal the pre-surgery values.
+
+**Totals as of 2026-10-24:** 33 depth surgeries (12L→46L) + 1 cord surgery. Training stopped at epoch 9270 (loss_avg 3.9353, loss_best 3.8420).
+
 ---
 
 ## Lifetime Summary
@@ -93,8 +123,8 @@ Green surge = existing layers routing with high confidence. Red surge = new laye
 |---------|-----------|-----------------|---------------|
 | v1.x | 1 failed | 3L (no net change) | No records |
 | v2.0.0 | 9 confirmed (10 per README) | 3L→12L | S1–S3 in EVOLUTION_EVIDENCE.md; S4–S9 undocumented |
-| v3.0 | 13 depth + 1 cord | 12L→26L dual-stream | All in convergence_log.md |
-| **Total** | **~23–24 surgical events** | **3L→26L dual-stream** | |
+| v3.0 | 33 depth + 1 cord (13 depth + 1 cord as of 2026-05-25) | 12L→46L dual-stream | S1–S19 and S30–S33 in convergence_log.md; S14–S33 table above |
+| **Total** | **~43–44 surgical events** (arithmetic: 9–10 in v2.0.0, 33 + 1 in v3.0) | **3L→46L dual-stream** | |
 
 **For SPRIND pitch:** "albert. has undergone 13 autonomous Net2Net depth expansions (12L→26L) plus one cord surgery (bifurcation to dual-stream 2×256H) in its v3.0 run alone — all precisely logged in convergence_log.md with timestamps, Fibonacci plateau windows, Mandelbrot perturbation parameters, and loss trajectories. The cord surgery on 2026-05-27 is the first documented instance of a live ternary MoE autonomously bifurcating from single-stream to dual-stream architecture mid-training."
 
@@ -102,7 +132,7 @@ Green surge = existing layers routing with high confidence. Red surge = new laye
 
 ---
 
-## Surgery S14 — Next expected event
+## Surgery S14 — Next expected event (historical, written 2026-05-27; S14 has since fired, see the S14–S33 table above)
 
 **Current state (ep4234):** 26L dual-stream · chip ATL **8.6852** (set ep~4203 post-cord) · fib_index=7 · window=34 · Gen3 step1/6 · training paused (Modal billing ceiling)  
 **Gate:** PLATEAU gate — since_best will accumulate once descent stalls; fib_index=7 → window=34 epochs required  
