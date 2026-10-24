@@ -41,10 +41,10 @@ export const CAVEATS: Record<CaveatId, Caveat> = {
   A2: {
     title: { en: 'Gate weights sit at initialisation scale', de: 'Die Gewichte der Tore liegen auf Initialisierungsniveau' },
     body: {
-      en: 'RMS 0.010-0.012 against an init of N(0, 0.01); biases within +-0.009; gate 6 (layer 34) has bias exactly 0. ' +
+      en: 'RMS 0.010-0.012 against an init of N(0, 0.01); biases within +-0.009; gate 6 (layer 35, index 34) has bias exactly 0. ' +
         'This is consistent with A1. At inference sigma(~0) is about 0.5, so each stream adds about half of the other ' +
         'at 7 layers, a mixing the training path never saw.',
-      de: 'RMS 0,010-0,012 bei einer Initialisierung mit N(0, 0,01); Biases innerhalb von +-0,009; Tor 6 (Ebene 34) hat einen Bias von genau 0. ' +
+      de: 'RMS 0,010-0,012 bei einer Initialisierung mit N(0, 0,01); Biases innerhalb von +-0,009; Tor 6 (Ebene 35, Index 34) hat einen Bias von genau 0. ' +
         'Das passt zu A1. Bei der Inferenz ist sigma(~0) etwa 0,5; jeder Strom addiert also in 7 Ebenen etwa die Hälfte des anderen, ' +
         'eine Mischung, die der Trainingsweg nie gesehen hat.',
     },
