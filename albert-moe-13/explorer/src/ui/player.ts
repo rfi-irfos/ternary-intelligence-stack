@@ -1187,7 +1187,7 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   for (const s of [promptSel, tokenSel, camSel, kindSel]) s.addEventListener('keydown', onSelectKey);
   const onKey = (e: KeyboardEvent): void => {
     if (!player || e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
-    if (e.key === ' ') { e.preventDefault(); toggle(); }
+    if (e.key === ' ') { e.preventDefault(); if (!e.repeat) toggle(); }
     else if (e.key === 'ArrowLeft') { e.preventDefault(); stepBy(-1); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); stepBy(1); }
   };
