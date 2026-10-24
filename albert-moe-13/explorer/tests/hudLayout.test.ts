@@ -42,15 +42,18 @@ const T = {
   captionH: px('--caption-h'),
   dockGap: px('--dock-gap'),
   dockRow: px('--dock-row'),
-  /** Horizontal padding of the dock (--space-4) and the measured width of its control row: transport 178 px + gap + stepper 144 px. */
-  dockPadX: px('--space-4'),
-  controlsW: 340,
+  dockCtl: px('--dock-ctl'),
+  /** Fixed parts of the dock row: speed button min-width (52 px) and the layer count (min-width 4.2em at 14 px = 59 px). */
+  speedW: 52,
+  countW: Math.ceil(4.2 * 14),
   controlH: px('--control-h'),
   /** The legend card (first visit): a 32 px head and seven 32 px rows inside --space-2 / --space-3 padding and a 1 px border. */
   legendH: 32 + 7 * 32 + px('--space-2') + px('--space-3') + 2,
 };
-/** The side panel's first width: 22 % of the viewport within [280 px, 40 %] (src/ui/sidebar.ts). */
-const sideWidth = (w: number): number => Math.round(Math.min(Math.max(280, Math.floor(0.4 * w)), Math.max(280, 0.22 * w)));
+/** The widest side panel: min(40 % of the viewport, half the viewport - 232 px), at least 280 px (sidebarMax in src/ui/sidebar.ts). */
+const sideMax = (w: number): number => Math.max(280, Math.floor(Math.min(0.4 * w, w / 2 - 232)));
+/** The side panel's first width: 22 % of the viewport within [280 px, sideMax] (src/ui/sidebar.ts). */
+const sideWidth = (w: number): number => Math.round(Math.min(sideMax(w), Math.max(280, 0.22 * w)));
 const legendWidth = (w: number): number => Math.min(220, Math.max(168, 0.14 * w)); // clamp(168px, 14vw, 220px)
 
 /** The HUD boxes at a viewport. The chips of the top bar sit inside the bar and add nothing. */
@@ -66,10 +69,8 @@ function hudRects(w: number, h: number, st: State): Record<string, Rect> {
   // the half width is capped to end one gap before the panel: 100vw - 2 x (panel + margin + gap).
   const free = st.sidebar ? w - 2 * (side + 2 * T.edge) : w - 2 * T.edge;
   const dw = Math.min(T.dockW, free);
-  // Below about 340 px of inner width the control row wraps (transport above, stepper under it).
-  const inner = dw - 2 * T.dockPadX - 2;
-  const dh = T.dockH + (inner < T.controlsW ? T.dockRow + T.space2 : 0);
-  out.dock = { x: w / 2 - dw / 2, y: lineY - dh, w: dw, h: dh };
+  // One row of three zones in every state: the dock is always --dock-h tall.
+  out.dock = { x: w / 2 - dw / 2, y: lineY - T.dockH, w: dw, h: T.dockH };
   if (st.sidebar) out.sidebar = { x: w - T.edge - side, y: sideTop, w: side, h: lineY - sideTop };
   if (st.legend) out.legend = { x: T.edge, y: sideTop, w: legendWidth(w), h: T.legendH };
   return out;
@@ -101,24 +102,86 @@ const coverageScene = (w: number, h: number, st: State): number =>
 const overlap = (a: Rect, b: Rect): number =>
   Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
 
+/** The three zones inside the dock (grid: flexible left, then the transport, then speed + stepper; 8 px gaps, 12 px padding, 1 px border). */
+function dockZones(dock: Rect): { left: Rect; centre: Rect; right: Rect; captionShown: boolean } {
+  const inner = dock.w - 2 - 2 * T.dockPad;
+  const centreW = 2 * T.dockCtl + T.dockRow + 2 * T.dockGap;
+  const rightW = T.speedW + T.dockGap + 2 * T.dockCtl + T.countW;
+  const x0 = dock.x + 1 + T.dockPad;
+  const y0 = dock.y + 1 + T.dockPad;
+  const leftW = Math.max(0, inner - centreW - rightW - 2 * T.dockGap);
+  return {
+    left: { x: x0, y: y0, w: leftW, h: T.dockRow },
+    centre: { x: x0 + leftW + T.dockGap, y: y0, w: centreW, h: T.dockRow },
+    right: { x: x0 + inner - rightW, y: y0, w: rightW, h: T.dockRow },
+    captionShown: inner > 414, // @container (max-width: 414px) hides the caption
+  };
+}
+
 const CLOSED: State = { sidebar: false, legend: false };
 const OPEN: State = { sidebar: true, legend: false };
 const EVERYTHING: State = { sidebar: true, legend: true };
 
 describe('HUD layout rules use the tokens', () => {
-  it('the mini dock is min(--dock-w, free width) wide and exactly --dock-h tall (caption line plus the big control row)', () => {
-    expect(T.dockW).toBe(640); // the caption line (86 characters at about 7 px) needs about 614 px
-    expect(T.dockH).toBe(2 * T.dockPad + T.captionH + T.dockGap + T.dockRow + 2); // + 2 x 1px border
-    expect(T.dockH).toBeLessThanOrEqual(110);
-    expect(T.dockRow).toBeGreaterThanOrEqual(T.controlH);
-    expect(T.controlH).toBeGreaterThanOrEqual(32);
+  it('the mini dock is min(--dock-w, free width) wide and --dock-h tall: one card, one row of three zones, 36 px controls, 48 px play, 8 px gaps, 12 px padding', () => {
+    expect(T.dockW).toBe(640);
+    expect(T.dockH).toBe(2 * T.dockPad + T.dockRow + 2); // + 2 x 1px border
+    expect(T.dockPad).toBe(12);
+    expect(T.dockGap).toBe(8);
+    expect(T.dockCtl).toBe(36);
+    expect(T.dockRow).toBe(48);
+    // title (20 px line) + caption (--caption-h) fit the 48 px row
+    expect(20 + T.captionH).toBeLessThanOrEqual(T.dockRow);
     expect(rule('.dock')).toContain('width: min(var(--dock-w), calc(100vw - 2 * var(--edge-pad)))');
-    expect(rule('.dock')).toContain('padding: var(--dock-pad) var(--space-4)');
-    expect(rule('.player-bar')).toContain('gap: var(--dock-gap)');
+    expect(rule('.dock')).toContain('padding: var(--dock-pad)');
+    expect(rule('.dock')).toContain('container-type: inline-size');
     expect(rule('.player-caption')).toContain('height: var(--caption-h)');
-    expect(rule('.player-controls')).toContain('min-height: var(--dock-row)');
-    expect(rule('.player-controls')).toContain('flex-wrap: wrap');
+    const row = rule('.player-controls');
+    expect(row).toContain('display: grid');
+    expect(row).toContain('grid-template-columns: minmax(0, 1fr) auto auto');
+    expect(row).toContain('align-items: center');
+    expect(row).toContain('column-gap: var(--dock-gap)');
+    expect(row).toContain('height: var(--dock-row)');
+    expect(row).not.toContain('wrap');
+    expect(rule('.transport')).toContain('gap: var(--dock-gap)');
+    expect(rule('.dock-right')).toContain('gap: var(--dock-gap)');
+    expect(rule('.dock-title')).toContain('text-overflow: ellipsis');
+    expect(rule('.dock .hud-icon, .dock .speed-pill')).toContain('width: var(--dock-ctl)');
+    expect(rule('.dock .hud-icon, .dock .speed-pill')).toContain('height: var(--dock-ctl)');
+    expect(rule('.play-btn')).toContain('width: var(--dock-row)');
+    expect(rule('.play-btn')).toContain('height: var(--dock-row)');
+    // below 440 px of dock the caption is hidden (container content box: 440 - 24 - 2 = 414 px)
+    expect(uiCss).toContain('@container (max-width: 414px) { .player-caption { display: none; } }');
   });
+
+  for (const [w, h] of [[1280, 720], [1366, 768], [1920, 1080]] as const) {
+    for (const [name, st] of [['closed', CLOSED], ['default', OPEN], ['max', { sidebar: true, legend: false, sideW: sideMax(w) }]] as const) {
+      it(`${w}x${h}, sidebar ${name}: the dock is one row, the controls have equal heights and the left zone never touches the centre zone`, () => {
+        const dock = hudRects(w, h, st).dock!;
+        const z = dockZones(dock);
+        // one row: all three zones share the same top and height, inside the dock
+        for (const r of [z.left, z.centre, z.right]) {
+          expect(r.y).toBe(z.left.y);
+          expect(r.h).toBe(T.dockRow);
+          expect(r.y).toBeGreaterThanOrEqual(dock.y);
+          expect(r.y + r.h).toBeLessThanOrEqual(dock.y + dock.h);
+        }
+        // zones in order with at least one gap between them, nothing outside the card
+        expect(z.left.x + z.left.w + T.dockGap).toBeLessThanOrEqual(z.centre.x);
+        expect(z.centre.x + z.centre.w + T.dockGap).toBeLessThanOrEqual(z.right.x);
+        expect(z.right.x + z.right.w).toBeLessThanOrEqual(dock.x + dock.w - T.dockPad - 1);
+        expect(overlap(z.left, z.centre)).toBe(0);
+        expect(overlap(z.centre, z.right)).toBe(0);
+        // the title still has room (at least "Eb…", the full text is in the tooltip) and the card is vertically balanced
+        expect(z.left.w).toBeGreaterThanOrEqual(40);
+        expect(z.left.y - dock.y).toBe(dock.y + dock.h - (z.left.y + z.left.h));
+        // the caption is shown exactly when the dock is wider than 440 px
+        expect(z.captionShown).toBe(dock.w > 440);
+        if (name !== 'max') expect(dock.w).toBe(T.dockW);
+        else expect(dock.w).toBeGreaterThanOrEqual(416);
+      });
+    }
+  }
 
   it('the dock centre equals the viewport centre, open or closed; its width is capped so it ends before the open side panel (rule and model)', () => {
     const open = rule('body.side-open .dock, body.layer-open .dock');
@@ -128,7 +191,7 @@ describe('HUD layout rules use the tokens', () => {
     expect(rule('.dock')).toContain('left: 50%');
     expect(rule('.dock')).toContain('transform: translateX(-50%)');
     for (const [w, h] of [[1366, 768], [1280, 720], [1920, 1080]] as const) {
-      for (const st of [CLOSED, OPEN, { sidebar: true, legend: false, sideW: Math.floor(0.4 * w) }]) {
+      for (const st of [CLOSED, OPEN, { sidebar: true, legend: false, sideW: sideMax(w) }]) {
         const r = hudRects(w, h, st);
         expect(r.dock!.x + r.dock!.w / 2, `${w} ${JSON.stringify(st)}`).toBe(w / 2);
         if (st.sidebar) {
@@ -139,9 +202,10 @@ describe('HUD layout rules use the tokens', () => {
         expect(r.dock!.x).toBeGreaterThanOrEqual(T.edge);
       }
     }
-    // The cap in numbers: at 1280 a 40 % panel (512 px) leaves a dock of 1280 - 2 x (512 + 24) = 208 px.
-    const max1280 = hudRects(1280, 720, { sidebar: true, legend: false, sideW: 512 }).dock!;
-    expect(max1280.w).toBe(208);
+    // The cap in numbers: a plain 40 % panel (512 px at 1280) would leave a dock of 1280 - 2 x (512 + 24) = 208 px;
+    // the sidebar maximum min(40 %, 100vw/2 - 232 px) = 408 px keeps 416 px, at every viewport width.
+    expect(hudRects(1280, 720, { sidebar: true, legend: false, sideW: 512 }).dock!.w).toBe(208);
+    for (const w of [1280, 1366, 1920]) expect(hudRects(w, 720, { sidebar: true, legend: false, sideW: sideMax(w) }).dock!.w).toBe(416);
     // At its default width the dock keeps its full width on all three sizes.
     for (const w of [1280, 1366, 1920]) expect(hudRects(w, 720, OPEN).dock!.w).toBe(T.dockW);
   });
@@ -160,12 +224,13 @@ describe('HUD layout rules use the tokens', () => {
     // It floats over the scene: no rule gives the canvas or the body a margin for it.
     expect(uiCss).not.toMatch(/canvas\s*\{[^}]*(margin|width)/);
     expect(vars.get('--side-w')).toBe('clamp(280px, 22vw, 512px)');
+    expect(sideMax(1280)).toBe(408);
     expect(rule('.legend-card')).toContain('top: calc(var(--top-h) + var(--space-3))');
     expect(rule('.legend-card')).toContain('width: clamp(168px, 14vw, 220px)');
-    // The legend chip is a tray item inside the bar (main.ts appends it to .top-left); the card floats on the page.
+    // The legend chip is a tray item inside the bar (main.ts puts it into the right-hand .top-nav, before Tour); the card floats on the page.
     expect(rule('.legend')).toContain('position: relative');
     const main = read('../src/main.ts');
-    expect(main).toContain(".querySelector('.top-left')");
+    expect(main).toContain('top.nav.insertBefore(legend.element, top.toursButton)');
     expect(main).toContain('document.body.appendChild(legend.card)');
   });
 
@@ -226,6 +291,25 @@ describe('HUD layout rules use the tokens', () => {
   });
 });
 
+describe('E and G: the top bar and the settings dropdown follow the rules', () => {
+  it('every target is at least 32 px; the divider is 1 px; the phone collapse (icons only) is kept', () => {
+    expect(rule('.tray-item')).toMatch(/min-height: 32px/);
+    expect(rule('.hud-icon')).toContain('width: var(--control-h)');
+    expect(rule('.top-divider')).toContain('width: 1px');
+    expect(rule('.top-right')).toContain('display: flex');
+    expect(rule('.top-bar')).toContain('justify-content: space-between');
+    expect(uiCss).toContain('.home-btn span, .legend-toggle span');
+    expect(uiCss).toContain('.top-prefs .hud-segment button::before { min-height: 32px; }');
+  });
+
+  it('the dropdown floats under the gear, over the scene (no layout shift)', () => {
+    expect(rule('.settings-menu')).toContain('position: fixed');
+    expect(rule('.settings-menu')).toMatch(/top: calc\(var\(--top-h\) \+ var\(--space-2\)\)/);
+    expect(rule('.settings-menu')).toContain('right: var(--edge-pad)');
+    expect(rule('.settings-menu[hidden]')).toContain('display: none');
+  });
+});
+
 describe('HUD coverage and non-overlap (Simeon: the centre stays free)', () => {
   for (const [w, h] of [[1280, 720], [1366, 768], [1920, 1080]] as const) {
     it(`${w}×${h}: coverage with the side panel open, closed and with the first-visit legend`, () => {
@@ -244,7 +328,7 @@ describe('HUD coverage and non-overlap (Simeon: the centre stays free)', () => {
     });
 
     it(`${w}×${h}: no two HUD elements overlap (legend, side panel, dock, timeline, top bar)`, () => {
-      for (const st of [CLOSED, OPEN, { sidebar: true, legend: false, sideW: Math.floor(0.4 * w) }, { sidebar: true, legend: true, sideW: Math.floor(0.4 * w) },
+      for (const st of [CLOSED, OPEN, { sidebar: true, legend: false, sideW: sideMax(w) }, { sidebar: true, legend: true, sideW: sideMax(w) },
         { sidebar: false, legend: true }, EVERYTHING]) {
         const entries = Object.entries(hudRects(w, h, st));
         for (const [i, [ka, a]] of entries.entries()) {
@@ -260,13 +344,13 @@ describe('HUD coverage and non-overlap (Simeon: the centre stays free)', () => {
       }
     });
 
-    it(`${w}×${h}: the side panel width stays within 280 px .. 40 % of the viewport and the dock stays whole`, () => {
+    it(`${w}×${h}: the side panel width stays within 280 px .. min(40 %, half the viewport - 232 px) and the dock stays whole`, () => {
       expect(sideWidth(w)).toBeGreaterThanOrEqual(280);
       expect(sideWidth(w)).toBeLessThanOrEqual(0.4 * w);
       expect(hudRects(w, h, OPEN).dock!.w).toBe(T.dockW);
       expect(hudRects(w, h, CLOSED).dock!.w).toBe(T.dockW);
-      const wide = hudRects(w, h, { sidebar: true, legend: false, sideW: Math.floor(0.4 * w) });
-      expect(wide.sidebar!.w).toBe(Math.floor(0.4 * w));
+      const wide = hudRects(w, h, { sidebar: true, legend: false, sideW: sideMax(w) });
+      expect(wide.sidebar!.w).toBe(sideMax(w));
       expect(overlap(wide.dock!, wide.sidebar!)).toBe(0);
     });
   }

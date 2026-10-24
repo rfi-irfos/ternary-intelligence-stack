@@ -82,7 +82,26 @@ async function dockAndHead(page) {
       const r = e.getBoundingClientRect();
       return { text: e.textContent, w: Math.round(r.width), h: Math.round(r.height), clipped: e.scrollWidth > e.clientWidth + 1 };
     });
+    // The three zones of the dock row: one row, equal control heights, the left zone clear of the centre zone.
+    const rc = (q) => { const e = document.querySelector(q); if (!e) return null; const b = e.getBoundingClientRect(); return { x: +b.left.toFixed(1), y: +b.top.toFixed(1), w: +b.width.toFixed(1), h: +b.height.toFixed(1) }; };
+    const zones = { left: rc('.dock-left'), centre: rc('.dock-centre'), right: rc('.dock-right') };
+    const ctl = [...document.querySelectorAll('.dock .transport button, .dock .dock-right button')].map((e) => {
+      const b = e.getBoundingClientRect();
+      return { a: e.dataset.action, h: Math.round(b.height), w: Math.round(b.width), cy: +(b.top + b.height / 2).toFixed(1) };
+    });
+    const title = document.querySelector('.dock-title');
+    const cap = document.querySelector('.dock .player-caption');
+    const layout = {
+      zones, ctl, dockH: Math.round(d.height),
+      oneRow: new Set(ctl.map((c) => Math.round(c.cy))).size === 1,
+      leftClearOfCentre: zones.left.x + zones.left.w <= zones.centre.x + 0.5,
+      centreClearOfRight: zones.centre.x + zones.centre.w <= zones.right.x + 0.5,
+      inside: zones.right.x + zones.right.w <= d.right + 0.5,
+      title: title?.textContent ?? null, titleClipped: title ? title.scrollWidth > title.clientWidth + 1 : null,
+      captionShown: !!cap && getComputedStyle(cap).display !== 'none',
+    };
     return {
+      layout,
       viewportW: W, dock: { left: Math.round(d.left), right: Math.round(d.right), w: Math.round(d.width) },
       dockCentreOffset: +((d.left + d.right) / 2 - W / 2).toFixed(1), sidebarLeft: open ? Math.round(s.left) : null,
       dockClearOfSidebar: open ? d.right <= s.left : true, head: kids, headButtons: seg,
@@ -177,14 +196,31 @@ async function emptyClick(page) {
       geo, wide, narrow, escClosed, errors: errors.slice(0, 5) });
   }
 
-  // Gear opens the sidebar at Darstellung; no Panel button in the top bar.
+  // E and G: wordmark left; Lobby, Legende, Tour, divider, DE|EN, gear right; the gear opens a dropdown, not the sidebar.
   {
     const { ctx, page } = await open(browser, 1366, 768, 'de', 'simple');
-    const before = await page.evaluate(() => ({ panelBtn: !!document.querySelector('.sidebar-btn'), open: window.__albert.sidebar.isOpen() }));
-    await page.click('.top-bar .settings-btn').catch(() => undefined);
-    await sleep(500);
-    const after = await page.evaluate(() => ({ open: window.__albert.sidebar.isOpen() }));
-    res.gear = { before, after };
+    const bar = await page.evaluate(() => {
+      const box = (e) => { const b = e.getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width), h: Math.round(b.height) }; };
+      const kids = (q) => [...document.querySelectorAll(q)].map((e) => ({ cls: e.className.split(' ')[0], text: (e.textContent || '').trim().slice(0, 12), ...box(e) }));
+      return { left: kids('.top-left > *'), nav: kids('.top-nav > *'), divider: kids('.top-divider'), prefs: kids('.top-prefs > *'), panelBtn: !!document.querySelector('.sidebar-btn') };
+    });
+    await page.click('.top-bar .settings-btn');
+    await sleep(400);
+    const open1 = await page.evaluate(() => {
+      const m = document.querySelector('.settings-menu');
+      const g = document.querySelector('.settings-btn');
+      const b = m.getBoundingClientRect();
+      return { menuOpen: !m.hidden, expanded: g.getAttribute('aria-expanded'), sidebarOpen: window.__albert.sidebar.isOpen(), rows: [...m.querySelectorAll('.hud-field-label')].map((x) => x.textContent), menu: { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width), h: Math.round(b.height) } };
+    });
+    if (SHOTS) await page.screenshot({ path: `${out}/1366_05_settings_dropdown.png` });
+    await page.keyboard.press('Escape');
+    await sleep(300);
+    const afterEsc = await page.evaluate(() => ({ menuOpen: !document.querySelector('.settings-menu').hidden, focusIsGear: document.activeElement?.classList.contains('settings-btn') }));
+    await page.click('.top-bar .settings-btn');
+    await page.mouse.click(600, 400);
+    await sleep(300);
+    const afterOutside = await page.evaluate(() => ({ menuOpen: !document.querySelector('.settings-menu').hidden }));
+    res.topbar = { bar, open: open1, afterEsc, afterOutside };
     await ctx.close();
   }
 

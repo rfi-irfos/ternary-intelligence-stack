@@ -9,7 +9,10 @@ import { createSound } from '../src/audio/sound';
 import { createPlayerBar } from '../src/ui/player';
 import { attachPicking, createPickGuard } from '../src/ui/picking';
 import { createTopBar } from '../src/ui/topbar';
-import { getLang, getMode, setLang, setMode } from '../src/ui/prefs';
+import { createSidebar } from '../src/ui/sidebar';
+import { refitOnToggle } from '../src/camera/controls';
+import { MODE_KEY, getLang, getMode, reloadPrefsForTest, setLang, setMode } from '../src/ui/prefs';
+import { setDepth } from '../src/ui/depth';
 import { closeTourMenu, isTourMenuOpen } from '../src/ui/tourMenu';
 import { type DriftState, type LobbyEntry, createLobby, createLobbyFlow, driftPose, driftTick, soundToggle } from '../src/ui/lobby';
 
@@ -329,13 +332,81 @@ describe('lobby flow: entry token, focus, missing traces', () => {
     expect(rig.overview).not.toHaveBeenCalled();
   });
 
-  it('after Explore the Play button has the focus (not the body); the tour keeps its menu focus', async () => {
+  it('after Explore the dock has the focus (not the body, and not a button that Enter or Space would press); nothing plays', async () => {
     const { bar, settle } = app();
     await bar.ready;
     entry('explore').click();
     await settle();
-    expect(document.activeElement).toBe(bar.element.querySelector('[data-action="play"]'));
+    expect(document.activeElement).toBe(bar.element);
+    expect(bar.player()?.playing()).toBe(false);
   });
+  it('C: after Explore and the intro skip nothing plays by itself: opening and closing the sidebar, focus moves and time passing leave the run paused', async () => {
+    const { bar, settle, rig } = app({ intro: () => Promise.resolve(true) });
+    await bar.ready;
+    const sidebar = createSidebar({ win: { innerWidth: 1568 } });
+    document.body.append(sidebar.element, sidebar.edgeTab);
+    cleanup.push(() => sidebar.dispose());
+    // the same wiring as src/main.ts
+    refitOnToggle(sidebar, { atOverview: () => true, overview: rig.overview });
+    entry('explore').click();
+    await settle();
+    const player = bar.player()!;
+    const index = player.index();
+    expect(player.playing()).toBe(false);
+    const idle = (): void => { for (let i = 0; i < 20; i++) bar.tick(0.25); };
+    idle();
+    // the browser sequence: one click on the edge tab, 3 s later; then close; then focus moves
+    sidebar.edgeTab.click();
+    idle();
+    expect(sidebar.isOpen()).toBe(true);
+    expect(player.playing()).toBe(false);
+    sidebar.element.querySelector<HTMLButtonElement>('.side-sec-toggle')!.focus();
+    sidebar.element.querySelector<HTMLButtonElement>('.sidebar-close')!.click();
+    bar.element.focus();
+    document.body.focus();
+    idle();
+    expect(sidebar.isOpen()).toBe(false);
+    expect(player.playing()).toBe(false);
+    expect(player.index()).toBe(index);
+    expect(bar.element.querySelector('[data-action="play"]')!.getAttribute('aria-pressed')).toBe('false');
+    // a pointer click on the dock's text zone or a Space on the closed sidebar's edge tab does not start the run either
+    bar.element.querySelector<HTMLElement>('.dock-left')!.click();
+    sidebar.edgeTab.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    idle();
+    expect(player.playing()).toBe(false);
+  });
+
+  it('D: the lobby footer toggle and the sidebar toggle always show the same mode (fresh load, either click, depth keys)', async () => {
+    const { bar, lobby } = app();
+    await bar.ready;
+    const checked = (root: ParentNode): string | null =>
+      root.querySelector('.mode-toggle [role="radio"][aria-checked="true"]')?.getAttribute('data-value') ?? null;
+    const sidebar = createSidebar({ win: { innerWidth: 1568 } });
+    sidebar.headTools.append(bar.display);
+    document.body.append(sidebar.element);
+    cleanup.push(() => sidebar.dispose());
+    const same = (want: string): void => {
+      expect(getMode()).toBe(want);
+      expect(checked(lobby.element)).toBe(want);
+      expect(checked(sidebar.element)).toBe(want);
+    };
+    same('simple');
+    lobby.element.querySelector<HTMLButtonElement>('.mode-toggle [data-value="advanced"]')!.click();
+    same('advanced');
+    sidebar.element.querySelector<HTMLButtonElement>('.mode-toggle [data-value="simple"]')!.click();
+    same('simple');
+    // a depth change (key 2 / 3, panel button) switches the mode: both toggles follow
+    setDepth('technical');
+    same('advanced');
+    // a fresh page load reads the stored mode once; both toggles are built from the same value
+    expect(localStorage.getItem(MODE_KEY)).toBe('advanced');
+    reloadPrefsForTest();
+    expect(getMode()).toBe('advanced');
+    setMode('simple');
+    same('simple');
+    expect(localStorage.getItem(MODE_KEY)).toBe('simple');
+  });
+
 
   it('Watch with no recorded run is disabled and says why; a click does nothing', async () => {
     const { lobby, bar } = app({ load: () => Promise.reject(new Error('no trace')) });

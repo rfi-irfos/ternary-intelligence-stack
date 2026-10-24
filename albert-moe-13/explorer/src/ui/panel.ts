@@ -350,8 +350,12 @@ export function createPanel(deps: PanelDeps): Panel {
 
   /** The info card of the Modell section: key / value rows, every number labelled and from the checkpoint data. */
   function infoCard(p: ParsedId, type: ComponentType, rc: ResolvedContent, rows: TensorRow[]): string {
-    const out: string[] = [kvRow('info.type', richHtml(rc.title))];
+    // The type is the pill in the header, so the facts start with the layer.
+    const out: string[] = [];
+    void rc;
     if ('layer' in p) out.push(kvRow('info.layer', `${fmt(structure(layerLabel(p.layer))).outerHTML}<span class="stat-sub">${richHtml(t('tile.of', { n: arch.model.num_layers }))}</span>`));
+    // The 0-based index of the code and the checkpoint shows only in Advanced, with this exact label.
+    if ('layer' in p && getMode() === 'advanced') out.push(kvRow('info.layerIndex', fmt(structure(p.layer)).outerHTML));
     if ('stream' in p && p.stream) out.push(kvRow('info.stream', esc(p.stream)));
     if ('expert' in p && p.expert !== undefined) out.push(kvRow('info.expert', fmt(structure(p.expert)).outerHTML));
     if (['slab', 'bank', 'router', 'expert', 'gate'].includes(type)) {
@@ -364,7 +368,7 @@ export function createPanel(deps: PanelDeps): Panel {
       const f32 = rows.some((r) => !r.ternary);
       out.push(kvRow('info.dtype', fmt(structure(t(tern && f32 ? 'tile.mixed' : tern ? 'tile.ternary' : 'tile.f32'))).outerHTML));
     }
-    return `<div class="info-card">${out.join('')}</div>`;
+    return `<div class="info-card facts">${out.join('')}</div>`;
   }
 
   /** Parameter tab: the counts, shapes and weight types of the real tensors. */
@@ -408,8 +412,8 @@ export function createPanel(deps: PanelDeps): Panel {
     const links = connectionsOf(id, arch);
     const role = roleOf(id);
     // Depth is part of the view mode: Simple reads at Intuition, so only Advanced offers the switch.
-    const depthButtons = simple ? '' : `<div class="depth-switch hud-segment" role="group" aria-label="${esc(t('panel.depth'))}">${DEPTHS.map((d, i) =>
-      `<button type="button" class="depth-btn${d === depth ? ' active' : ''}" aria-pressed="${d === depth}" data-depth="${d}" title="${esc(t(`depth.${d}` as StringKey))} (${i + 1})">${esc(t(`depth.${d}` as StringKey))}</button>`).join('')}</div>`;
+    const depthButtons = simple ? '' : `<div class="depth-row"><span class="depth-label">${esc(t('panel.depth'))}</span><div class="depth-switch hud-segment" role="group" aria-label="${esc(t('panel.depth'))}">${DEPTHS.map((d, i) =>
+      `<button type="button" class="depth-btn${d === depth ? ' active' : ''}" aria-pressed="${d === depth}" data-depth="${d}" title="${esc(t(`depth.${d}` as StringKey))} (${i + 1})">${esc(t(`depth.${d}` as StringKey))}</button>`).join('')}</div></div>`;
     const visibleTabs = TABS.filter((k) => (k === 'weights' ? hasWeights : rows.length > 0));
     if (!visibleTabs.includes(tab)) tab = visibleTabs[0] ?? 'params';
     const tabs = visibleTabs.length === 0 ? '' : `<div class="panel-tabs" role="tablist" aria-label="${esc(t('inspect.label'))}">${visibleTabs.map((k) =>
@@ -444,22 +448,24 @@ export function createPanel(deps: PanelDeps): Panel {
           : `<h3 class="sec-head">${head}</h3>`) +
         `<div class="sec-body"${open ? '' : ' hidden'}>${body}</div></section>`;
     };
+    const roleVar = role ? ROLE_VAR[role] : 'var(--c-neutral)';
+    // Model section, top to bottom: header (icon, name, ONE type pill), one sentence, the facts, the one primary
+    // action, "What it is" with its own Detail level switch directly above the text, then "Connected to".
     const model = `
       <div class="panel-head" data-mode="${simple ? 'simple' : 'advanced'}">
         <header>
           <span class="head-icon" aria-hidden="true">${typeIcon(type)}</span>
           <h2 title="${esc(t(`sum.${type}` as StringKey))}">${richHtml(componentName(id))}</h2>
-          <span class="role-chip" data-role="${role ?? 'neutral'}" style="--role: ${role ? ROLE_VAR[role] : 'var(--c-neutral)'}">${typeIcon(type)}<span>${richHtml(rc.title)}</span></span>
+          <span class="role-chip" data-role="${role ?? 'neutral'}" style="--role: ${roleVar}"><span>${richHtml(rc.title)}</span></span>
         </header>
         <p class="panel-summary">${esc(t(`sum.${type}` as StringKey))}</p>
       </div>
       ${infoCard(p, type, rc, rows)}
-      ${activeExperts(p, type)}
       ${stepInside}
-      ${depthButtons}
       <div class="panel-body" data-mode="${simple ? 'simple' : 'advanced'}">
-      ${sec('what', 'sec.what', `<p>${richHtml(rc.text[depth])}</p>
+      ${sec('what', 'sec.what', `${depthButtons}<p>${richHtml(rc.text[depth])}</p>
         <p class="where">${richHtml(location(p, arch))}${tau !== undefined ? ` · τ ${fmt(structure(tau)).outerHTML}` : ''}</p>`)}
+      ${activeExperts(p, type)}
       ${sec('connections', 'sec.connections', links.length === 0 ? `<p>${esc(t('panel.none'))}</p>` :
         `<ul class="panel-links">${links.map((l) => {
           const r = roleOf(l.id);
@@ -512,6 +518,7 @@ export function createPanel(deps: PanelDeps): Panel {
 
   /** Nothing selected: the Modell section says so, the other two parts are empty. */
   function renderEmpty(): void {
+    modelPart.closest<HTMLElement>('.side-sec')?.style.removeProperty('--sel-role');
     modelPart.innerHTML = `<p class="side-empty">${esc(t('side.noSelection'))}</p>`;
     inspectPart.innerHTML = '';
     analysisPart.innerHTML = '';
@@ -531,6 +538,8 @@ export function createPanel(deps: PanelDeps): Panel {
     el.dataset.type = type;
     const role = roleOf(id);
     for (const x of parts) x.style.setProperty('--role-panel', role ? ROLE_VAR[role] : 'var(--c-accent)');
+    // The Model section's header icon and accent border take the selection's role colour.
+    modelPart.closest<HTMLElement>('.side-sec')?.style.setProperty('--sel-role', role ? ROLE_VAR[role] : 'var(--c-neutral)');
     const h = parts3(id, type, p);
     modelPart.innerHTML = h.model;
     inspectPart.innerHTML = h.inspect;

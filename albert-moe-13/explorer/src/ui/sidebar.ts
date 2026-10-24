@@ -4,16 +4,18 @@ import type { StringKey } from './strings';
 
 /**
  * The OS-style side panel (Simeon, Task 11d addendum 1): one floating card at the right edge that holds
- * every tool. Five sections, each a collapsible accordion row, in this order: Sitzung (sentence and
- * words), Modell (the selected part), Inspektion (parameters, tensors, weights), Analyse (computation,
- * notes, source) and Darstellung (view mode, quality, sound). It opens over the 3D area and never
+ * every tool. Four sections, each a collapsible accordion row, in this order: Sitzung (sentence and
+ * words), Modell (the selected part), Inspektion (parameters, tensors, weights) and Analyse (computation,
+ * notes, source). Quality and sound live in the gear dropdown of the top bar, Einfach | Erweitert in the head row. It opens over the 3D area and never
  * shrinks the canvas; the camera framing reads its box through hudInsets. Opened and closed by the
  * top-bar button, the edge tab and Esc; the width is dragged at the left edge. Width and the folded
  * sections are remembered (nothing else is stored).
  */
 export const SIDEBAR_KEY = 'albert.sidebar';
-export const SECTION_IDS = ['session', 'model', 'inspect', 'analysis', 'display'] as const;
+export const SECTION_IDS = ['session', 'model', 'inspect', 'analysis'] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
+/** One small icon per section; its colour comes from the CSS (Session cyan, Model the selection's role colour, Inspection violet, Analysis amber). */
+const SECTION_ICON: Record<SectionId, string> = { session: ICONS.token, model: ICONS.cubes, inspect: ICONS.grid, analysis: ICONS.sigma };
 
 /** Narrowest and widest the card gets: 280 px, and 40 % of the viewport. */
 export const SIDEBAR_MIN = 280;
@@ -21,9 +23,17 @@ export const SIDEBAR_MAX_FRACTION = 0.4;
 /** First width: 22 % of the viewport (the mockup's card), within the limits. */
 export const SIDEBAR_DEFAULT_FRACTION = 0.22;
 
-/** Width clamped to [280 px, 40 % of the viewport]; the minimum wins on a very narrow viewport. */
+/**
+ * The dock keeps at least about 440 px: the widest card is min(40 %, half the viewport - 232 px).
+ * At 1280 px that is 408 px, at 1920 px it is 728 px (40 % = 768 px would shrink the dock below that).
+ */
+export const SIDEBAR_DOCK_RESERVE = 232;
+export const sidebarMax = (viewport: number): number =>
+  Math.max(SIDEBAR_MIN, Math.floor(Math.min(viewport * SIDEBAR_MAX_FRACTION, viewport / 2 - SIDEBAR_DOCK_RESERVE)));
+
+/** Width clamped to [280 px, sidebarMax]; the minimum wins on a very narrow viewport. */
 export function clampSidebarWidth(w: number, viewport: number): number {
-  const max = Math.max(SIDEBAR_MIN, Math.floor(viewport * SIDEBAR_MAX_FRACTION));
+  const max = sidebarMax(viewport);
   return Math.round(Math.min(max, Math.max(SIDEBAR_MIN, w)));
 }
 
@@ -125,6 +135,7 @@ export function createSidebar(deps: SidebarDeps = {}): Sidebar {
     toggle.className = 'side-sec-toggle';
     toggle.id = `side-toggle-${id}`;
     const label = document.createElement('span');
+    toggle.insertAdjacentHTML('beforeend', `<span class="side-sec-icon" aria-hidden="true">${SECTION_ICON[id]}</span>`);
     toggle.append(label);
     toggle.insertAdjacentHTML('beforeend', ICONS.chevronDown);
     h.append(toggle);

@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import archJson from '../public/data/architecture.json';
-import { boxCorners, createControls, refitOverview, freeRect, overviewPoints, overviewPose } from '../src/camera/controls';
+import { boxCorners, createControls, refitOnToggle, refitOverview, freeRect, overviewPoints, overviewPose } from '../src/camera/controls';
 import { validateArchitecture } from '../src/data/architecture';
 import { createExplode } from '../src/scene/explode';
 import { buildTower } from '../src/scene/tower';
+import { createSidebar } from '../src/ui/sidebar';
+import { createTopBar } from '../src/ui/topbar';
 
 const arch = validateArchitecture(archJson);
 
@@ -195,14 +197,19 @@ describe('HUD-aware framing (1366×768, dock 250 px, panel 396 px)', () => {
 
 describe('overview refit when a panel opens or closes (Task 11d fix round 1)', () => {
   it('atOverview is true after an overview flight and cleared by a flight elsewhere or by user input', async () => {
-    const { rig: r } = rig();
+    const { camera, rig: r } = rig();
     expect(r.atOverview()).toBe(false);
     void r.overview(0);
     expect(r.atOverview()).toBe(true);
     void r.flyTo(new THREE.Vector3(30, 0, 0), 12, 0);
     expect(r.atOverview()).toBe(false);
     void r.overview(0);
+    // a plain click on the canvas fires 'start' and 'end' without moving the camera: still the overview
     r.controls.dispatchEvent({ type: 'start' });
+    r.controls.dispatchEvent({ type: 'end' });
+    expect(r.atOverview()).toBe(true);
+    // an orbit moves the pose
+    camera.position.x += 5;
     expect(r.atOverview()).toBe(false);
   });
 
@@ -228,12 +235,75 @@ describe('overview refit when a panel opens or closes (Task 11d fix round 1)', (
   it('a pose the visitor chose is not touched', async () => {
     const { camera, rig: r } = rig();
     await r.overview(0);
-    r.controls.dispatchEvent({ type: 'start' }); // user orbit
+    camera.position.x += 3; // user orbit
+    r.controls.dispatchEvent({ type: 'start' });
     const at = camera.position.clone();
     expect(refitOverview(r, 0)).toBe(false);
     expect(camera.position.distanceTo(at)).toBe(0);
     // a flight to a slab is not the overview either
     await r.flyTo(new THREE.Vector3(30, 0, 0), 12, 0);
     expect(refitOverview(r, 0)).toBe(false);
+  });
+});
+
+describe('B: opening the sidebar refits the overview, the way the browser does it (Explore, skip the intro, edge tab)', () => {
+  function world() {
+    const { camera, rig: r } = rig();
+    const sidebar = createSidebar({ win: { innerWidth: 1568 } });
+    document.body.append(sidebar.element, sidebar.edgeTab);
+    // the app's insets: the open sidebar covers its width plus the margin and the gap
+    r.setInsetsProvider(() => ({ top: 36, right: sidebar.isOpen() ? sidebar.width() + 20 : 0, bottom: 82, left: 0 }));
+    const overview = vi.spyOn(r, 'overview');
+    refitOnToggle(sidebar, r);
+    return { camera, r, sidebar, overview };
+  }
+
+  it('opened by the edge tab: one refit with the new insets; closed again: one more; a width drag refits nothing', async () => {
+    const { camera, r, sidebar, overview } = world();
+    // Explore: the overview flight at the start, the intro skip does not move the camera, the visitor clicks the canvas once
+    await r.overview(0);
+    overview.mockClear();
+    r.controls.dispatchEvent({ type: 'start' });
+    r.controls.dispatchEvent({ type: 'end' });
+    const before = camera.position.clone();
+    const insetsClosed = r.insets();
+    sidebar.edgeTab.click();
+    expect(overview).toHaveBeenCalledTimes(1);
+    expect(r.insets().right).toBe(sidebar.width() + 20);
+    expect(r.insets().right).not.toBe(insetsClosed.right);
+    for (let i = 0; i < 120 && r.isFlying(); i++) r.update(1 / 30);
+    expect(camera.position.distanceTo(before)).toBeGreaterThan(0.5);
+    const opened = camera.position.clone();
+    // dragging the grip changes only the width: no refit
+    sidebar.setWidth(sidebar.width() + 40);
+    expect(overview).toHaveBeenCalledTimes(1);
+    // closing refits back into the full area
+    sidebar.element.querySelector<HTMLButtonElement>('.sidebar-close')!.click();
+    expect(overview).toHaveBeenCalledTimes(2);
+    for (let i = 0; i < 120 && r.isFlying(); i++) r.update(1 / 30);
+    expect(camera.position.distanceTo(opened)).toBeGreaterThan(0.5);
+  });
+
+  it('after the visitor orbited, opening or closing the sidebar does not move the camera', async () => {
+    const { camera, r, sidebar, overview } = world();
+    await r.overview(0);
+    overview.mockClear();
+    camera.position.x += 4; // an orbit
+    r.controls.dispatchEvent({ type: 'start' });
+    r.controls.dispatchEvent({ type: 'end' });
+    sidebar.open();
+    sidebar.close();
+    expect(overview).not.toHaveBeenCalled();
+  });
+
+  it('the gear opens a dropdown, not the sidebar: no refit', async () => {
+    const { r, overview } = world();
+    await r.overview(0);
+    overview.mockClear();
+    const top = createTopBar(null);
+    document.body.append(top.element);
+    top.gear.click();
+    expect(overview).not.toHaveBeenCalled();
+    top.dispose();
   });
 });

@@ -93,6 +93,19 @@ export function refitOverview(rig: Pick<CameraRig, 'atOverview' | 'overview'>, m
   return true;
 }
 
+/**
+ * Wires the refit to a side panel: every open or close (not a width drag) refits a camera that still sits at
+ * the overview. Returns the unsubscribe function.
+ */
+export function refitOnToggle(panel: { isOpen(): boolean; onChange(cb: () => void): () => void }, rig: Pick<CameraRig, 'atOverview' | 'overview'>): () => void {
+  let was = panel.isOpen();
+  return panel.onChange(() => {
+    if (panel.isOpen() === was) return;
+    was = panel.isOpen();
+    refitOverview(rig);
+  });
+}
+
 export interface CameraPose {
   position: THREE.Vector3;
   target: THREE.Vector3;
@@ -223,6 +236,7 @@ export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement
   };
 
   let atOv = false;
+  let ovDest: { pos: THREE.Vector3; target: THREE.Vector3 } | null = null;
   const start = (toTarget: THREE.Vector3, toPos: THREE.Vector3, ms: number): Promise<void> => {
     atOv = false; // overview() sets it again right after it started its own flight
     if (flight) {
@@ -325,9 +339,18 @@ export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement
         flown = start(p.target, p.position, ms);
       }
       atOv = true;
+      // Where this overview ends: the pose to compare with later (a flight still running counts as "at it").
+      ovDest = flight ? { pos: flight.toPos.clone(), target: flight.toTarget.clone() } : { pos: camera.position.clone(), target: controls.target.clone() };
       return flown;
     },
-    atOverview: () => atOv,
+    atOverview: () => {
+      if (!atOv) return false;
+      if (flight || !ovDest) return true;
+      // A plain click on the canvas also fires the controls' 'start' event, so the flag alone is not enough:
+      // the pose itself must still be the overview's (an orbit, pan or zoom moves it).
+      const tol = 0.005 * Math.max(1, ovDest.pos.distanceTo(ovDest.target));
+      return camera.position.distanceTo(ovDest.pos) < tol && controls.target.distanceTo(ovDest.target) < tol;
+    },
     update(dt) {
       const f = flight;
       if (f) {
@@ -350,7 +373,6 @@ export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement
     dispose() {
       dom.ownerDocument.removeEventListener('keydown', onKey);
       controls.removeEventListener('end', onDragEnd);
-      controls.removeEventListener('start', onUserStart);
       if (dragTimer) clearTimeout(dragTimer);
       settled.clear();
       controls.dispose();
@@ -364,9 +386,8 @@ export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement
     dragTimer = setTimeout(() => { dragTimer = null; settle(); }, 500);
   };
   controls.addEventListener('end', onDragEnd);
-  // Any orbit, pan or zoom by the visitor (pointer, wheel, touch) means the pose is theirs now.
-  const onUserStart = (): void => { atOv = false; };
-  controls.addEventListener('start', onUserStart);
+  // Orbit, pan and zoom by the visitor move the pose, and atOverview() compares it with the overview's. A click
+  // without a drag moves nothing, so it leaves the flag alone.
 
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === 'Escape' && !rig.escapeGuard?.()) void rig.overview();

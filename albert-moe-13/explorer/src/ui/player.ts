@@ -11,7 +11,7 @@ import {
 } from '../flow/timeline';
 import { embedId, lmHeadId, lnFId } from '../scene/ids';
 import type { TowerScene } from '../scene/tower';
-import { ICONS, typeIcon } from './icons';
+import { ICONS } from './icons';
 import { getLang, getMode, layerLabel, lt, onPrefsChange, setMode, t } from './prefs';
 import { ROLE_VAR, type Role } from './roles';
 import { MODES, type Mode, type StringKey } from './strings';
@@ -258,9 +258,9 @@ export function stepSentence(op: Op, index: number, total: number, arch: Pick<Ar
  * The step sentence as rich HTML: every count (step, layer, top-k, experts) is a structure value with its
  * badge, read from the timeline and architecture.json, never typed into the text.
  */
-export function stepSentenceHtml(op: Op, index: number, total: number, arch: Pick<Architecture, 'model'>, word: string): string {
+export function stepSentenceHtml(op: Op, index: number, total: number, arch: Pick<Architecture, 'model'>, word: string, withLayer = true): string {
   const parts = [richT('now.step', { i: index + 1, n: total })];
-  if (op.layer !== undefined) parts.push(richT('now.layer', { n: layerLabel(op.layer), of: arch.model.num_layers }));
+  if (op.layer !== undefined && withLayer) parts.push(richT('now.layer', { n: layerLabel(op.layer), of: arch.model.num_layers }));
   if (op.stream) parts.push(escHtml(t('where.stream', { s: op.stream })));
   const simple = getMode() === 'simple';
   const w = simple ? wordOf(word) : JSON.stringify(word);
@@ -286,12 +286,6 @@ export function wordGroups(decoded: string[]): { from: number; to: number }[] {
 
 /** Language of a traced prompt (fixed set: "de" is German, "kjv" and "ternary" are English). */
 export const promptLang = (promptId: string): 'de' | 'en' => (promptId === 'de' ? 'de' : 'en');
-
-/** Icon of an op: the icon of the component it runs in. */
-const OP_ICON_TYPE: Record<OpKind, string> = {
-  embed: 'embed', ln1: 'ln1', attn: 'attn', resid: 'shaft', ln2: 'ln2', router: 'router', experts: 'bank',
-  gate: 'anastomosis', merge: 'layers', ln_f: 'ln_f', lm_head: 'lm_head',
-};
 
 /**
  * Detail lines of one op. Every number goes through fmt with the op's own label (measured keeps its
@@ -490,7 +484,7 @@ export interface PlayerBar {
   pause(): void;
   /** True once at least one recorded run loaded (false while loading and when none loaded). */
   hasTraces(): boolean;
-  /** Moves keyboard focus to the Play button (after the visitor left the lobby). */
+  /** Moves keyboard focus to the dock (after the visitor left the lobby); it never lands on Play. */
   focusPlay(): void;
   /** Date the first loaded trace was recorded (provenance.date), null before the traces load. */
   traceDate(): string | null;
@@ -547,6 +541,7 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   const el = document.createElement('div');
   el.className = 'player-bar';
   el.setAttribute('role', 'group');
+  el.tabIndex = -1;
   const msg = document.createElement('div');
   msg.className = 'player-empty';
   el.append(msg);
@@ -672,9 +667,6 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   announce.setAttribute('aria-live', 'polite');
   announce.setAttribute('role', 'status');
   let announced = -1;
-  const chipIcon = document.createElement('span');
-  chipIcon.className = 'step-icon';
-  chipIcon.setAttribute('aria-hidden', 'true');
   const chipText = document.createElement('span');
   chipText.className = 'step-text';
   // While a quick pass plays, a small tag says so (its tooltip: every recorded step, only faster).
@@ -684,7 +676,7 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   // Simple: the step's few values on the same line (ellipsis, full text as tooltip); the line never wraps.
   const details = document.createElement('span');
   details.className = 'player-detail-box';
-  chip.append(chipIcon, chipText, details);
+  chip.append(chipText, details);
   const opListeners = new Set<(op: Op, index: number, total: number) => void>();
   // Advanced: every detail row (router weights, output scale, caveat codes) lives in the Tools drawer.
   const fullDetails = document.createElement('div');
@@ -699,7 +691,7 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   next.dataset.control = 'next';
   const transport = document.createElement('div');
   transport.className = 'hud-group transport';
-  transport.append(prev, play, next, speedBtn);
+  transport.append(prev, play, next);
   // The lobby's Watch and the dock use the same transport; the stepper sits right of it.
   const pick = document.createElement('div');
   pick.className = 'hud-group pickers';
@@ -740,12 +732,25 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     return on;
   };
 
-  top.append(headline, quickTag, chip, hintLine, announce);
+  top.append(headline, chip, hintLine, announce);
   // Mini dock: the control row is the transport and the layer stepper; the sentence, the word chips and the
   // expert tools live in the side panel (session), Einfach | Erweitert in its Darstellung section (display).
   const controls = document.createElement('div');
   controls.className = 'player-controls';
-  controls.append(transport, stepper);
+  // Three zones in one row: the title and caption (flexible), the transport, speed and the layer stepper.
+  const titleEl = document.createElement('div');
+  titleEl.className = 'dock-title';
+  const textBlock = document.createElement('div');
+  textBlock.className = 'dock-text';
+  textBlock.append(titleEl, top);
+  const zoneLeft = document.createElement('div');
+  zoneLeft.className = 'dock-left';
+  zoneLeft.append(quickTag, textBlock);
+  transport.classList.add('dock-centre');
+  const zoneRight = document.createElement('div');
+  zoneRight.className = 'hud-group dock-right';
+  zoneRight.append(speedBtn, stepper);
+  controls.append(zoneLeft, transport, zoneRight);
   const session = document.createElement('div');
   session.className = 'session-pane';
   const display = document.createElement('div');
@@ -887,8 +892,16 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   };
   /** The expert tools (pickers, scrubber, camera, jumps, all detail rows) show in Advanced, in the Sitzung section. */
   const setTools = (): void => { adv.hidden = getMode() === 'simple'; };
+  /** Title of the left zone: "Layer N" (one numbering, 1-based), or "Ready" before a run has started. */
+  const paintTitle = (): void => {
+    const op = player?.ops[player.index()];
+    const ready = !started && (op === undefined || op.layer === undefined);
+    titleEl.textContent = ready ? t('dock.ready') : t('dock.title', { n: layerLabel(layerShown) });
+    textBlock.title = `${titleEl.textContent} · ${top.textContent ?? ''}`.replace(/\s+/g, ' ').replace(/ · $/, '');
+  };
   const paintLayer = (): void => {
     const n = arch.model.num_layers;
+    paintTitle();
     layerCount.textContent = `${layerLabel(layerShown)} / ${layerLabel(n - 1)}`;
     layerCount.title = t('dock.layerCount', { n: layerLabel(layerShown), of: layerLabel(n - 1) });
     layerPrev.disabled = layerShown <= 0;
@@ -926,7 +939,6 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     chip.style.setProperty('--role', hint || !role ? 'var(--c-accent)' : ROLE_VAR[role]);
     chip.dataset.role = hint ? 'hint' : role ?? 'neutral';
     chip.dataset.kind = hint ? 'hint' : shown.kind;
-    chipIcon.innerHTML = hint ? ICONS.play : typeIcon(OP_ICON_TYPE[shown.kind]);
     const tr = traces.get(promptSel.value);
     const word = decodeToken(tr?.provenance.tokens[Number(tokenSel.value)] ?? '');
     // One caption line: the headline until the first Play, then the step sentence (same height).
@@ -944,12 +956,13 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
       }
     } else {
       delete chipText.dataset.group;
-      chipText.innerHTML = stepSentenceHtml(op, index, player.ops.length, arch, word);
+      chipText.innerHTML = stepSentenceHtml(op, index, player.ops.length, arch, word, false);
     }
     if (qp && !hint) {
       if (announced !== g) {
         announced = g;
-        announce.textContent = chipText.textContent ?? '';
+        // one polite sentence per layer group: the layer (it is in the dock title, not in the caption) and what happens in it
+        announce.textContent = shown.layer !== undefined ? `${t('dock.title', { n: layerLabel(shown.layer) })} · ${chipText.textContent ?? ''}` : chipText.textContent ?? '';
       }
     } else announced = -1;
     const simple = getMode() === 'simple';
@@ -962,14 +975,15 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     if (details.clientWidth > 0 && details.scrollWidth > details.clientWidth + 1) details.hidden = true;
     fullDetails.replaceChildren(...(simple || hint ? [] : [opDetails(op, arch)]));
     chip.title = hint ? '' : `${t('player.stepTip')}: ${chipText.textContent ?? ''}${d.textContent ? ` · ${d.textContent}` : ''}`;
+    paintTitle();
     opListeners.forEach((l) => l(op, index, player!.ops.length));
   };
 
   /** Ops of every quick group: the main op of a layer is its router (the choice), else its first op. */
   let mainOf: Op[] = [];
   const quickCaptionHtml = (main: Op): string => {
-    if (main.layer === undefined) return escHtml(opLabel(main.kind, arch));
-    return richT('now.quickLayer', { n: layerLabel(main.layer), of: arch.model.num_layers }, { what: opLabel(main.kind, arch) });
+    // The layer is in the dock title; the caption names only what happens in it.
+    return escHtml(opLabel(main.kind, arch));
   };
 
   const show = (_index: number, op: Op): void => {
@@ -1192,7 +1206,7 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     }
     loaded = 'ready';
     fillPrompts();
-    el.replaceChildren(top, controls);
+    el.replaceChildren(controls);
     session.replaceChildren(sentenceWrap, words, adv);
     fillTokens(promptSel.value);
     build(promptSel.value, Number(tokenSel.value));
@@ -1288,7 +1302,9 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     },
     hasTraces: () => traces.size > 0,
     focusPlay() {
-      if (play.isConnected) play.focus({ preventScroll: true });
+      // Keyboard focus lands on the dock itself, never on the Play button: a key still held down from the
+      // intro skip (Enter repeats, Space fires on release) would otherwise click Play without a request.
+      if (el.isConnected) el.focus({ preventScroll: true });
     },
     traceDate: () => [...traces.values()][0]?.provenance.date ?? null,
     dispose() {

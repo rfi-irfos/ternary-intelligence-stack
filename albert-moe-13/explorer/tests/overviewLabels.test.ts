@@ -38,14 +38,14 @@ describe('overview pill labels (mockup: Eingabe, Ebene N, Ausgabe)', () => {
     l.dispose();
   });
 
-  it('Advanced counts from 0, English says Layer', () => {
+  it('one numbering from 1 in Advanced too, English says Layer', () => {
     setMode('advanced');
     const l = createOverviewLabels({ tower, label: stub });
     l.setLayer(21);
-    expect(texts.at(-1)).toBe('Layer 21');
+    expect(texts.at(-1)).toBe('Layer 22');
     setLang('de');
     l.refresh();
-    expect(texts.at(-1)).toBe('Ebene 21');
+    expect(texts.at(-1)).toBe('Ebene 22');
   });
 
   it('keeps a constant screen size (no size attenuation), hangs from its leader tip, and rescales on resize', () => {

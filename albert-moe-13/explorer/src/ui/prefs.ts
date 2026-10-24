@@ -97,11 +97,12 @@ export const t = (key: StringKey, vars?: Record<string, string | number>): strin
 export const lt = (x: { en: string; de: string }, vars?: Record<string, string | number>): string => fill(x[lang], vars);
 
 /**
- * Layer number as people read it. Simple counts from 1 ("Ebene 13 von 46"); Advanced keeps the 0-based
- * id of the code and the checkpoint ("L12"). One helper for every place a layer is named.
+ * Layer number as people read it: always 1-based ("Ebene 1 .. 46"), in both modes, so the dock, the sidebar
+ * and the scene labels name a layer the same way. The 0-based id of the code and the checkpoint ("L12")
+ * shows only as "Layer index" in the Advanced details of the inspector.
  */
-export function layerLabel(i: number, m: Mode = mode): number {
-  return m === 'simple' ? i + 1 : i;
+export function layerLabel(i: number): number {
+  return i + 1;
 }
 
 /** Test helper: re-reads storage and the browser language as on a fresh page load. */

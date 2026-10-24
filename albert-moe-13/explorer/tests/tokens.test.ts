@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { PALETTE, cssHex } from '../src/scene/palette';
 import { ACCENT, BACKDROP, FONT, PILL, UI } from '../src/style/theme';
 import { HEADING_FONT } from '../src/content/brand';
+import { ROLE_COLOR, ROLE_VAR, type Role } from '../src/ui/roles';
 
 // Read from disk: vitest stubs CSS imports (even ?raw) to an empty string.
 const raw = readFileSync(new URL('../src/style/tokens.css', import.meta.url));
@@ -104,5 +105,53 @@ describe('focus ring', () => {
       expect(rule!, sel).toContain(sel);
     }
     expect(rule!).toMatch(/outline:\s*2px solid/);
+  });
+});
+
+describe('role colours in the sidebar (Task 11d fix round 2, item H)', () => {
+  const css = uiCss.replace(/\/\*[\s\S]*?\*\//g, '');
+  const roles = Object.keys(ROLE_VAR) as Role[];
+  /** sRGB mix like CSS color-mix(in srgb, a p%, b). */
+  const mix = (a: number, b: number, p: number): number =>
+    [16, 8, 0].reduce((acc, sh) => acc | (Math.round((((a >> sh) & 255) * p + ((b >> sh) & 255) * (1 - p))) << sh), 0);
+  const CARD = 0x0c142c; // --c-card-solid / --c-glass-panel over the black scene
+
+  it('every role colour used by pills, icon chips and accent borders comes from the palette tokens (no literal)', () => {
+    for (const r of roles) {
+      const m = /^var\((--c-[\w-]+)\)$/.exec(ROLE_VAR[r]);
+      expect(m, r).not.toBeNull();
+      expect(vars.get(m![1] as string), r).toBe(cssHex(ROLE_COLOR[r]));
+    }
+  });
+
+  it('ui.css adds no colour literal: only #000 / #fff and the existing black, white and paper rgba shades', () => {
+    expect([...new Set(css.match(/#[0-9a-fA-F]{3,8}\b/g) ?? [])].sort()).toEqual(['#000', '#fff']);
+    const rgba = new Set(css.match(/rgba?\([^)]*\)/g) ?? []);
+    for (const c of rgba) expect(c, c).toMatch(/^rgba\((0, 0, 0|255, 255, 255|243, 240, 232), [\d.]+\)$/);
+  });
+
+  it('key numbers use the role colour mixed 28 % towards the text colour; every role keeps at least 4.5:1 on the card', () => {
+    expect(css).toMatch(/\.info-card \.stat-value, \.stat-tile \.stat-value \{ color: color-mix\(in srgb, var\(--role-panel, var\(--c-accent\)\) 72%, var\(--c-text\)\); \}/);
+    for (const r of roles) {
+      const num = mix(ROLE_COLOR[r], UI.text, 0.72);
+      expect(contrast(num, CARD), `${r} number`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(num, PALETTE.background), `${r} number on black`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('the role pill keeps its text readable: the text colour on the 26 % role tint passes 4.5:1 for every role', () => {
+    expect(css).toMatch(/\.role-chip \{[^}]*border: 1px solid var\(--role\);[^}]*color-mix\(in srgb, var\(--role\) 26%, transparent\)/);
+    for (const r of roles) expect(contrast(UI.text, mix(ROLE_COLOR[r], CARD, 0.26)), r).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('the section icons, the facts bar and the active tab underline take their colour from the role (Session cyan, Model the selection, Inspection violet, Analysis amber)', () => {
+    expect(css).toContain('.side-sec { --sec: var(--c-accent); }');
+    expect(css).toContain('.side-sec[data-side="model"] { --sec: var(--sel-role, var(--c-neutral)); }');
+    expect(css).toContain('.side-sec[data-side="inspect"] { --sec: var(--c-router); }');
+    expect(css).toContain('.side-sec[data-side="analysis"] { --sec: var(--c-merge); }');
+    expect(css).toContain('.side-sec-icon { display: inline-grid; place-items: center; flex: none; margin-right: var(--space-3); color: var(--sec); }');
+    expect(css).toMatch(/\.info-card \{[^}]*border-left: 3px solid var\(--role-panel, var\(--c-accent\)\)/);
+    expect(css).toMatch(/\.panel-tab\.active \{[^}]*border-bottom-color: var\(--role-panel, var\(--c-accent\)\)/);
+    expect(PALETTE.accent).toBe(ACCENT); // Session cyan is the accent token
   });
 });

@@ -6,6 +6,8 @@
 #   bash e2e/run.sh            measurements only (stdout: one "HUD {...}" JSON line)
 #   SHOTS=1 OUT=dir bash e2e/run.sh   plus screenshots into dir
 #   SCRIPT=lobby.cjs ...              the lobby / intro / quick pass check instead (Task 12)
+#   SCRIPT=sequence.cjs ...           Explore, skip the intro, open the sidebar: overview refit and no autoplay (fix round 2, B and C)
+#   SCRIPT=look.cjs OUT=dir ...       screenshots of the sidebar sections and the measured role colours (fix round 2, F and H)
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 port="${PORT:-4181}"

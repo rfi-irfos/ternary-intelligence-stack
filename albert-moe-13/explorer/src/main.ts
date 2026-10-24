@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import './style/tokens.css';
 import './style/ui.css';
-import { createControls, refitOverview } from './camera/controls';
+import { createControls, refitOnToggle } from './camera/controls';
 import { loadArchitecture } from './data/architecture';
 import { buildTower } from './scene/tower';
 import { loadModules } from './scene/modules';
@@ -24,7 +24,7 @@ import { createAnimator } from './flow/animate';
 import { LAYER_CSS, createLayerMode, layerOfId } from './layer/views';
 import { createPlayerBar } from './ui/player';
 import { attachPicking, createHover, createPickGuard, createRaycastPicker } from './ui/picking';
-import { createTopBar } from './ui/topbar';
+import { createTopBar, settingsField } from './ui/topbar';
 import { createSidebar } from './ui/sidebar';
 import { createRunTimeline } from './ui/runTimeline';
 import { createLegend } from './ui/legend';
@@ -58,7 +58,7 @@ async function main(): Promise<void> {
   // closes the panel never also flies the camera. It gives way while a level, a tour menu or a dialog owns Esc.
   let escBusy = (): boolean => false;
   const sidebar = createSidebar({ yieldEsc: () => escBusy() || isTourMenuOpen() });
-  const top = createTopBar(heading, { onGear: () => sidebar.open(['display']) });
+  const top = createTopBar(heading);
   document.body.append(top.element, sidebar.element, sidebar.edgeTab);
   // Fonts, architecture and modules load in parallel; the font wait only caps itself, it never delays the data.
   const [arch, modules] = await Promise.all([loadArchitecture(), loadModules(), fontsReady()]);
@@ -250,8 +250,8 @@ async function main(): Promise<void> {
   const legend = createLegend({
     onHighlight: (role) => highlighter.show(role ? (id) => matchesRole(id, role) : null),
   });
-  // The legend chip is a tray item of the system bar (left, after home); its card floats under the bar.
-  (top.element.querySelector('.top-left') ?? document.body).appendChild(legend.element);
+  // The legend chip is a tray item of the system bar's navigation (Lobby, Legende, Tour); its card floats under the bar.
+  top.nav.insertBefore(legend.element, top.toursButton);
   // The card leaves the bar's box (its blur would make it the card's positioning parent) and floats on the page.
   document.body.appendChild(legend.card);
   // Open on the first visit only (beside the coach marks); afterwards a collapsed chip.
@@ -288,12 +288,7 @@ async function main(): Promise<void> {
   sidebar.onChange(syncSide);
   // Opening or closing the side panel is the visitor's action: a camera still at the overview refits it into
   // the new free area, so the output end does not hide behind the panel. A pose the visitor chose stays.
-  let sideWasOpen = sidebar.isOpen();
-  sidebar.onChange(() => {
-    if (sidebar.isOpen() === sideWasOpen) return;
-    sideWasOpen = sidebar.isOpen();
-    refitOverview(rig);
-  });
+  refitOnToggle(sidebar, rig);
   if (typeof ResizeObserver === 'function') {
     const sizes = new ResizeObserver(refadeLabels);
     for (const x of [top.element, dock, timeline.element, legend.card, sidebar.element, layerMode.element]) sizes.observe(x);
@@ -401,9 +396,8 @@ async function main(): Promise<void> {
       startProbe();
     }
   });
-  // Quality and sound sit in the side panel's Darstellung section (the gear opens it); the bar's own settings
-  // popover keeps the same content for a bar built without the side panel.
-  sidebar.body('display').append(menu.element, soundToggle(sound).element);
+  // Quality and sound live in the dropdown under the gear of the top bar.
+  top.settings.body.append(menu.element, settingsField('settings.sound', soundToggle(sound).element));
 
   // First visit only, once the visitor left the lobby: three short hints (Play, the tours, click
   // anything), then never again.

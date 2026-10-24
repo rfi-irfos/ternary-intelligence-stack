@@ -234,9 +234,11 @@ describe('player bar', () => {
     const b = bar();
     await b.ready;
     const icons = [...b.element.querySelectorAll<HTMLButtonElement>('.transport button')];
-    expect(icons.map((x) => x.dataset.action)).toEqual(['prev', 'play', 'next', 'speed']);
+    expect(icons.map((x) => x.dataset.action)).toEqual(['prev', 'play', 'next']);
+    // the speed button belongs to the right zone, next to the layer stepper
+    expect([...b.element.querySelectorAll<HTMLButtonElement>('.dock-right button')].map((x) => x.dataset.action)).toEqual(['speed', 'layer-prev', 'layer-next']);
     expect(icons[1]!.title).toMatch(/^Runs one sentence through all 46 layers/);
-    for (const x of icons) {
+    for (const x of [...icons, b.element.querySelector<HTMLButtonElement>('[data-action="speed"]')!]) {
       expect(x.getAttribute('aria-label')?.length, x.dataset.action).toBeGreaterThan(0);
       // The step buttons name their key; the speed pill's tooltip is just "Speed" (its value is in the label).
       if (x.dataset.action === 'speed') {
@@ -346,7 +348,7 @@ describe('player bar explains itself', () => {
     p.jumpToNext('router');
     // The sentence itself (Simple adds the step's few values after it, in the same line).
     const router = line.querySelector('.step-text')!.textContent!;
-    expect(router).toMatch(/^Schritt \d+ von \d+ · Ebene 1 von 46(?: · Strom [AB])? · Die Weiche wählt 3 von 12 Experten$/);
+    expect(router).toMatch(/^Schritt \d+ von \d+(?: · Strom [AB])? · Die Weiche wählt 3 von 12 Experten$/);
     expect(line.dataset.role).toBe('router');
     p.jumpToNext('gate');
     expect(line.textContent).not.toBe(router);
@@ -512,7 +514,7 @@ describe('tour menu', () => {
 
 describe('hover tooltip', () => {
   it('names an expert with its layer, in the role colour', () => {
-    // Simple counts layers from 1 (blocks.12 is layer 13); Advanced shows the code index.
+    // One numbering: layers count from 1 in both modes (blocks.12 is layer 13).
     expect(hoverText('L12.expert.3')).toBe('Expert 3 · layer 13');
     const tip = createHoverTip();
     document.body.appendChild(tip.element);
@@ -525,7 +527,7 @@ describe('hover tooltip', () => {
     expect(tip.element.textContent).toBe('Experte 3 · Ebene 13');
     setMode('advanced');
     tip.refresh();
-    expect(tip.element.textContent).toBe('Experte 3 · Ebene 12');
+    expect(tip.element.textContent).toBe('Experte 3 · Ebene 13');
     tip.show(null);
     expect(tip.element.hidden).toBe(true);
   });
@@ -849,10 +851,11 @@ describe('reduced HUD', () => {
 });
 
 describe('layer numbers', () => {
-  it('Simple counts from 1, Advanced shows the code index', () => {
-    expect(layerLabel(0, 'simple')).toBe(1);
-    expect(layerLabel(45, 'simple')).toBe(46);
-    expect(layerLabel(0, 'advanced')).toBe(0);
-    expect(layerLabel(45, 'advanced')).toBe(45);
+  it('counts from 1 in Simple and in Advanced (the 0-based index is only the Layer index row of the inspector)', () => {
+    for (const mode of ['simple', 'advanced'] as const) {
+      setMode(mode);
+      expect(layerLabel(0)).toBe(1);
+      expect(layerLabel(45)).toBe(46);
+    }
   });
 });

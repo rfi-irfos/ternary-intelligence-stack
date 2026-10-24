@@ -280,40 +280,46 @@ describe('quick pass caption and screen-reader behaviour', () => {
     });
     document.body.append(bar.element);
     await bar.ready;
+    // the same wiring as src/main.ts: the dock title and stepper follow the op's layer
+    bar.onOp((op) => { if (op.layer !== undefined) bar.setLayer(op.layer); });
     return bar;
   };
   const el = (bar: Awaited<ReturnType<typeof makeBar>>) => ({
     text: bar.element.querySelector<HTMLElement>('.step-text')!,
     line: bar.element.querySelector<HTMLElement>('.step-line')!,
     live: bar.element.querySelector<HTMLElement>('.sr-only')!,
+    title: bar.element.querySelector<HTMLElement>('.dock-title')!,
     play: bar.element.querySelector<HTMLButtonElement>('[data-action="play"]')!,
     tag: bar.element.querySelector<HTMLElement>('.quick-tag')!,
     speed: bar.element.querySelector<HTMLButtonElement>('[data-action="speed"]')!,
   });
 
-  it('the caption changes once per layer group: "Layer k of 46 · main op", counted from 1 in Simple', async () => {
+  it('the dock title changes once per layer group ("Layer k", counted from 1) and the caption names the main op without the layer', async () => {
     const bar = await makeBar();
     const x = el(bar);
     x.play.click();
     expect(bar.player()!.pace()).toBe('quick');
     const seen: string[] = [];
     let changes = 0;
-    let last = x.text.textContent;
+    let last = x.title.textContent;
+    seen.push(last ?? ''); // Play already moved the title from Ready to Layer 1
+    const captions = new Set<string>();
     const groups = new Set(quickGroups(bar.player()!.ops));
     for (let i = 0; i < 80 * 20 && bar.player()!.playing(); i++) {
       bar.tick(0.05);
-      const now = x.text.textContent;
+      if (bar.player()!.playing()) captions.add(x.text.textContent ?? ''); // the repaint at the end of the run shows the per-op sentence
+      const now = x.title.textContent;
       if (now !== last) { changes++; seen.push(now ?? ''); last = now; }
     }
     expect(bar.player()!.playing()).toBe(false);
     // At most one change per group (the last repaint at the end of the run shows the per-op sentence).
     expect(changes).toBeLessThanOrEqual(groups.size + 1);
-    expect(changes).toBeGreaterThan(a.model.num_layers);
-    expect(seen[0]).toMatch(/^Layer 1 of 46 · /);
-    expect(seen.some((c) => c.startsWith('Layer 46 of 46 · '))).toBe(true);
-    expect(seen.some((c) => /^Layer 0 /.test(c))).toBe(false);
-    // The caption is the layer's router (its choice), not a per-op sentence.
-    expect(seen[0]).not.toMatch(/Step \d/);
+    expect(changes).toBeGreaterThanOrEqual(a.model.num_layers - 1);
+    expect(seen).toContain('Layer 1');
+    expect(seen).toContain('Layer 46');
+    expect(seen.some((c) => /^Layer 0$/.test(c))).toBe(false);
+    // The caption is the layer's main op (its router, the choice), never a per-op sentence and never the layer number.
+    for (const c of captions) expect(c, c).not.toMatch(/Step \d|Layer|^op /);
   });
 
   it('Advanced counts layers from 0 (Watch is a quick pass there too); German uses the strings table', async () => {
@@ -322,10 +328,13 @@ describe('quick pass caption and screen-reader behaviour', () => {
     const x = el(bar);
     bar.watch();
     expect(bar.player()!.pace()).toBe('quick');
-    for (let i = 0; i < 200 && !/^Layer 0 of 46 · /.test(x.text.textContent ?? ''); i++) bar.tick(0.25);
-    expect(x.text.textContent).toMatch(/^Layer 0 of 46 · /);
+    const titles = new Set<string>();
+    for (let i = 0; i < 400 && bar.player()!.playing(); i++) { bar.tick(0.25); titles.add(x.title.textContent ?? ''); }
+    // One numbering, also in Advanced: the first layer is "Layer 1", never "Layer 0".
+    expect(titles.has('Layer 1')).toBe(true);
+    expect(titles.has('Layer 0')).toBe(false);
     setLang('de');
-    expect(x.text.textContent).toMatch(/^Ebene \d+ von 46 · /);
+    expect(x.title.textContent).toMatch(/^Ebene \d+$/);
   });
 
   it('a Watch run that ends by itself in Advanced leaves the next Play at the full pace', async () => {
@@ -346,7 +355,8 @@ describe('quick pass caption and screen-reader behaviour', () => {
     const x = el(bar);
     x.play.click();
     for (let i = 0; i < 100; i++) bar.tick(0.05);
-    expect(x.text.textContent).toMatch(/^Layer \d+ of 46 · /);
+    expect(x.title.textContent).toMatch(/^Layer \d+$/);
+    expect(x.text.textContent).not.toMatch(/Layer|Step/);
     x.play.click(); // pause
     expect(x.text.textContent).toMatch(/^Step \d+ of \d+ · /);
     setMode('advanced');
@@ -570,10 +580,10 @@ describe('mini dock', () => {
     expect(onLayerStep).not.toHaveBeenCalled();
     bar.setLayer(-4);
     expect(count.textContent).toBe('1 / 46');
-    // Advanced counts from 0, as the rest of the HUD does
+    // One numbering: Advanced counts from 1 as well (the 0-based index is only the "Layer index" row of the inspector)
     setMode('advanced');
     bar.setLayer(21);
-    expect(count.textContent).toBe('21 / 45');
+    expect(count.textContent).toBe('22 / 46');
     setLang('de');
     expect(bar.element.querySelector('[data-control="layer"]')!.getAttribute('aria-label')).toBe('Ebene');
     expect(prev.getAttribute('aria-label')).toBe('Vorherige Ebene');

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SECTION_IDS, SIDEBAR_KEY, SIDEBAR_MIN, clampSidebarWidth, createSidebar, type Sidebar } from '../src/ui/sidebar';
+import { SECTION_IDS, SIDEBAR_KEY, SIDEBAR_MIN, clampSidebarWidth, createSidebar, sidebarMax, type Sidebar } from '../src/ui/sidebar';
 import { createTopBar } from '../src/ui/topbar';
 import { setLang, t } from '../src/ui/prefs';
 
@@ -21,12 +21,12 @@ afterEach(() => {
 });
 
 describe('OS sidebar (Task 11d addendum 1)', () => {
-  it('has the five sections in the order Sitzung, Modell, Inspektion, Analyse, Darstellung', () => {
+  it('has the four sections in the order Sitzung, Modell, Inspektion, Analyse (no Display section any more)', () => {
     setLang('de');
     const sb = make();
-    expect(SECTION_IDS).toEqual(['session', 'model', 'inspect', 'analysis', 'display']);
+    expect(SECTION_IDS).toEqual(['session', 'model', 'inspect', 'analysis']);
     const heads = [...sb.element.querySelectorAll('.side-sec-toggle')].map((x) => x.textContent?.trim());
-    expect(heads).toEqual(['Sitzung', 'Modell', 'Inspektion', 'Analyse', 'Darstellung']);
+    expect(heads).toEqual(['Sitzung', 'Modell', 'Inspektion', 'Analyse']);
     expect([...sb.element.querySelectorAll<HTMLElement>('.side-sec')].map((x) => x.dataset.side)).toEqual([...SECTION_IDS]);
   });
 
@@ -69,21 +69,16 @@ describe('OS sidebar (Task 11d addendum 1)', () => {
     expect(sb.isOpen()).toBe(false);
   });
 
-  it('the top bar has no Panel button; the gear opens the sidebar at Darstellung, the edge tab is reachable by keyboard', () => {
+  it('the top bar has no Panel button; the gear opens a dropdown (not the sidebar); the edge tab is reachable by keyboard', () => {
     const sb = make();
-    const onGear = vi.fn(() => sb.open(['display']));
-    const top = createTopBar(null, { onGear });
+    const top = createTopBar(null);
     document.body.append(top.element);
     expect(top.element.querySelector('.sidebar-btn')).toBeNull();
-    expect((top as unknown as Record<string, unknown>).sidebarButton).toBeUndefined();
-    sb.setSectionOpen('display', false);
     top.gear.click();
-    expect(onGear).toHaveBeenCalledTimes(1);
-    expect(sb.isOpen()).toBe(true);
-    expect(sb.sectionOpen('display')).toBe(true);
+    expect(top.settings.isOpen()).toBe(true);
+    expect(sb.isOpen()).toBe(false);
     top.dispose();
     // the edge tab is a real button (focusable, with a name) that opens the closed panel
-    sb.close();
     expect(sb.edgeTab.tagName).toBe('BUTTON');
     expect(sb.edgeTab.tabIndex).toBeGreaterThanOrEqual(0);
     expect(sb.edgeTab.getAttribute('aria-label')?.length).toBeGreaterThan(0);
@@ -122,19 +117,25 @@ describe('OS sidebar (Task 11d addendum 1)', () => {
   });
 
   it('ignores unknown or broken stored state', () => {
-    localStorage.setItem(SIDEBAR_KEY, JSON.stringify({ width: 'wide', folded: ['nope', 'display'] }));
+    localStorage.setItem(SIDEBAR_KEY, JSON.stringify({ width: 'wide', folded: ['nope', 'display', 'analysis'] }));
     const sb = make();
-    expect(sb.sectionOpen('display')).toBe(false);
+    expect(sb.sectionOpen('analysis')).toBe(false);
+    expect(sb.sectionOpen('model')).toBe(true);
     expect(sb.width()).toBe(clampSidebarWidth(1280 * 0.22, 1280));
     localStorage.setItem(SIDEBAR_KEY, '{not json');
     const sb2 = make();
-    expect(sb2.sectionOpen('display')).toBe(true);
+    expect(sb2.sectionOpen('analysis')).toBe(true);
   });
 
-  it('clamps the width to 280 px .. 40 % of the viewport and keeps it, but only after the visitor resized', () => {
+  it('clamps the width to 280 px .. min(40 % of the viewport, half the viewport - 232 px) and keeps it, but only after the visitor resized', () => {
     expect(clampSidebarWidth(100, 1280)).toBe(SIDEBAR_MIN);
-    expect(clampSidebarWidth(9999, 1280)).toBe(512);
-    expect(clampSidebarWidth(9999, 1920)).toBe(768);
+    // 1280: min(512, 408) = 408; 1920: min(768, 728) = 728; 2560: min(1024, 1048) = 1024 (the old 40 % cap for wide viewports)
+    expect(sidebarMax(1280)).toBe(408);
+    expect(sidebarMax(1920)).toBe(728);
+    expect(sidebarMax(2560)).toBe(1024);
+    expect(clampSidebarWidth(9999, 1280)).toBe(408);
+    expect(clampSidebarWidth(9999, 1920)).toBe(728);
+    expect(clampSidebarWidth(9999, 2560)).toBe(1024);
     expect(clampSidebarWidth(400, 1280)).toBe(400);
     // A very narrow viewport: the minimum wins.
     expect(clampSidebarWidth(500, 500)).toBe(SIDEBAR_MIN);
@@ -146,7 +147,7 @@ describe('OS sidebar (Task 11d addendum 1)', () => {
     sb.setWidth(50);
     expect(sb.width()).toBe(280);
     sb.setWidth(2000);
-    expect(sb.width()).toBe(512);
+    expect(sb.width()).toBe(408);
     sb.setWidth(333);
     expect(sb.element.style.width).toBe('333px');
     expect(document.documentElement.style.getPropertyValue('--side-w')).toBe('333px');

@@ -103,7 +103,9 @@ button, select, input { font: inherit; color: inherit; }
 /* section divider with a small label: the one heading style of the HUD */
 .sec-head { display: flex; align-items: center; gap: 0; margin: 0 0 var(--space-3); font: 600 var(--fs-base)/1.2 var(--font-ui); color: var(--c-text); }
 .sec-head::after { content: ""; flex: 1 1 auto; height: 1px; background: linear-gradient(90deg, var(--c-hairline), transparent); }
-.sec-head > .icon, .sec-toggle > .icon:first-child { width: 16px; height: 16px; color: var(--c-accent); }
+.sec-head > .icon, .sec-toggle > .icon:first-child { width: 16px; height: 16px; color: var(--role-panel, var(--c-accent)); }
+.panel-part--inspect .sec-head > .icon { color: var(--c-router); }
+.panel-part--analysis .sec-head > .icon, .panel-part--analysis .sec-toggle > .icon:first-child { color: var(--c-merge); }
 .sec-head > .icon { margin-right: var(--space-2); }
 .sec-label { padding: 3px var(--space-3) 3px 0; white-space: nowrap; }
 
@@ -114,7 +116,18 @@ button, select, input { font: inherit; color: inherit; }
   backdrop-filter: blur(14px) saturate(1.15); -webkit-backdrop-filter: blur(14px) saturate(1.15); }
 .top-left { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
 #app-name { margin: 0; font: 700 18px/1 var(--font-display); color: var(--c-text); letter-spacing: -0.01em; white-space: nowrap; }
-.top-right { display: flex; align-items: center; gap: var(--space-2); }
+.top-right { display: flex; align-items: center; gap: var(--space-3); }
+/* right side, left to right: Lobby, Legende, Tour | DE|EN, gear (32 px targets, equal spacing, a thin divider between the groups) */
+.top-nav { display: flex; align-items: center; gap: var(--space-2); }
+.top-divider { width: 1px; height: 20px; background: var(--c-wash-strong); flex: none; }
+/* gear dropdown: anchored under the gear (top right), above the scene */
+.settings-menu { position: fixed; z-index: 12; top: calc(var(--top-h) + var(--space-2)); right: var(--edge-pad); width: 248px; box-sizing: border-box; padding: var(--space-3);
+  background: var(--c-card-solid); border: 1px solid var(--c-card-line); border-radius: var(--r-panel); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  animation: os-in var(--t-fast) var(--ease); outline: none; }
+.settings-menu[hidden] { display: none; }
+.settings-body { display: flex; flex-direction: column; gap: var(--space-3); }
+.settings-body .hud-field, .settings-body .hud-select { width: 100%; }
+.settings-body .sound-toggle { width: 100%; height: 32px; justify-content: flex-start; }
 .tours-btn { padding: 0 var(--space-3); font-weight: 600; }
 .tours-btn .icon { width: 16px; height: 16px; }
 .top-prefs { position: relative; display: flex; align-items: center; gap: var(--space-2); }
@@ -144,37 +157,41 @@ button.legend-item { cursor: pointer; }
 
 /* ---- mini dock: caption line, back / play / next / speed, layer stepper ----------------- */
 .dock { position: fixed; z-index: 4; bottom: calc(var(--timeline-h) + 2 * var(--space-2)); left: 50%; transform: translateX(-50%);
-  width: min(var(--dock-w), calc(100vw - 2 * var(--edge-pad))); padding: var(--dock-pad) var(--space-4);
+  width: min(var(--dock-w), calc(100vw - 2 * var(--edge-pad))); padding: var(--dock-pad);
   container-type: inline-size; transition: width var(--t-slow) var(--ease); }
 /* The dock stays centred in the viewport. With the side panel open its half width is capped so that it ends
    one gap before the panel's left edge: 100vw - 2 x (panel width + panel margin + gap). */
 body.side-open .dock, body.layer-open .dock { width: min(var(--dock-w), calc(100vw - 2 * (var(--side-w) + 2 * var(--edge-pad)))); }
 
-.player-bar { display: flex; flex-direction: column; gap: var(--dock-gap); }
+.player-bar { display: block; outline: none; }
 .player-empty { color: var(--c-text); padding: var(--space-2) 0; }
-/* caption line: headline before the first Play, then the step sentence; one line, fixed height. The
-   sentences are short enough for the 720 px dock (tests/ui.test.ts); the measured values after them show
-   only when they fit whole (player.ts), so the line never ends in an ellipsis. */
+/* left zone: the title ("Ebene N" / "Bereit") over ONE quiet caption line; flexible, ellipsis, full text in the tooltip */
+.dock-left { display: flex; align-items: center; gap: var(--dock-gap); min-width: 0; }
+.dock-text { display: flex; flex-direction: column; justify-content: center; min-width: 0; flex: 1 1 auto; }
+.dock-title { font: 600 var(--fs-large)/20px var(--font-ui); color: var(--c-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .player-caption { height: var(--caption-h); display: flex; align-items: center; min-width: 0; overflow: hidden; }
 .player-headline { flex: 1 1 auto; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font: 600 var(--fs-base)/var(--caption-h) var(--font-ui); color: var(--c-text); }
+  font: 400 12px/var(--caption-h) var(--font-ui); color: var(--c-text-muted); }
 .step-line { --role: var(--c-accent); flex: 1 1 auto; display: flex; align-items: center; gap: var(--space-2); min-width: 0; margin: 0;
-  height: var(--caption-h); white-space: nowrap; overflow: hidden; font: 500 var(--fs-base)/var(--caption-h) var(--font-ui); font-feature-settings: "tnum"; color: var(--c-text); }
+  height: var(--caption-h); white-space: nowrap; overflow: hidden; font: 400 12px/var(--caption-h) var(--font-ui); font-feature-settings: "tnum"; color: var(--c-text-muted); }
 .step-line .lv { white-space: nowrap; }
-.step-icon { display: inline-grid; place-items: center; flex: none; color: var(--role); }
-.step-icon .icon { width: 16px; height: 16px; }
 .step-text { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .player-detail-box { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--c-text-muted); }
 .player-detail-box:empty, .player-detail-box > div:empty { display: none; }
 .player-detail-box .player-details { display: inline; }
 .player-detail-box .player-row { display: inline; }
 .player-detail-box .player-row::before { content: " · "; }
+/* a dock narrower than 440 px (the open side panel on a narrow window) drops the caption line so the controls stay on one row;
+   the container is the dock's content box: 440 px - 2 x 12 px padding - 2 px border = 414 px */
+@container (max-width: 414px) { .player-caption { display: none; } }
 /* control row */
-.player-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3); min-height: var(--dock-row); min-width: 0; }
-/* a dock capped by the open side panel (about 340 px or less) wraps the stepper under the transport */
-@container (max-width: 380px) { .player-controls { justify-content: center; } }
+.player-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; column-gap: var(--dock-gap); height: var(--dock-row); min-width: 0; }
+.dock-right { gap: var(--dock-gap); flex: none; }
+/* every dock control is --dock-ctl (36 px) tall; the big play button is --dock-row (48 px) */
+.dock .hud-icon, .dock .speed-pill { width: var(--dock-ctl); height: var(--dock-ctl); box-sizing: border-box; }
+.dock .speed-pill { width: auto; min-width: 52px; }
 .hud-group { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.transport { gap: var(--space-2); flex: none; }
+.transport { gap: var(--dock-gap); flex: none; }
 /* the one big control: a round button with a cyan ring */
 .play-btn { display: inline-grid; place-items: center; box-sizing: border-box; width: var(--dock-row); height: var(--dock-row); padding: 0; cursor: pointer;
   border: 2px solid var(--c-accent); border-radius: 50%; background: var(--c-surface); color: var(--c-accent);
@@ -188,11 +205,11 @@ body.side-open .dock, body.layer-open .dock { width: min(var(--dock-w), calc(100
 .step-btn { background: transparent; border-color: transparent; }
 .step-btn:disabled { opacity: 0.4; }
 /* layer stepper "‹ 22 / 46 ›" */
-.layer-stepper { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+.layer-stepper { display: inline-flex; align-items: center; gap: 0; flex: none; }
 .layer-stepper .hud-icon { background: transparent; border-color: transparent; }
 .layer-stepper .hud-icon:disabled { opacity: 0.4; cursor: default; }
 .layer-prev .icon { transform: rotate(180deg); }
-.layer-count { min-width: 5em; text-align: center; font: 600 var(--fs-base)/1 var(--font-ui); font-feature-settings: "tnum"; color: var(--c-text); white-space: nowrap; }
+.layer-count { min-width: 4.2em; text-align: center; font: 600 var(--fs-base)/1 var(--font-ui); font-feature-settings: "tnum"; color: var(--c-text); white-space: nowrap; }
 .sentence-wrap { position: relative; flex: none; }
 .sentence-chip { max-width: 100%; }
 .sentence-chip .icon { color: var(--c-accent); }
@@ -228,11 +245,11 @@ body.side-open .dock, body.layer-open .dock { width: min(var(--dock-w), calc(100
 .player-counter { color: var(--c-text-muted); font-size: var(--fs-small); white-space: nowrap; min-width: 5.6em; text-align: right; }
 .hud-join { display: inline-flex; gap: var(--space-1); }
 .display-pane { display: flex; flex-direction: column; gap: var(--space-3); }
-.quick-tag { flex: none; box-sizing: border-box; height: var(--caption-h); padding: 0 6px; border: 1px solid var(--c-accent); border-radius: var(--r-control);
-  font: 600 var(--fs-small)/16px var(--font-ui); color: var(--c-accent); white-space: nowrap; cursor: help; }
+.quick-tag { flex: none; box-sizing: border-box; height: 20px; padding: 0 6px; border: 1px solid var(--c-accent); border-radius: var(--r-control);
+  font: 600 12px/18px var(--font-ui); color: var(--c-accent); white-space: nowrap; cursor: help; }
 .speed-pill { flex: none; min-width: 52px; justify-content: center; padding: 0 var(--space-3); font-feature-settings: "tnum"; font-weight: 600; }
 .player-hint { flex: 1 1 auto; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font: 500 var(--fs-base)/var(--caption-h) var(--font-ui); color: var(--c-text); }
+  font: 400 12px/var(--caption-h) var(--font-ui); color: var(--c-text-muted); }
 .player-hint[hidden] { display: none; }
 .player-camera, .player-kind { width: 100%; }
 .player-detail-full { flex: 1 1 100%; }
@@ -280,7 +297,15 @@ body.side-open .dock, body.layer-open .dock { width: min(var(--dock-w), calc(100
 .sidebar-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 .side-sec { border-bottom: 1px solid var(--c-card-line); }
 .side-sec:last-child { border-bottom: 0; }
-.side-sec-head { margin: 0; }
+/* each section carries its own colour: Session cyan, Model the selected part's role colour (set by the panel), Inspection violet, Analysis amber */
+.side-sec { --sec: var(--c-accent); }
+.side-sec[data-side="model"] { --sec: var(--sel-role, var(--c-neutral)); }
+.side-sec[data-side="inspect"] { --sec: var(--c-router); }
+.side-sec[data-side="analysis"] { --sec: var(--c-merge); }
+.side-sec-head { margin: 0; border-left: 3px solid var(--sec); }
+.side-sec-icon { display: inline-grid; place-items: center; flex: none; margin-right: var(--space-3); color: var(--sec); }
+.side-sec-icon .icon { width: 18px; height: 18px; }
+.side-sec-toggle > span:not(.side-sec-icon) { flex: 1 1 auto; text-align: left; }
 .side-sec-toggle { display: flex; align-items: center; justify-content: space-between; box-sizing: border-box; width: 100%; min-height: 40px; padding: 0 var(--space-4);
   border: 0; background: transparent; cursor: pointer; font: 600 var(--fs-base)/1.2 var(--font-ui); color: var(--c-text); text-align: left; }
 .side-sec-toggle:hover { background: var(--c-wash); }
@@ -288,8 +313,6 @@ body.side-open .dock, body.layer-open .dock { width: min(var(--dock-w), calc(100
 .side-sec-toggle > .icon { width: 16px; height: 16px; color: var(--c-text-muted); transition: transform var(--t-fast) var(--ease); }
 .side-sec-toggle[aria-expanded="false"] > .icon { transform: rotate(-90deg); }
 .side-sec-body { padding: 0 var(--space-4) var(--space-4); min-width: 0; }
-.side-sec[data-side="display"] .side-sec-body { display: flex; flex-direction: column; gap: var(--space-3); }
-.side-sec[data-side="display"] .side-sec-body[hidden] { display: none; }
 .side-empty { margin: 0; color: var(--c-text-muted); }
 /* the slim tab at the right edge that opens the side panel */
 .sidebar-edge { position: fixed; z-index: 6; right: 0; top: 50%; width: 32px; height: 72px; margin-top: -36px; padding: 0; display: grid; place-items: center;
@@ -313,13 +336,16 @@ body.layer-open .os-sidebar, body.layer-open .sidebar-edge { display: none; }
 .head-icon { display: inline-grid; place-items: center; color: var(--role-panel, var(--c-accent)); }
 .head-icon .icon { width: 20px; height: 20px; }
 .panel-part h2 { margin: 0; font: 700 18px/1.2 var(--font-display); letter-spacing: -0.01em; }
-.info-card { margin: var(--space-2) 0; padding: var(--space-1) var(--space-3); border: 1px solid var(--c-card-line); border-radius: var(--r-control); background: var(--c-wash); }
+/* the facts: label left, value right, one accent bar in the part's role colour (no box inside a box) */
+.info-card { margin: var(--space-3) 0; padding: 0 0 0 var(--space-3); border: 0; border-left: 3px solid var(--role-panel, var(--c-accent)); border-radius: 0; background: none; }
 .kv-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); padding: 5px 0; border-bottom: 1px solid var(--c-card-line); }
 .kv-row:last-child { border-bottom: 0; }
 .kv-row .stat-value { font: 600 var(--fs-base)/1.2 var(--font-ui); text-align: right; }
+/* key numbers take the role colour, mixed 28 % towards the text colour so every role keeps at least 4.5:1 on the navy cards (tests/tokens.test.ts) */
+.info-card .stat-value, .stat-tile .stat-value { color: color-mix(in srgb, var(--role-panel, var(--c-accent)) 72%, var(--c-text)); }
 .role-chip { margin-left: auto; }
-.role-chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px 2px 6px; border: 1px solid var(--role); border-radius: 999px;
-  background: color-mix(in srgb, var(--role) 14%, transparent); color: var(--c-text); font: 600 var(--fs-small)/1.5 var(--font-ui); }
+.role-chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border: 1px solid var(--role); border-radius: 999px;
+  background: color-mix(in srgb, var(--role) 26%, transparent); color: var(--c-text); font: 600 var(--fs-small)/1.5 var(--font-ui); }
 .role-chip .icon { width: 16px; height: 16px; color: var(--role); }
 /* Advanced: the Overview tab opens with "What does it do?", so the one-line summary moves to the title's tooltip
    and the first paragraph stays above the fold at 1366 x 768. */
@@ -334,9 +360,12 @@ body.layer-open .os-sidebar, body.layer-open .sidebar-edge { display: none; }
 .stat-value .lv { white-space: nowrap; }
 /* "von 46" sits on the value line, so every tile is two short lines */
 .stat-sub { margin-left: 0.3em; font: 400 var(--fs-small)/1.2 var(--font-ui); color: var(--c-text-muted); }
-.step-inside { width: 100%; justify-content: center; height: var(--control-h); margin-top: var(--space-2); border-color: var(--role-panel, var(--c-accent));
-  background: color-mix(in srgb, var(--role-panel, var(--c-accent)) 16%, var(--c-glass-panel)); font-weight: 600; }
-.depth-switch { margin-top: var(--space-3); }
+/* the one primary action of the Model section: full width, solid accent */
+.step-inside { width: 100%; justify-content: center; height: 36px; margin: 0 0 var(--space-3); border-color: var(--c-accent); background: var(--c-accent); color: var(--c-background); font-weight: 600; }
+.step-inside:hover { background: color-mix(in srgb, var(--c-accent) 86%, var(--c-text)); }
+.step-inside .icon { color: var(--c-background); }
+.depth-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin: 0 0 var(--space-2); }
+.depth-label { font: 500 var(--fs-small)/1.2 var(--font-ui); color: var(--c-text-muted); }
 .depth-switch .depth-btn { position: relative; height: 26px; padding: 0 var(--space-3); }
 .depth-switch .depth-btn::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; min-height: 32px; transform: translateY(-50%); }
 .panel-tabs { display: flex; gap: 2px; margin: 0 0 var(--space-3); border-bottom: 1px solid var(--c-card-line); }
@@ -344,7 +373,7 @@ body.layer-open .os-sidebar, body.layer-open .sidebar-edge { display: none; }
   font: 500 var(--fs-base)/1 var(--font-ui); color: var(--c-text-muted); white-space: nowrap;
   transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease); }
 .panel-tab:hover { color: var(--c-text); background: var(--c-wash); }
-.panel-tab.active { color: var(--c-text); border-bottom-color: var(--c-accent); font-weight: 600; }
+.panel-tab.active { color: var(--c-text); border-bottom-color: var(--role-panel, var(--c-accent)); font-weight: 600; }
 .panel-body, .panel-part--inspect, .panel-part--analysis { display: flex; flex-direction: column; gap: var(--space-3); }
 .panel-part--inspect > .panel-tabs { margin-bottom: 0; }
 .panel-part--analysis .sec-head { margin-bottom: 0; }

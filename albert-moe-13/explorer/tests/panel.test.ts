@@ -199,23 +199,64 @@ describe('ids and rows', () => {
 describe('codex panel layout', () => {
   const visible = (el: Element | null): boolean => !!el && !el.closest('[hidden]');
 
-  it('Modell: head with the type pill and an info card of labelled key / value rows', async () => {
-    const { panel } = make();
+  it('Modell: header with icon, name and ONE role pill; one sentence; a facts grid; one primary Step inside; what it is; connected to', async () => {
+    const panel = createPanel({ arch: a, tower, rig: { flyTo: vi.fn(() => Promise.resolve()) }, loadWeights, onStepInside: vi.fn() });
+    document.body.appendChild(panel.element);
     await panel.openPanel('L12.expert.7');
     const head = panel.element.querySelector('.panel-head')!;
     expect(head.querySelector('h2')?.textContent).toContain('Expert');
+    expect(head.querySelector('.head-icon svg')).not.toBeNull();
+    expect(head.querySelectorAll('.role-chip')).toHaveLength(1);
     expect(head.querySelector('.role-chip')?.getAttribute('data-role')).toBe('expert');
-    expect(head.querySelector('.role-chip svg')).not.toBeNull();
     expect(head.querySelector('.panel-summary')?.textContent).toBe(t('sum.expert'));
+    // the facts: no "Type" row (the pill says it), real values only
     const rows = [...panel.element.querySelectorAll('.info-card .kv-row')];
     const labels = rows.map((r) => r.querySelector('.stat-label')?.textContent);
-    expect(labels).toEqual([t('info.type'), t('info.layer'), t('info.stream'), t('info.expert'), t('info.experts'), t('info.hidden'), t('info.dtype')].filter((l) => l !== t('info.stream')));
+    expect(labels).toEqual([t('info.layer'), t('info.expert'), t('info.experts'), t('info.hidden'), t('info.dtype')]);
     // Simple counts layers from 1 (layerLabel): blocks.12 is "layer 13 of 46"; every number carries its kind.
-    expect(rows[1]?.textContent).toContain('13');
-    expect(rows[1]?.textContent).toContain('46');
+    expect(rows[0]?.textContent).toContain('13');
+    expect(rows[0]?.textContent).toContain('46');
     expect(rows.find((r) => r.textContent?.includes(t('info.experts')))?.querySelector('[data-kind="structure"]')?.textContent).toBe('12');
     expect(rows.find((r) => r.textContent?.includes(t('info.hidden')))?.textContent).toContain('256');
+    // Simple has no 0-based index and no detail-level switch
+    expect(panel.element.textContent).not.toContain(t('info.layerIndex'));
     expect(head.querySelector('.depth-switch')).toBeNull();
+    expect(panel.element.querySelector('.depth-switch')).toBeNull();
+    // top to bottom: header, summary, facts, the primary action, then "What it is"
+    const order = [...panel.element.querySelectorAll('.panel-head, .info-card, .step-inside, [data-section="what"], [data-section="connections"]')].map((x) => x.className.split(' ')[0] || x.getAttribute('data-section'));
+    expect(order.slice(0, 3)).toEqual(['panel-head', 'info-card', 'hud-btn']);
+    expect(panel.element.querySelectorAll('.step-inside')).toHaveLength(1);
+  });
+
+  it('every component type uses the same Model skeleton: header with one pill, summary, facts card, then What it is', async () => {
+    const panel = createPanel({ arch: a, tower, rig: { flyTo: vi.fn(() => Promise.resolve()) }, loadWeights, onStepInside: vi.fn() });
+    document.body.appendChild(panel.element);
+    for (const id of ['embed', 'L12', 'L12.A.attn', 'L12.A.router', 'L12.bank', 'L12.expert.7', 'L12.expert.7.gelu', 'L12.A.router.gate']) {
+      await panel.openPanel(id);
+      const kids = [...panel.element.querySelectorAll('.panel-head header > *')].map((x) => x.className.split(' ')[0] || x.tagName.toLowerCase());
+      expect(kids, id).toEqual(['head-icon', 'h2', 'role-chip']);
+      expect(panel.element.querySelectorAll('.panel-head .role-chip'), id).toHaveLength(1);
+      expect(panel.element.querySelector('.panel-head .panel-summary'), id).not.toBeNull();
+      expect(panel.element.querySelectorAll('.info-card .kv-row').length, id).toBeGreaterThan(0);
+      expect(panel.element.querySelector('[data-section="what"]'), id).not.toBeNull();
+      expect(panel.element.querySelector('[data-section="connections"]'), id).not.toBeNull();
+    }
+  });
+
+  it('Advanced: the Layer index (0-based) appears only here, and the Detail level control sits directly above the text it changes', async () => {
+    setMode('advanced');
+    const { panel } = make();
+    await panel.openPanel('L12.expert.7');
+    const rows = [...panel.element.querySelectorAll('.info-card .kv-row')];
+    const idx = rows.find((r) => r.querySelector('.stat-label')?.textContent === t('info.layerIndex'));
+    expect(t('info.layerIndex')).toBe('Layer index');
+    expect(idx?.querySelector('.stat-value')?.textContent).toBe('12');
+    const what = panel.element.querySelector('[data-section="what"] .sec-body')!;
+    const kids = [...what.children];
+    expect(kids[0]?.className).toBe('depth-row');
+    expect(kids[0]?.querySelector('.depth-label')?.textContent).toBe(t('panel.depth'));
+    expect(kids[0]?.querySelector('.depth-switch')).not.toBeNull();
+    expect(kids[1]?.tagName).toBe('P');
   });
 
   it('Simple: what, connections and the computation start open, the other analysis rows closed', async () => {

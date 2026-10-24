@@ -109,13 +109,14 @@
   /* side panel width: the app sets this on the root while the panel is dragged (280 px .. 40 % of the viewport) */
   --side-w: clamp(280px, 22vw, 512px);
   --control-h: 32px;
-  /* mini dock: width min(--dock-w, free width); height = 2 x pad + caption + gap + control row + 2 x 1px border */
+  /* mini dock: ONE row of three zones; width min(--dock-w, free width); height = 2 x pad + the big play button + 2 x 1px border */
   --dock-w: 640px;
-  --dock-pad: 6px;
-  --caption-h: 18px;
-  --dock-gap: 2px;
-  --dock-row: 44px;
-  --dock-h: 78px;
+  --dock-pad: 12px;
+  --caption-h: 16px;
+  --dock-gap: 8px;
+  --dock-ctl: 36px;
+  --dock-row: 48px;
+  --dock-h: 74px;
 
   /* motion */
   --t-fast: 150ms;

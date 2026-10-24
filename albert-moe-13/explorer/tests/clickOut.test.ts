@@ -393,8 +393,8 @@ describe('R1: the rig reads the insets at fly time', () => {
     const top = document.createElement('div');
     Object.defineProperty(top, 'offsetHeight', { value: 36 });
     const dock = document.createElement('div');
-    Object.defineProperty(dock, 'offsetHeight', { value: 78 });
-    Object.defineProperty(dock, 'offsetTop', { value: H - 44 - 78 });
+    Object.defineProperty(dock, 'offsetHeight', { value: 74 });
+    Object.defineProperty(dock, 'offsetTop', { value: H - 44 - 74 });
     const timeline = document.createElement('div');
     Object.defineProperty(timeline, 'offsetHeight', { value: 32 });
     Object.defineProperty(timeline, 'offsetTop', { value: H - 6 - 32 });
@@ -408,11 +408,11 @@ describe('R1: the rig reads the insets at fly time', () => {
 
   it('top, bottom (the dock above the timeline) and right (the open side panel) are measured, not remembered', () => {
     const { sidebar, provider } = hud();
-    expect(provider()).toEqual({ top: 36, bottom: 720 - (720 - 44 - 78) + 8, right: 0, left: 0 });
+    expect(provider()).toEqual({ top: 36, bottom: 720 - (720 - 44 - 74) + 8, right: 0, left: 0 });
     sidebar.open();
     expect(provider().right).toBe(12 + sidebar.width() + 8);
-    sidebar.setWidth(420);
-    expect(provider().right).toBe(12 + 420 + 8);
+    sidebar.setWidth(400);
+    expect(provider().right).toBe(12 + 400 + 8);
     sidebar.close();
     expect(provider().right).toBe(0);
   });
@@ -434,7 +434,7 @@ describe('R1: the rig reads the insets at fly time', () => {
       rig.setInsetsProvider(provider);
       // The app opens the side panel at Modell in the same click that selects the part.
       const show = (id: string): Promise<void> => { sidebar.open(['model', 'inspect']); return panel.openPanel(id); };
-      if (start === 'open') sidebar.open(['display']);
+      if (start === 'open') sidebar.open(['model']);
       // What the app had measured before the click: stale by the time the level flies when the panel was closed.
       expect(provider().right).toBe(start === 'open' ? rightNow() : 0);
       const boxes: THREE.Box3[] = [];

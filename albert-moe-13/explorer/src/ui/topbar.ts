@@ -1,6 +1,6 @@
 import { ICONS } from './icons';
 import { getLang, onPrefsChange, setLang, t } from './prefs';
-import { type Lang, LANGS, TOUR_IDS } from './strings';
+import { type Lang, LANGS, type StringKey, TOUR_IDS } from './strings';
 import { closeTourMenu, isTourMenuOpen, openTourMenu } from './tourMenu';
 
 export interface TopBar {
@@ -8,8 +8,25 @@ export interface TopBar {
   /** Home: closes everything and returns to the main menu (lobby); the app wires the click. */
   home: HTMLButtonElement;
   toursButton: HTMLButtonElement;
+  /** Navigation group of the right side: Lobby, Legende (the app inserts it before Tour), Tour. */
+  nav: HTMLElement;
   gear: HTMLButtonElement;
+  /** The settings dropdown under the gear; the app mounts Quality and Sound into `settingsBody`. */
+  settings: { element: HTMLElement; body: HTMLElement; isOpen(): boolean; open(): void; close(): void };
   dispose(): void;
+}
+
+/** One row of the settings dropdown: a quiet label over the control (the quality menu brings its own label). */
+export function settingsField(labelKey: StringKey, control: HTMLElement): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'hud-field settings-field';
+  const label = document.createElement('span');
+  label.className = 'hud-field-label';
+  const paint = (): void => { label.textContent = t(labelKey); };
+  paint();
+  onPrefsChange(paint);
+  row.append(label, control);
+  return row;
 }
 
 export function segmented<T extends string>(cls: string, values: readonly T[], get: () => T, set: (v: T) => void) {
@@ -52,12 +69,13 @@ export function segmented<T extends string>(cls: string, values: readonly T[], g
 
 /**
  * OS-style system bar: one slim full-width row of translucent glass with a hairline under it. Left: the
- * wordmark and the home (overview) icon, named by its tooltip. Right: compass + "Tour", the DE | EN pill
- * and the settings gear (quality). Einfach | Erweitert lives in the dock (src/ui/player.ts). Each
+ * wordmark only. Right: the navigation (Lobby, Legende, Tour), a thin divider, then the settings (DE | EN
+ * pill and the gear, which opens a dropdown with Quality and Sound). Einfach | Erweitert lives in the
+ * sidebar head (src/ui/player.ts). Each
  * top-level control carries `data-control`, so the HUD can be counted (Simple: at most 5). Switching
  * language re-renders the bar in place: no reload, no camera move.
  */
-export function createTopBar(title: HTMLElement | null, opts: { onGear?: () => void } = {}): TopBar {
+export function createTopBar(title: HTMLElement | null): TopBar {
   const el = document.createElement('header');
   el.className = 'top-bar';
   const left = document.createElement('div');
@@ -70,7 +88,6 @@ export function createTopBar(title: HTMLElement | null, opts: { onGear?: () => v
   const homeText = document.createElement('span');
   home.innerHTML = ICONS.home;
   home.append(homeText);
-  left.append(home);
 
   const tours = document.createElement('button');
   tours.type = 'button';
@@ -92,15 +109,50 @@ export function createTopBar(title: HTMLElement | null, opts: { onGear?: () => v
   gear.type = 'button';
   gear.className = 'hud-icon tray-item settings-btn';
   gear.innerHTML = ICONS.gear;
-  gear.addEventListener('click', () => opts.onGear?.());
+  gear.setAttribute('aria-haspopup', 'dialog');
+  gear.setAttribute('aria-expanded', 'false');
+  // The settings dropdown: anchored under the gear, closes on an outside press and on Esc.
+  const menu = document.createElement('div');
+  menu.className = 'settings-menu';
+  menu.setAttribute('role', 'dialog');
+  menu.hidden = true;
+  menu.tabIndex = -1;
+  const menuBody = document.createElement('div');
+  menuBody.className = 'settings-body';
+  menu.append(menuBody);
+  const setMenu = (open: boolean, focusBack = false): void => {
+    if (menu.hidden === !open) return;
+    menu.hidden = !open;
+    gear.setAttribute('aria-expanded', String(open));
+    if (open) (menu.querySelector<HTMLElement>('select, button, input') ?? menu).focus();
+    else if (focusBack) gear.focus();
+  };
+  gear.addEventListener('click', () => setMenu(menu.hidden));
+  const onDocDown = (e: Event): void => {
+    if (!menu.hidden && !menu.contains(e.target as Node) && !gear.contains(e.target as Node)) setMenu(false);
+  };
+  const onDocKey = (e: KeyboardEvent): void => {
+    if (e.key !== 'Escape' || menu.hidden) return;
+    e.stopImmediatePropagation(); // the camera rig and the side panel must not also react to this press
+    e.preventDefault();
+    setMenu(false, true);
+  };
+  document.addEventListener('pointerdown', onDocDown);
+  document.addEventListener('keydown', onDocKey, true);
   const prefs = document.createElement('div');
   prefs.className = 'top-prefs';
   prefs.dataset.control = 'prefs';
   prefs.append(lang.wrap, gear);
+  const nav = document.createElement('div');
+  nav.className = 'top-nav';
+  nav.append(home, tours);
+  const divider = document.createElement('span');
+  divider.className = 'top-divider';
+  divider.setAttribute('aria-hidden', 'true');
   const right = document.createElement('div');
   right.className = 'top-right';
-  right.append(tours, prefs);
-  el.append(left, right);
+  right.append(nav, divider, prefs);
+  el.append(left, right, menu);
 
   const paint = (): void => {
     home.title = t('nav.homeTip');
@@ -116,12 +168,19 @@ export function createTopBar(title: HTMLElement | null, opts: { onGear?: () => v
     }
     gear.setAttribute('aria-label', t('settings.label'));
     gear.title = t('settings.tip');
+    menu.setAttribute('aria-label', t('settings.label'));
     lang.sync();
   };
   paint();
   const off = onPrefsChange(paint);
   return {
-    element: el, home, toursButton: tours, gear,
-    dispose: () => { off(); el.remove(); },
+    element: el, home, toursButton: tours, nav, gear,
+    settings: { element: menu, body: menuBody, isOpen: () => !menu.hidden, open: () => setMenu(true), close: () => setMenu(false) },
+    dispose: () => {
+      off();
+      document.removeEventListener('pointerdown', onDocDown);
+      document.removeEventListener('keydown', onDocKey, true);
+      el.remove();
+    },
   };
 }
