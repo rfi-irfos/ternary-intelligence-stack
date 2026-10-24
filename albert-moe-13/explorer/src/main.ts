@@ -38,6 +38,9 @@ import { coachSeen, createCoachMarks } from './ui/coach';
 import { sound, unlockOnGesture } from './audio/sound';
 import { playIntro, shouldPlayIntro, skipIntro } from './intro/cinematic';
 import { type DriftState, createLobby, createLobbyFlow, driftTick, soundToggle } from './ui/lobby';
+import { createExhibit } from './scene/exhibit';
+import { createExhibitEntry } from './ui/exhibitEntry';
+import { closeLightbox } from './ui/lightbox';
 import { closeTourMenu, isTourMenuOpen, openTourMenu } from './ui/tourMenu';
 
 /** Waits (at most `ms`) for the display face, so the canvas labels of the scene draw in it; runs beside the data loads. */
@@ -139,6 +142,18 @@ async function main(): Promise<void> {
   });
   scene.add(view.root);
   attachDepthKeys();
+  // The exhibit (framed training dashboard) hangs far beyond the output end: outside every overview frame.
+  // Its picture loads only when the visitor asks for it ("Show in the scene").
+  const exhibit = createExhibit(tower.rowExtent, { maxAnisotropy: () => renderer.capabilities.getMaxAnisotropy() });
+  scene.add(exhibit.group);
+  const exhibitEntry = createExhibitEntry({
+    show: () => {
+      void exhibit.ensureTexture();
+      void rig.flyTo(exhibit.anchor, exhibit.viewDistance(camera.aspect, camera.fov));
+    },
+  });
+  sidebar.body('analysis').append(exhibitEntry.element);
+  window.addEventListener('pagehide', () => { closeLightbox(); exhibit.dispose(); });
   const animator = createAnimator(tower);
   scene.add(animator.root);
   // Overview pills (Eingabe, Ebene N, Ausgabe); they hide while a level is open, in layer mode and in the lobby.

@@ -386,6 +386,15 @@ const EN = {
   'player.followMark': 'albert follows this word',
   'timeline.label': 'Run timeline',
   'timeline.gateTip': 'Exchange gate',
+  // exhibit (framed training dashboard) and its large view
+  'exhibit.title': 'Exhibit: training dashboard',
+  'exhibit.caption': 'Real screenshot of the training dashboard, 28-layer stage (added to the repository on 2026-07-02). A still picture, not a live view.',
+  'exhibit.alt': 'Screenshot of the albert training dashboard at the 28-layer stage: loss curve with surgery markers, expert activity and routing panels.',
+  'exhibit.show': 'Show in the scene',
+  'exhibit.showTip': 'Fly the camera to the framed exhibit',
+  'exhibit.open': 'Large view',
+  'exhibit.openTip': 'Open the exhibit in a large view',
+  'exhibit.close': 'Close the large view',
 } satisfies Record<string, Entry>;
 
 export type StringKey = keyof typeof EN;
@@ -743,6 +752,14 @@ const DE: Record<StringKey, Entry> = {
   'player.followMark': 'albert folgt diesem Wort',
   'timeline.label': 'Zeitleiste des Durchlaufs',
   'timeline.gateTip': 'Austausch-Tor',
+  'exhibit.title': 'Exponat: Trainings-Dashboard',
+  'exhibit.caption': 'Echter Screenshot des Trainings-Dashboards, Stufe mit 28 Ebenen (am 02.07.2026 ins Repository aufgenommen). Ein Standbild, keine Live-Ansicht.',
+  'exhibit.alt': 'Screenshot des albert-Trainings-Dashboards in der Stufe mit 28 Ebenen: Verlustkurve mit Eingriffsmarkern sowie Felder zu Expertenaktivität und Routing.',
+  'exhibit.show': 'In der Szene zeigen',
+  'exhibit.showTip': 'Kamera zum gerahmten Exponat fliegen lassen',
+  'exhibit.open': 'Großansicht',
+  'exhibit.openTip': 'Das Exponat in der Großansicht öffnen',
+  'exhibit.close': 'Großansicht schließen',
 };
 
 export const STRINGS: Record<Lang, Record<StringKey, Entry>> = { en: EN, de: DE };
