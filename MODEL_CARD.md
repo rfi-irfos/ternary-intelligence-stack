@@ -33,8 +33,11 @@ pipeline_tag: text-generation
 **Maintainer:** RFI-IRFOS, contact@ternlang.com  
 **Repository:** https://github.com/eriirfos-eng/ternary-intelligence-stack  
 **License:** LGPL-3.0-or-later (model weights, training code, inference runtime). Platform infrastructure (API server, MCP tooling, HDL) is BSL-1.1. See [README §Licensing](README.md#licensing) for the full tier breakdown.  
-**Last updated:** 2026-06-15 → ep~6500+ active  
-**Training status:** **Active (ep~6500+)** on Modal T4 — **32L dual-stream** · 19 depth surgeries (12L→32L) + 1 cord surgery complete. Cord surgery fired autonomously ep4202, 2026-05-27T16:44Z — first documented single-to-dual-stream bifurcation mid-training. S18 (30L→31L) fired ep6339; S19 (31L→32L) fired ~2026-06-15. Context reduced 256→128 — **memory-forced**: a depth surgery's activation memory exceeded the L4's VRAM and the GPU timed out; restoring 256 (via 2× L4 / tighter memory management) is planned. Best **EP-AVG ATL 5.8693** (ep6487, 32L). **Chip ATL 1.2637** (best single intra-batch loss). fib_index=7 · window=34 · Gen3 step1/6 · BATCH=1.
+**Last updated:** 2026-10-24 (facts from the checkpoint header and `epoch_history.log`; last recorded epoch 9270)
+**Training status:** **Stopped** (Modal workspace paused; last recorded epoch **9270**, `loss_avg` **3.9353**, `loss_best` **3.8420**, source `~/.albert/epoch_history.log`, last write 2026-09-23). **46L dual-stream** · 33 depth surgeries (12L→46L) + 1 cord surgery complete. Cord surgery fired autonomously ep4202, 2026-05-27T16:44Z — first documented single-to-dual-stream bifurcation mid-training. The last four depth surgeries (S30 42L→43L ep8938, S31 43L→44L ep8942, S32 44L→45L ep8958, S33 45L→46L ep8987) fired 2026-09-19 and 2026-09-20; see [albert-moe-13/docs/SURGERY_REGISTRY.md](albert-moe-13/docs/SURGERY_REGISTRY.md). Lowest `loss_avg` in the log: **3.8420** (ep9265). **Chip ATL 1.2637** (best single intra-batch loss, value as of 2026-06-15, not re-checked). Context 512 · BATCH=2.
+
+**Xperience albert.** — [interactive 3D explorer of albert.'s architecture (46 layers, in the browser)](albert-moe-13/explorer/README.md). A museum-style walk through the real checkpoint structure with recorded traces of the real model. Not public yet; the live URL follows at launch.
+
 
 ---
 
@@ -50,21 +53,22 @@ weights, targeting inference on edge hardware and low-power devices.
 |----------|-------|
 | Architecture | **Dual-stream** Ternary MoE (Mixture of Experts) |
 | Streams | **2** (bifurcated via cord surgery ep4202, 2026-05-27) |
-| Layers | **32 per stream** (19 Net2Net surgeries: 12L → 32L) |
+| Layers | **46 per stream** (33 Net2Net depth surgeries: 12L → 46L; checkpoint header: layer indices 0..45) |
 | Hidden size | **2×256H** (256H per stream) |
-| Anastomosis gates | **6** — bidirectional F32 cross-stream fusion at Fibonacci layers [2,3,5,8,13,21] |
-| **Total expert capacity** | **768 expert-routing slots** (12 experts × 32 layers × 2 streams — each stream routes independently) |
-| Experts per layer | 12 (shared FFN weights; independent per-stream routing gates; Top-3 active per step) |
+| Anastomosis gates | **7** — F32 cross-stream fusion at Fibonacci layers [2,3,5,8,13,21,34]; each gate is a `Linear(512,2)` (weight [2,512], bias [2]) |
+| Attention | 4 heads per stream (`num_heads` 4 in `albert_v3.0.config.json`) |
+| **Total expert capacity** | **1,104 expert-routing slots** (12 experts × 46 layers × 2 streams — each stream routes independently) |
+| Experts per layer | 12 (shared FFN weights, each expert 256→1024→256; independent per-stream routing gate [12,256]; Top-3 active per step; 552 expert modules in the header = 12 × 46) |
 | Expert skip rate | 75% per step via @sparseskip — 9 of 12 experts bypassed at inference |
-| Context length | **128 tokens** (reduced from 256 at ep~4300; YaRN extension planned) |
+| Context length | **512 tokens** (`max_seq_len` 512; reduced 256→128 at ep~4300 for memory, raised to 512 at S20 per the README surgery log) |
 | Vocabulary | 32,000 tokens (ByteLevel BPE — EN/DE/FR/ES/PT/IT/NL/PL) |
-| Weight representation | Ternary {-1, 0, +1} with STE training |
+| Weight representation | Ternary {-1, 0, +1} with STE training. The checkpoint file stores the latent weights: all 3606 tensors are F32 |
 | Gate linear | F32 |
 | Positional encoding | RoPE (rotate_half) |
-| Optimizer | AdamW, cosine LR decay, BATCH=1 (post-cord) |
-| Parameters (total) | **~224M** |
-| Safetensors | **~2,180 tensors · ~850 MB** |
-| Surgeries | **19 depth (S1–S19)** + **1 cord surgery** = 20 total surgical events |
+| Optimizer | AdamW, cosine LR decay, BATCH=2 (README, last run on Modal L40S) |
+| Parameters (total) | **331,140,622** (sum of all tensor shapes in the checkpoint header) |
+| Safetensors | **3606 tensors · 1,324,935,080 bytes (~1.32 GB, F32)** — `albert_v3.0.best.safetensors`, file dated 2026-09-23 |
+| Surgeries | **33 depth (S1–S33)** + **1 cord surgery** = 34 total surgical events |
 
 The central technical innovation is the **@sparseskip** primitive — a
 learned sparse-skip layer that dynamically bypasses computation paths
@@ -144,7 +148,7 @@ noisy inputs.
 | Ep2109 | 9.7975 | **9.7975** (ep2109) | 9.6380 (ep1445) | pending |
 | Ep2114 | 9.7891 | 9.7891 (ep2114) | **9.6235** (ep2114) ← batch ATL | pending |
 | Ep2116 | **9.7884** | **9.7884** ← epoch ATL | **9.6235** (ep2114) | pending |
-| Ep2487 | S6 fired | 18L→19L surgery | — | 2026-05-20T21:33Z; Gen1 step1/6 |
+| Ep2487 | S6 fired | 17L→18L surgery | — | 2026-05-20T21:33Z; Gen1 step1/6 |
 | Ep2922 | **9.4992** | **9.4992** ← first sub-9.50 | 9.1370 (chip) | 2026-05-22; LOG expert 0%→28% awakening |
 | Ep3263 | **9.3651** | ← epoch ATL | **9.0095** (chip) | Broke 139-epoch plateau |
 | Ep3325 | S7 fired | 18L→19L surgery | — | 2026-05-24T13:47Z; 1315 tensors |
@@ -165,7 +169,14 @@ noisy inputs.
 | **~ep4740** | **S16 fired** | **28L→29L (both)** | — | **2026-05-31 (✓ checkpoint-mtime)** |
 | **ep5610** | **S17 fired** | **29L→30L (both)** | — | **2026-06-06 21:08 (✓ checkpoint-mtime)** |
 | **ep6132** | **dual-stream 30L** | **6.4339 (EP-AVG)** | — | **Best EP-AVG ATL — all-time best** |
-| **ep~6205** | **dual-stream 30L** | **Training active** | **1.2637 (chip)** | **Live · 128CTX · BATCH=1 · Modal T4 · resumed 2026-06-12** |
+| ep~6205 | dual-stream 30L | Training active (then) | 1.2637 (chip) | Historical row · 128CTX · BATCH=1 · Modal T4 · resumed 2026-06-12 |
+| ep8906→8907 | S29 fired | 41L→42L surgery | — | loss_avg 3.9625 → 5.1015 (`epoch_history.log`) |
+| ep8937→8938 | S30 fired | 42L→43L surgery | — | 2026-09-19, 13:55Z–14:00Z; loss_avg 3.9972 → 4.1694 |
+| ep8941→8942 | S31 fired | 43L→44L surgery | — | 2026-09-19, 15:00Z–15:05Z; loss_avg 3.9978 → 4.1686 |
+| ep8957→8958 | S32 fired | 44L→45L surgery | — | 2026-09-19, 18:50Z–18:55Z; loss_avg 3.9947 → 4.2715 |
+| ep8986→8987 | S33 fired | 45L→46L surgery | — | 2026-09-20, 01:05Z–01:10Z; loss_avg 3.9810 → 5.1995 |
+| ep9265 | dual-stream 46L | **3.8420** (loss_avg, lowest in the log) | — | `loss_best` 3.8420 |
+| **ep9270** | **dual-stream 46L** | **3.9353 (loss_avg)** | — | **Last recorded epoch; `loss_best` 3.8420; training stopped (Modal workspace paused)** |
 
 The benchmark suite runs 5 fixed prompts covering English, German,
 multilingual, narrative, and technical domains. Results are reproducible
@@ -185,10 +196,10 @@ The gate fires when loss plateaus below 9.8 for a 144-epoch window with `myc_sta
 
 **Known limitations:**
 
-- At current training depth (~**6190** epochs), output quality is pre-fluency:
+- At the last recorded training depth (epoch **9270**), output quality was not re-evaluated for this card. At the last evaluation described in this card the model was pre-fluency:
   the model produces partially coherent text in familiar domains but lacks
   consistent grammatical structure across longer sequences.
-- Context window of **128 tokens** (reduced from 256 at ep~4300 for gradient stability; YaRN extension planned) is shorter than contemporary LLMs; cannot
+- Context window of **512 tokens** is shorter than contemporary LLMs; cannot
   maintain coherence over longer passages.
 - Ternary quantization trades weight precision for size — at this scale,
   some representational capacity is lost relative to F32 equivalents.
@@ -198,9 +209,9 @@ The gate fires when loss plateaus below 9.8 for a 144-epoch window with `myc_sta
 
 **Open research questions (scaling risks):**
 
-- **STE gradient approximation at scale:** Straight-Through Estimation is the training mechanism for ternary weights. Its stability and convergence properties are well-characterised at current scale (~58M params). Whether STE remains stable through training runs at 500M–1B+ parameters is an open empirical question — no published work has demonstrated ternary STE convergence at frontier scale.
+- **STE gradient approximation at scale:** Straight-Through Estimation is the training mechanism for ternary weights. Its stability and convergence properties are documented up to the current scale (331,140,622 parameters; `loss_avg` 3.9353 at ep9270). Whether STE remains stable through training runs at 500M–1B+ parameters is an open empirical question — no published work has demonstrated ternary STE convergence at frontier scale.
 - **@sparseskip speedup baseline:** The 83 tok/s inference figure is measured against albert.'s own F32-weight dense equivalent on the same hardware. It is not a direct comparison with INT4-quantized industry inference (TensorRT-LLM, llama.cpp Q4). The relevant claim is that ternary weights eliminate a quantization step entirely — the speedup over post-hoc INT4 quantization of a larger model is a separate, untested question.
-- **Net2net surgery stability at scale:** All five documented layer-addition surgeries were performed on a model in the 13M–58M parameter range. Whether the Fibonacci-gated surgery protocol remains stable when applied to models at 200M+ parameters has not been tested. The plateau-gate's **withhold behavior** is now validated across six independent events (ep791 non-firing + alternating descent phase ep2109–ep2120 — see below); the question of whether these properties hold at 200M+ scale remains open.
+- **Net2net surgery stability at scale:** All 33 depth surgeries (12L→46L) and the cord surgery were performed on one run that grew to 331,140,622 parameters. Whether the Fibonacci-gated surgery protocol remains stable beyond that size has not been tested. The plateau-gate's **withhold behavior** is now validated across six independent events (ep791 non-firing + alternating descent phase ep2109–ep2120 — see below); the question of whether these properties hold beyond 331M parameters remains open.
 
 **Validated finding — surgery governor robustness (ep2120):** The plateau gate demonstrated robustness against premature surgery triggering: at ep2120, despite crossing the loss threshold (9.7997 < 9.80) at ep2081, the model continued descending through the projected plateau zone, invalidating three pre-computed surgery timing scenarios. The governor correctly withheld surgery while the model was still actively learning — a validation of the design principle that architecture should grow only when learning has genuinely exhausted current capacity. Five new epoch ATLs were recorded in seven epochs (9.7976→9.7884) during the withheld window. Full technical record: [convergence_log.md — Alternating Descent Phase section](docs/convergence_log.md).
 
@@ -234,8 +245,8 @@ oversight mechanisms are in place:
    by the RFI-IRFOS team.
 2. **Surgery governor:** Architectural growth (layer addition via net2net)
    is fully autonomous — the `EvolutionManager` fires on a Fibonacci-gated
-   plateau detector with no human intervention required. **17 depth surgeries
-   (12L→30L) + 1 cord surgery (single→dual-stream bifurcation)** have been
+   plateau detector with no human intervention required. **33 depth surgeries
+   (12L→46L) + 1 cord surgery (single→dual-stream bifurcation)** have been
    executed autonomously to date. The cord surgery (ep4202, 2026-05-27) is the
    first documented autonomous single-to-dual-stream bifurcation in a live
    ternary MoE.

@@ -163,24 +163,24 @@ Demonstrate that ternary-native training — weights constrained to {−1, 0, +1
 
 | Field | Value |
 |-------|-------|
-| Architecture | 256H · **33L per stream** · 2 streams · 4H · **792 total expert-routing slots** (12E/layer × 33L × 2 streams) · 512CTX · 32000V |
+| Architecture | 256H · **46L per stream** · 2 streams · 4H · **1,104 total expert-routing slots** (12E/layer × 46L × 2 streams) · 512CTX · 32000V · 331,140,622 parameters |
 | Version | v3.0 — multilingual ByteLevel BPE, 32k vocab (EN/DE/FR/ES/PT/IT/NL/PL) |
-| Global Epoch | **~7592** (2026-06-21) |
-| Best loss | **4.6842** (EP-AVG ATL, ep7588) |
+| Global Epoch | **9270** (last recorded; training stopped) |
+| Best loss | **3.8420** (lowest loss_avg, ep9265); ep9270: loss_avg 3.9353, loss_best 3.8420 |
 | Inference throughput | **83 tok/s** (CPU vpsignb @sparseskip kernel, 75% expert skip) |
 | Training hardware | Modal GPU · ~2000 ms/batch (512CTX) |
-| Expert health | dead=0; **20 Net2Net surgeries** (12L→33L) + 1 cord surgery (25L→dual 25L); corpus fully unlocked |
+| Expert health | dead=0; **33 Net2Net surgeries** (12L→46L) + 1 cord surgery (25L→dual 25L); corpus fully unlocked |
 | Training data | 100% public domain / open licence — Wikipedia CC BY-SA, Gutenberg, Europarl, EU AI Act |
 
-**Status:** Training active on Modal · 20th Net2Net surgery complete (32L→33L) · CTX bumped 256→512 with CTX-aware evolution gate (CTX_LEVEL_TABLE 64→1M) · best EP-AVG ATL **4.6842** at ep7588 · mastery gate=4.0 nats · Cord Surgery introduced dual-stream architecture at ep4202 · v2.0.0 archived at Global Epoch 477+.
+**Status:** Training **stopped** (Modal workspace paused) at ep9270 · 33rd Net2Net surgery complete (45L→46L, ep8987) · CTX bumped 256→512 with CTX-aware evolution gate (CTX_LEVEL_TABLE 64→1M) · lowest loss_avg **3.8420** at ep9265 · mastery gate=4.0 nats · Cord Surgery introduced dual-stream architecture at ep4202 · v2.0.0 archived at Global Epoch 477+.
 
 ---
 
 ### Core Research Dimensions
 
 - **From-scratch ternary training** — STE-based end-to-end training with no float32 weight baseline required; weights constrained to {−1, 0, +1} throughout via STE
-- **Auto-evolutionary depth** — `EvolutionManager` grows transformer layers autonomously via Net2Net safe-copy surgery; 3L→12L in v2.0.0; **12L→32L across 19 surgeries** in v3.0; no hard layer cap
-- **Dual-stream architecture** — Cord Surgery at ep4202 split the model into 2 independently-routing streams with shared FFN weights; **768 total expert-routing slots** (12 per layer × 32 layers × 2 streams); 192 active per token (Top-3 × 32L × 2)
+- **Auto-evolutionary depth** — `EvolutionManager` grows transformer layers autonomously via Net2Net safe-copy surgery; 3L→12L in v2.0.0; **12L→46L across 33 surgeries** in v3.0; no hard layer cap
+- **Dual-stream architecture** — Cord Surgery at ep4202 split the model into 2 independently-routing streams with shared FFN weights; **1,104 total expert-routing slots** (12 per layer × 46 layers × 2 streams); 276 active per token (Top-3 × 46L × 2)
 - **`@sparseskip` expert routing** (patent pending A50296/2026, TIS platform patent, 10 claims; @sparseskip = Claim 3) — 9/12 experts not executed per decode step at Top-3; **75% skip rate**; 83 tok/s on CPU
 - **Ternary Traffic Light Routing (TTL)** — EMA-based G/O/R trit states per expert per layer; anti-stagnation burst rotates via offset 7 (coprime to 12); cycling-reds self-resolve autonomously
 - **Mycelium expert health monitor** — 20-epoch rolling gradient pressure window; resurrects stagnant experts via neighbour weight copy + σ=0.02 perturbation; dead=0 across full v3.0 run through 32L

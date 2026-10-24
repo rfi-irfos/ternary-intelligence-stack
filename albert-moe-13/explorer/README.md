@@ -1,11 +1,109 @@
-# albert. 3D Explorer
+# Xperience albert. — interactive 3D explorer
 
-Browser 3D exhibit of albert. (46 layers, dual stream, ternary MoE). Vite + three.js + TypeScript.
+A museum-style 3D model card of albert. in the browser: 46 layers in one row, two streams,
+12 shared experts per layer, and recorded token runs of the real model. Built with three.js,
+Vite and TypeScript. Mouse first, German and English (DE | EN switch in the top bar).
 
-Scene: 46 glass slabs in a row along +X. Per slab, stream A lane (y=-1.8, yellow), stream B lane
-(y=+1.8, mint), a shared 12-expert bank between them, and a gate arc on fusion slabs.
+> Status: built on branch `feat/albert-explorer`, not public yet. The live URL follows at launch
+> (see `docs/launch-links.md` in the repository root).
 
-## Commands (run on the Colony, not the ZBook)
+<!-- Screenshots: added later by the maintainers. -->
+*Screenshot placeholder: lobby, overview row, layer step view.*
+
+## What you see
+
+46 glass slabs in a row along +X, one per layer. Per slab: stream A lane (y=-1.8, yellow),
+stream B lane (y=+1.8, mint), a shared 12-expert bank between them, and a gate arc on fusion
+slabs (layers 2, 3, 5, 8, 13, 21, 34). Embedding at one end, LM head at the other.
+
+## Controls
+
+- Drag to rotate, wheel to zoom, click a part to select it and read its panel.
+- Click empty space: everything folds back. Esc: one level up.
+- Play ("Watch albert think") runs a recorded sentence through all layers. Space plays and
+  pauses, left and right arrows step.
+- Keys 1, 2, 3 switch the panel depth (Intuition, Technical, Researcher; 2 and 3 switch to
+  Advanced mode).
+- Top bar: DE | EN and Simple | Advanced. Both are stored in `localStorage` and apply
+  without a reload. Full description in "Interface" below.
+
+## How the data is built
+
+Nothing is invented. The structure comes from the real checkpoint, the runs from recorded
+forward passes of the real model.
+
+| File | What it holds | Made by |
+|---|---|---|
+| `public/data/architecture.json` | 46 layers, 2 streams, 12 shared experts, gate layers, parameter count, checkpoint date and SHA-256 | `tools/build_architecture.py`, reads the checkpoint header |
+| `public/data/trace/{kjv,de,ternary}.json` | recorded `forward_prefill` runs of three sentences (router weights, selected experts, norms, logits) | `albert_trace` binary (`moe-llm-core`, feature `trace`) via `tools/run_traces.sh`; prompts in `tools/prompts.json` |
+| `public/data/weights/{L0..L45,embed,lm_head}.json` | per-layer weight views for the Tensors tab | `tools/build_weights.py` |
+| `public/assets/*.glb` | four small module meshes (slab, fusion slab, embedding, LM head), geometry only | `blender/build_modules.py` (Blender, background mode) |
+| `src/data/{architecture,trace,weights,labeled,words}.ts` | typed loaders and validators for the files above (`validateTrace` checks layer count and checkpoint hash) | hand-written |
+| `src/content/*.ts` | texts, cited Rust line ranges, known caveats (`CAVEATS.md` is generated from `src/content/caveats.ts`) | hand-written |
+
+The scene layout (positions, lanes, camera paths) is generated in code (`src/scene`); the
+module meshes come from Blender.
+
+## Honesty notes
+
+- **Real:** layer count, stream count, expert count, parameter count (read from the checkpoint
+  header); the three recorded sentence runs. Real values carry a dot in the UI.
+- **Illustrative ("Zur Veranschaulichung" / "For illustration"):** shapes, colours, camera
+  paths, the sound and the sketches in the layer steps. They explain; they measure nothing.
+  The quick pass shows every recorded step, only faster. Where no trace exists the UI says
+  "no trace (illustrative)".
+- **Checkpoint:** the explorer shows the checkpoint file of 2026-09-23 (46 layers). The config
+  file in the repository still says 38 layers; the checkpoint is ground truth. The Modal volume
+  was not checked for a newer checkpoint.
+- **Known caveats** about the model and the code (for example that the training forward pass
+  skips the anastomosis gates) are listed in [CAVEATS.md](CAVEATS.md).
+
+## Run and build
+
+Needs any machine with Node 20+ and npm. Heavy runs (the full build with tests, trace
+regeneration) are done on the team's Colony server; a laptop is fine for the dev server.
+
+    cd albert-moe-13/explorer
+    npm ci
+    npm run dev        # Vite dev server
+    npm run build      # tsc --noEmit, then vite build into dist/
+    npm run preview    # serve the production build locally
+
+Other scripts: `npm test` (vitest), `npm run caveats` (regenerate `CAVEATS.md`).
+
+## Tests
+
+- `npm test` runs `vitest run` over `tests/**/*.test.ts` (scene, UI, i18n, data validation,
+  citation checks against the pinned Rust sources in `tests/fixtures/`).
+- `tools/test_build_architecture.py` and `tools/test_build_weights.py` test the Python data
+  builders (pytest).
+- `e2e/run.sh` is a headless HUD check of the built app (Playwright; Colony only, it needs
+  Chrome and `~/work/pw`).
+
+## Project layout
+
+| Path | Content |
+|---|---|
+| `src/scene` | tower layout, modules, materials, palette, explode views, backdrop |
+| `src/ui` | top bar, player, panel, sidebar, lobby, coach marks, strings (DE/EN) |
+| `src/camera`, `src/flow`, `src/layer`, `src/intro`, `src/audio` | camera rig, token flow animation, layer step views, intro, sound |
+| `src/data`, `src/content` | data loaders and validators, texts and caveats |
+| `public/data`, `public/assets`, `public/fonts` | architecture, traces, weights, glb meshes, self-hosted fonts |
+| `tools`, `blender`, `e2e`, `tests` | data builders, Blender module script, headless checks, vitest suites |
+
+## Licence
+
+Part of the Ternary Intelligence Stack. Licence: the repository licence (LGPL-3.0 for the
+community tier; see `LICENSE` in the repository root and the Licensing section of the root
+README). Fonts keep their own SIL Open Font Licence 1.1 (see "Fonts").
+
+---
+
+## Details
+
+### Team build command
+
+On this team the full check runs on the Colony, not on the ZBook:
 
     colony-run -- 'cd albert-moe-13/explorer && npm ci && npx vitest run && npm run build'
 
