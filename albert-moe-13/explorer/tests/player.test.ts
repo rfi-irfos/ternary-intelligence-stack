@@ -6,8 +6,12 @@ import { validateTrace } from '../src/data/trace';
 import { attachDepthKeys, getDepth, setDepth } from '../src/ui/depth';
 import { buildTimeline } from '../src/flow/timeline';
 import { buildTower } from '../src/scene/tower';
-import { NO_TRACE_TEXT, OP_SECONDS, createPlayer, createPlayerBar } from '../src/ui/player';
-import { setMode } from '../src/ui/prefs';
+import {
+  NO_TRACE_TEXT, OP_SECONDS, QUICK_PASS_SECONDS, createPlayer, createPlayerBar, quickGroups, quickSeconds,
+} from '../src/ui/player';
+import { timelineLength } from '../src/flow/timeline';
+import { setLang, setMode } from '../src/ui/prefs';
+import { MAX_FRAME_FULL, MAX_FRAME_QUICK } from '../src/ui/player';
 
 const a = validateArchitecture(arch);
 const tower = buildTower(a);
@@ -17,6 +21,7 @@ const ops = buildTimeline(trace('kjv'), a, 3);
 
 afterEach(() => {
   document.body.innerHTML = '';
+  setLang('en');
   setMode('simple');
   localStorage.clear();
 });
@@ -201,3 +206,199 @@ describe('depth keys vs form controls', () => {
     setDepth('intuition');
   });
 });
+
+describe('quick pass (Simple and the lobby\'s Watch)', () => {
+  it('keeps every recorded op in order and only changes the pacing: one pass in 60-90 s at 1x', () => {
+    expect(ops.length).toBe(timelineLength(a));
+    expect(QUICK_PASS_SECONDS).toBeGreaterThanOrEqual(60);
+    expect(QUICK_PASS_SECONDS).toBeLessThanOrEqual(90);
+    const secs = quickSeconds(ops);
+    expect(secs).toHaveLength(ops.length);
+    expect(secs.reduce((x, y) => x + y, 0)).toBeCloseTo(QUICK_PASS_SECONDS, 6);
+    // Groups: one before the layers (embed), one per layer, one after (merge, ln_f, lm_head).
+    const g = quickGroups(ops);
+    expect(new Set(g).size).toBe(a.model.num_layers + 2);
+    ops.forEach((o, k) => { if (o.layer !== undefined) expect(g[k]).toBe(o.layer + 1); });
+    // Every group gets the same time.
+    const per = new Map<number, number>();
+    g.forEach((x, k) => per.set(x, (per.get(x) ?? 0) + secs[k]!));
+    for (const v of per.values()) expect(v).toBeCloseTo(QUICK_PASS_SECONDS / (a.model.num_layers + 2), 6);
+    // The full pace would take 6.5 minutes.
+    expect(ops.length * OP_SECONDS).toBeGreaterThan(6 * 60);
+  });
+
+  it('a quick run visits every op and ends after about QUICK_PASS_SECONDS; the full pace takes ops x 0.6 s', () => {
+    const seen = new Set<number>();
+    const p = createPlayer(ops, (_o, i) => seen.add(i));
+    p.setPace('quick');
+    expect(p.pace()).toBe('quick');
+    p.scrub(0);
+    p.play();
+    run(p, QUICK_PASS_SECONDS - 2);
+    expect(p.playing()).toBe(true);
+    run(p, 3);
+    expect(p.playing()).toBe(false);
+    expect(seen.size).toBe(ops.length);
+    const f = createPlayer(ops, () => undefined);
+    expect(f.pace()).toBe('full');
+    f.play();
+    run(f, QUICK_PASS_SECONDS);
+    expect(f.index()).toBeLessThan(ops.length / 3);
+  });
+
+  it('the bar: Play in Simple runs the quick pass and says so; Play in Advanced keeps the full pace', async () => {
+    const bar = createPlayerBar({
+      arch: a, tower, rig: { flyTo: vi.fn(() => Promise.resolve()), overview: vi.fn(() => Promise.resolve()) },
+      animator: { show: vi.fn() }, load: (id) => Promise.resolve(trace(id)),
+    });
+    document.body.append(bar.element);
+    await bar.ready;
+    const play = bar.element.querySelector<HTMLButtonElement>('[data-action="play"]')!;
+    expect(play.title).toContain('Quick pass');
+    play.click();
+    expect(bar.player()!.pace()).toBe('quick');
+    const tag = bar.element.querySelector<HTMLElement>('.quick-tag')!;
+    expect(tag.hidden).toBe(false);
+    expect(tag.title).toContain(String(bar.player()!.ops.length));
+    play.click();
+    expect(tag.hidden).toBe(true);
+    setMode('advanced');
+    expect(bar.player()!.pace()).toBe('full');
+    expect(play.title).not.toContain('Quick pass');
+    play.click();
+    expect(bar.player()!.pace()).toBe('full');
+    expect(tag.hidden).toBe(true);
+    bar.dispose();
+  });
+});
+
+describe('quick pass caption and screen-reader behaviour', () => {
+  const makeBar = async () => {
+    const bar = createPlayerBar({
+      arch: a, tower, rig: { flyTo: vi.fn(() => Promise.resolve()), overview: vi.fn(() => Promise.resolve()) },
+      animator: { show: vi.fn() }, load: (id) => Promise.resolve(trace(id)),
+    });
+    document.body.append(bar.element);
+    await bar.ready;
+    return bar;
+  };
+  const el = (bar: Awaited<ReturnType<typeof makeBar>>) => ({
+    text: bar.element.querySelector<HTMLElement>('.step-text')!,
+    line: bar.element.querySelector<HTMLElement>('.step-line')!,
+    live: bar.element.querySelector<HTMLElement>('.sr-only')!,
+    play: bar.element.querySelector<HTMLButtonElement>('[data-action="play"]')!,
+    tag: bar.element.querySelector<HTMLElement>('.quick-tag')!,
+    speed: bar.element.querySelector<HTMLButtonElement>('[data-action="speed"]')!,
+  });
+
+  it('the caption changes once per layer group: "Layer k of 46 · main op", counted from 1 in Simple', async () => {
+    const bar = await makeBar();
+    const x = el(bar);
+    x.play.click();
+    expect(bar.player()!.pace()).toBe('quick');
+    const seen: string[] = [];
+    let changes = 0;
+    let last = x.text.textContent;
+    const groups = new Set(quickGroups(bar.player()!.ops));
+    for (let i = 0; i < 80 * 20 && bar.player()!.playing(); i++) {
+      bar.tick(0.05);
+      const now = x.text.textContent;
+      if (now !== last) { changes++; seen.push(now ?? ''); last = now; }
+    }
+    expect(bar.player()!.playing()).toBe(false);
+    // At most one change per group (the last repaint at the end of the run shows the per-op sentence).
+    expect(changes).toBeLessThanOrEqual(groups.size + 1);
+    expect(changes).toBeGreaterThan(a.model.num_layers);
+    expect(seen[0]).toMatch(/^Layer 1 of 46 · /);
+    expect(seen.some((c) => c.startsWith('Layer 46 of 46 · '))).toBe(true);
+    expect(seen.some((c) => /^Layer 0 /.test(c))).toBe(false);
+    // The caption is the layer's router (its choice), not a per-op sentence.
+    expect(seen[0]).not.toMatch(/Step \d/);
+  });
+
+  it('Advanced counts layers from 0 (Watch is a quick pass there too); German uses the strings table', async () => {
+    setMode('advanced');
+    const bar = await makeBar();
+    const x = el(bar);
+    bar.watch();
+    expect(bar.player()!.pace()).toBe('quick');
+    for (let i = 0; i < 200 && !/^Layer 0 of 46 · /.test(x.text.textContent ?? ''); i++) bar.tick(0.25);
+    expect(x.text.textContent).toMatch(/^Layer 0 of 46 · /);
+    setLang('de');
+    expect(x.text.textContent).toMatch(/^Ebene \d+ von 46 · /);
+  });
+
+  it('paused or stepping, the per-op sentence is back; so is the normal pace', async () => {
+    const bar = await makeBar();
+    const x = el(bar);
+    x.play.click();
+    for (let i = 0; i < 100; i++) bar.tick(0.05);
+    expect(x.text.textContent).toMatch(/^Layer \d+ of 46 · /);
+    x.play.click(); // pause
+    expect(x.text.textContent).toMatch(/^Step \d+ of \d+ · /);
+    setMode('advanced');
+    bar.player()!.play();
+    expect(bar.player()!.pace()).toBe('full');
+    bar.tick(0.7);
+    expect(x.text.textContent).toMatch(/^op \d+ \/ \d+ · /); // Advanced wording, per op
+  });
+
+  it('screen reader: the step line is silent during a quick pass; one polite announcement per group', async () => {
+    const bar = await makeBar();
+    const x = el(bar);
+    expect(x.line.getAttribute('aria-live')).toBe('polite');
+    x.play.click();
+    expect(x.line.getAttribute('aria-live')).toBe('off');
+    const heard: string[] = [];
+    let last = x.live.textContent;
+    for (let i = 0; i < 80 * 20 && bar.player()!.playing(); i++) {
+      bar.tick(0.05);
+      if (x.live.textContent !== last) { last = x.live.textContent; heard.push(last ?? ''); }
+    }
+    expect(x.live.getAttribute('aria-live')).toBe('polite');
+    expect(heard.length).toBeLessThanOrEqual(a.model.num_layers + 2);
+    expect(heard.length).toBeGreaterThan(a.model.num_layers);
+    expect(new Set(heard).size).toBe(heard.length);
+    expect(x.line.getAttribute('aria-live')).toBe('polite'); // run over
+  });
+
+  it('quick frame cap is 0.25 s (a slow machine does not stretch the run); the full pace keeps 0.1 s', () => {
+    expect(MAX_FRAME_QUICK).toBe(0.25);
+    expect(MAX_FRAME_FULL).toBe(0.1);
+    const play = (pace: 'quick' | 'full') => {
+      const p = createPlayer(ops, () => undefined);
+      p.setPace(pace);
+      p.scrub(10); // inside a layer: a group of about 13 ops, 0.12 s each in the quick pass
+      p.play();
+      return p;
+    };
+    // One very slow frame counts as 0.25 s in the quick pass: the same as four frames of 0.0625 s.
+    const slow = play('quick');
+    slow.tick(5);
+    const fine = play('quick');
+    for (let i = 0; i < 4; i++) fine.tick(0.0625);
+    expect(slow.index()).toBe(fine.index());
+    expect(slow.index()).toBeGreaterThan(10);
+    // Full pace: one slow frame still counts only 0.1 s of a 0.6 s op.
+    const full = play('full');
+    full.tick(5);
+    expect(full.index()).toBe(10);
+  });
+
+  it('at 4x the tooltip says every step is passed through, and drops "nothing is left out"', async () => {
+    const bar = await makeBar();
+    const x = el(bar);
+    x.play.click();
+    expect(x.tag.title).toContain('Nothing is left out');
+    x.speed.click(); // 2x
+    x.speed.click(); // 4x ... 0.5x -> 1 -> 2 -> 4: from 1x two clicks give 4x
+    expect(x.speed.textContent).toBe('4×');
+    expect(x.tag.title).toMatch(/every step is passed through/);
+    expect(x.tag.title).not.toContain('Nothing is left out');
+    expect(x.play.title).not.toContain('Nothing is left out');
+    setLang('de');
+    expect(x.tag.title).toContain('jeder Schritt wird durchlaufen');
+    expect(x.tag.title).not.toContain('Nichts wird weggelassen');
+  });
+});
+

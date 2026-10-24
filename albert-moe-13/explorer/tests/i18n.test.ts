@@ -13,6 +13,10 @@ import { closeTourMenu, openTourMenu } from '../src/ui/tourMenu';
 import { layerSteps } from '../src/layer/steps';
 import { renderStep } from '../src/layer/views';
 import { numText, pctStr } from '../src/data/labeled';
+import { createLobby } from '../src/ui/lobby';
+import { createSound } from '../src/audio/sound';
+import { introLine } from '../src/intro/cinematic';
+import { t } from '../src/ui/prefs';
 
 const a = validateArchitecture(arch);
 const tower = buildTower(a);
@@ -89,6 +93,23 @@ describe('German has no English left in it', () => {
     setLang('de');
     const el = openTourMenu();
     expect(giveaways(prose(el))).toEqual([]);
+  });
+
+  it('the lobby, its About blurb, the intro line and the quick-pass texts', () => {
+    setLang('de');
+    const lobby = createLobby({ arch: a, onChoose: () => undefined, sound: createSound({ create: () => null }), traceDate: () => kjv.provenance.date });
+    document.body.append(lobby.element);
+    lobby.show();
+    lobby.element.querySelector<HTMLButtonElement>('.lobby-about-btn')!.click();
+    expect(giveaways(prose(lobby.element))).toEqual([]);
+    // The German lobby says "Modellstand" and "Modelldatei", never the English word.
+    expect(prose(lobby.element)).not.toContain('checkpoint');
+    expect(prose(lobby.element)).toContain('modellstand');
+    const p = document.createElement('p');
+    p.innerHTML = introLine(a);
+    p.append(' ', t('intro.skip'), ' ', t('player.quick'), ' ', t('player.quickTip', { n: 655, s: 75 }), ' ', t('sound.tip'), ' ', t('nav.homeTip'));
+    expect(giveaways(prose(p))).toEqual([]);
+    lobby.dispose();
   });
 
   it('numbers follow the language: 1.104 and 0,5 in German, 1,104 and 0.5 in English', async () => {

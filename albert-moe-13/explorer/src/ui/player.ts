@@ -16,14 +16,53 @@ import { getLang, getMode, layerLabel, lt, onPrefsChange, setMode, t } from './p
 import { ROLE_VAR, type Role } from './roles';
 import { MODES, type Mode, type StringKey } from './strings';
 import { segmented } from './topbar';
+import { escHtml, richT } from './richText';
 
 export type CameraMode = 'follow' | 'free' | 'overview';
 export const SPEEDS = [0.5, 1, 2, 4] as const;
 export type Speed = (typeof SPEEDS)[number];
 export const CAMERA_MODES: CameraMode[] = ['follow', 'free', 'overview'];
 
-/** Seconds one op stays on screen at speed 1. */
+/** Seconds one op stays on screen at speed 1 (full pace: Advanced keeps every op this long). */
 export const OP_SECONDS = 0.6;
+
+/**
+ * Quick pass (Simple and the lobby's "Watch it think"): one whole pass in about this many seconds at
+ * speed 1. It keeps every recorded op in order and only changes the pacing: the ops are grouped by
+ * layer (plus one group before and one after the layers), every group gets the same time and its ops
+ * share it evenly. 655 ops x 0.6 s would be about 6.5 minutes.
+ */
+export const QUICK_PASS_SECONDS = 75;
+
+export type Pace = 'full' | 'quick';
+
+/** Longest frame (s) the player counts, per pace: a slow machine must not stretch a quick pass. */
+export const MAX_FRAME_FULL = 0.1;
+export const MAX_FRAME_QUICK = 0.25;
+
+/** Group index of every op for the quick pass: consecutive ops of one layer form one group. */
+export function quickGroups(ops: readonly Pick<Op, 'layer'>[]): number[] {
+  const out: number[] = [];
+  let g = -1;
+  let last: string | null = null;
+  let seenLayer = false;
+  ops.forEach((o) => {
+    seenLayer ||= o.layer !== undefined;
+    const key = o.layer !== undefined ? `L${o.layer}` : seenLayer ? 'post' : 'pre';
+    if (key !== last) { g++; last = key; }
+    out.push(g);
+  });
+  return out;
+}
+
+/** Seconds each op stays on screen in the quick pass at speed 1; they sum to `total`. */
+export function quickSeconds(ops: readonly Pick<Op, 'layer'>[], total = QUICK_PASS_SECONDS): number[] {
+  const groups = quickGroups(ops);
+  const n = groups.length > 0 ? (groups[groups.length - 1] as number) + 1 : 0;
+  const size = new Array<number>(n).fill(0);
+  for (const g of groups) size[g] = (size[g] as number) + 1;
+  return groups.map((g) => total / n / (size[g] as number));
+}
 
 export interface Player {
   readonly ops: readonly Op[];
@@ -39,6 +78,9 @@ export interface Player {
   scrub(index: number): void;
   setSpeed(s: Speed): void;
   setCameraMode(m: CameraMode): void;
+  /** Full pace (OP_SECONDS per op) or the quick pass (QUICK_PASS_SECONDS for the whole run). */
+  pace(): Pace;
+  setPace(p: Pace): void;
   /** First op of `layer`. Returns false when no op has that layer. */
   jumpToLayer(layer: number): boolean;
   /** Next op of `kind` after the current one, wrapping to the start. Returns false when none exists. */
@@ -55,6 +97,14 @@ export function createPlayer(ops: readonly Op[], animate: (op: Op, index: number
   let spd: Speed = 1;
   let mode: CameraMode = 'free';
   let acc = 0;
+  let pace: Pace = 'full';
+  let quick: number[] | null = null;
+  /** Seconds op `k` stays on screen at speed 1. */
+  const dur = (k: number): number => {
+    if (pace === 'full') return OP_SECONDS;
+    quick ??= quickSeconds(ops);
+    return quick[k] ?? OP_SECONDS;
+  };
   const listeners = new Set<(index: number, op: Op) => void>();
 
   const go = (to: number): void => {
@@ -81,6 +131,8 @@ export function createPlayer(ops: readonly Op[], animate: (op: Op, index: number
     scrub(to) { go(to); },
     setSpeed(s) { if (SPEEDS.includes(s)) spd = s; },
     setCameraMode(m) { mode = m; },
+    pace: () => pace,
+    setPace(v) { if (v === 'full' || v === 'quick') pace = v; },
     jumpToLayer(layer) {
       const at = ops.findIndex((o) => o.layer === layer);
       if (at < 0) return false;
@@ -96,9 +148,9 @@ export function createPlayer(ops: readonly Op[], animate: (op: Op, index: number
     },
     tick(dt) {
       if (!isPlaying) return;
-      acc += Math.min(dt, 0.1) * spd;
-      while (acc >= OP_SECONDS - 1e-9 && isPlaying) {
-        const rest = Math.max(acc - OP_SECONDS, 0);
+      acc += Math.min(dt, pace === 'quick' ? MAX_FRAME_QUICK : MAX_FRAME_FULL) * spd;
+      while (acc >= dur(i) - 1e-9 && isPlaying) {
+        const rest = Math.max(acc - dur(i), 0);
         if (i >= ops.length - 1) { isPlaying = false; acc = 0; break; }
         go(i + 1);
         acc = rest;
@@ -166,19 +218,6 @@ export function stepSentence(op: Op, index: number, total: number, arch: Pick<Ar
   return tmp.textContent ?? '';
 }
 
-const escHtml = (s: string): string =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
-/** `t(key)` as HTML: text escaped, each number of `nums` rendered through fmt(structure(n)) (its kind badge). */
-function richT(key: StringKey, nums: Record<string, number>, text: Record<string, string> = {}): string {
-  const marks: Record<string, string> = {};
-  for (const k of Object.keys(nums)) marks[k] = `\u0001${k}\u0002`;
-  return escHtml(t(key, { ...text, ...marks })).replace(/\u0001(\w+)\u0002/g, (_, k: string) => {
-    const el = fmt(structure(nums[k] as number));
-    el.dataset.v = k;
-    return el.outerHTML;
-  });
-}
 
 /**
  * The step sentence as rich HTML: every count (step, layer, top-k, experts) is a structure value with its
@@ -364,6 +403,19 @@ export interface PlayerBar {
    * the run is paused; a playing run shows its step sentence.
    */
   setHint(key: StringKey | null): void;
+  /**
+   * "Watch it think" (lobby): the first sentence, from its first step, as a quick pass. Choosing it is
+   * the visitor's explicit choice, so it may switch the sentence; the word stays the sentence's default.
+   */
+  watch(): void;
+  /** Pauses a running run (the HUD home button); the bar shows the paused state at once. */
+  pause(): void;
+  /** True once at least one recorded run loaded (false while loading and when none loaded). */
+  hasTraces(): boolean;
+  /** Moves keyboard focus to the Play button (after the visitor left the lobby). */
+  focusPlay(): void;
+  /** Date the first loaded trace was recorded (provenance.date), null before the traces load. */
+  traceDate(): string | null;
   dispose(): void;
 }
 
@@ -426,6 +478,18 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   let offChange: (() => void) | null = null;
   let lastKey = '';
   let loaded: 'loading' | 'none' | 'ready' = 'loading';
+  /**
+   * Set by watch(): this run is a quick pass even in Advanced. A pause keeps it; a step, a scrub or jump,
+   * a new sentence and a change of mode clear it.
+   */
+  let quickRun = false;
+  let lastMode: Mode = getMode();
+  /** The quick pass groups (pre, one per layer, post) of the current timeline. */
+  let groupOf: number[] = [];
+  const quickPlaying = (): boolean => !!player && player.playing() && player.pace() === 'quick';
+  /** Simple and the lobby's Watch run the quick pass; Advanced keeps the full pace of every op. */
+  const paceNow = (): Pace => (quickRun || getMode() === 'simple' ? 'quick' : 'full');
+  const applyPace = (): void => { player?.setPace(paceNow()); };
   /** True only while handling a user action (Play, Step, scrub, jumps); builds never move the camera. */
   let userAction = false;
   const act = (fn: () => void): void => {
@@ -516,11 +580,21 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   const chip = document.createElement('p');
   chip.className = 'step-line';
   chip.setAttribute('aria-live', 'polite');
+  // One polite announcement per layer group while a quick pass plays (the step line is silent then).
+  const announce = document.createElement('p');
+  announce.className = 'sr-only';
+  announce.setAttribute('aria-live', 'polite');
+  announce.setAttribute('role', 'status');
+  let announced = -1;
   const chipIcon = document.createElement('span');
   chipIcon.className = 'step-icon';
   chipIcon.setAttribute('aria-hidden', 'true');
   const chipText = document.createElement('span');
   chipText.className = 'step-text';
+  // While a quick pass plays, a small tag says so (its tooltip: every recorded step, only faster).
+  const quickTag = document.createElement('span');
+  quickTag.className = 'quick-tag';
+  quickTag.hidden = true;
   // Simple: the step's few values on the same line (ellipsis, full text as tooltip); the line never wraps.
   const details = document.createElement('span');
   details.className = 'player-detail-box';
@@ -580,7 +654,7 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     return on;
   };
 
-  top.append(headline, chip, hintLine);
+  top.append(headline, quickTag, chip, hintLine, announce);
   // Control row: transport | word chips (one scrolling line) | sentence picker | Einfach|Erweitert | Tools.
   const controls = document.createElement('div');
   controls.className = 'player-controls';
@@ -611,6 +685,7 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length] as Speed;
     player?.setSpeed(speed);
     paintSpeed();
+    syncPlay();
   };
 
   const syncPlay = (): void => {
@@ -619,7 +694,16 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     playIcon.innerHTML = playing ? ICONS.pause : ICONS.play;
     playText.textContent = t(playing ? 'player.pause' : 'player.play');
     play.setAttribute('aria-label', playText.textContent);
-    play.title = `${t(playing ? 'player.pauseTip' : 'player.playTip', { n: arch.model.num_layers })} (${t('key.space')})`;
+    // At 4x a step lasts about 0.03 s: every step is passed through, but "nothing is left out" would not be
+    // literally true on screen, so the tooltip says only what is true.
+    const quickTip = speed >= 4
+      ? t('player.quickTipFast', { n: player?.ops.length ?? 0 })
+      : t('player.quickTip', { n: player?.ops.length ?? 0, s: QUICK_PASS_SECONDS });
+    const tip = t(playing ? 'player.pauseTip' : 'player.playTip', { n: arch.model.num_layers });
+    play.title = `${tip}${paceNow() === 'quick' ? ` · ${quickTip}` : ''} (${t('key.space')})`;
+    quickTag.hidden = !(playing && player?.pace() === 'quick');
+    quickTag.textContent = t('player.quick');
+    quickTag.title = quickTip;
     // While a level is open the caption line keeps the step sentence during a run; the fold-back hint
     // rides on the Pause tooltip instead, once: after the first pause the caption line shows it.
     if (playing && levelHint && !foldTipDone) {
@@ -724,22 +808,46 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     scrub.value = String(index);
     counter.textContent = t('player.counter', { i: index + 1, n: player.ops.length });
     syncPlay();
-    const role = opRole(op);
+    // Quick pass: the caption names the layer and its main op, and changes once per layer group, not per op.
+    const qp = quickPlaying();
+    const g = groupOf[index] ?? 0;
+    const shown: Op = qp ? mainOf[g] ?? op : op;
+    chip.setAttribute('aria-live', qp ? 'off' : 'polite');
+    const role = opRole(shown);
     // Simple, before the first Play: one hint instead of a step the visitor has not asked for.
     const hint = getMode() === 'simple' && !started && index === 0;
     chip.style.setProperty('--role', hint || !role ? 'var(--c-accent)' : ROLE_VAR[role]);
     chip.dataset.role = hint ? 'hint' : role ?? 'neutral';
-    chip.dataset.kind = hint ? 'hint' : op.kind;
-    chipIcon.innerHTML = hint ? ICONS.play : typeIcon(OP_ICON_TYPE[op.kind]);
+    chip.dataset.kind = hint ? 'hint' : shown.kind;
+    chipIcon.innerHTML = hint ? ICONS.play : typeIcon(OP_ICON_TYPE[shown.kind]);
     const tr = traces.get(promptSel.value);
     const word = decodeToken(tr?.provenance.tokens[Number(tokenSel.value)] ?? '');
     // One caption line: the headline until the first Play, then the step sentence (same height).
     const levelOpen = paintHint();
     headline.hidden = !hint || levelOpen;
     chip.hidden = hint || levelOpen;
-    chipText.innerHTML = hint ? '' : stepSentenceHtml(op, index, player.ops.length, arch, word);
+    if (hint) {
+      chipText.innerHTML = '';
+      delete chipText.dataset.group;
+    } else if (qp) {
+      const key = `${g}|${getLang()}|${getMode()}`;
+      if (chipText.dataset.group !== key) {
+        chipText.dataset.group = key;
+        chipText.innerHTML = quickCaptionHtml(shown);
+      }
+    } else {
+      delete chipText.dataset.group;
+      chipText.innerHTML = stepSentenceHtml(op, index, player.ops.length, arch, word);
+    }
+    if (qp && !hint) {
+      if (announced !== g) {
+        announced = g;
+        announce.textContent = chipText.textContent ?? '';
+      }
+    } else announced = -1;
     const simple = getMode() === 'simple';
-    const d = hint ? document.createElement('div') : opDetails(op, arch);
+    // The per-op values show when paused, stepping and at the normal pace; a quick pass shows none.
+    const d = hint || qp ? document.createElement('div') : opDetails(op, arch);
     details.replaceChildren(...(simple ? [d] : []));
     // The measured values follow the sentence only when they fit whole: the caption never ends in "…"
     // (they stay in the tooltip of the line either way).
@@ -748,6 +856,13 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     fullDetails.replaceChildren(...(simple || hint ? [] : [opDetails(op, arch)]));
     chip.title = hint ? '' : `${t('player.stepTip')}: ${chipText.textContent ?? ''}${d.textContent ? ` · ${d.textContent}` : ''}`;
     opListeners.forEach((l) => l(op, index, player!.ops.length));
+  };
+
+  /** Ops of every quick group: the main op of a layer is its router (the choice), else its first op. */
+  let mainOf: Op[] = [];
+  const quickCaptionHtml = (main: Op): string => {
+    if (main.layer === undefined) return escHtml(opLabel(main.kind, arch));
+    return richT('now.quickLayer', { n: layerLabel(main.layer), of: arch.model.num_layers }, { what: opLabel(main.kind, arch) });
   };
 
   const show = (_index: number, op: Op): void => {
@@ -761,11 +876,23 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     const trace = traces.get(id);
     if (!trace) return;
     const ops = buildTimeline(trace, arch, position);
+    quickRun = false;
+    groupOf = quickGroups(ops);
+    mainOf = [];
+    const post = (groupOf[ops.length - 1] ?? 0);
+    ops.forEach((o, k) => {
+      const gi = groupOf[k] as number;
+      const cur = mainOf[gi];
+      if (!cur) mainOf[gi] = o;
+      else if (o.layer !== undefined && cur.kind !== 'router' && o.kind === 'router') mainOf[gi] = o;
+      else if (o.layer === undefined && gi === post && gi > 0) mainOf[gi] = o;
+    });
     player = createPlayer(ops, () => undefined);
     offChange = player.onChange(show);
     scrub.max = String(ops.length - 1);
     lastKey = '';
     player.setSpeed(speed);
+    applyPace();
     player.setCameraMode(camSel.value as CameraMode);
     player.scrub(0);
   };
@@ -803,6 +930,11 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
       b.title = t(`mode.${b.dataset.value}Tip` as StringKey);
     }
     modeSeg.sync();
+    if (getMode() !== lastMode) {
+      lastMode = getMode();
+      quickRun = false;
+    }
+    applyPace();
     msg.textContent = loaded === 'none' ? t('player.noTrace') : t('player.loading');
     prev.setAttribute('aria-label', t('player.prev'));
     prev.title = `${t('player.prev')} (${t('key.left')})`;
@@ -884,10 +1016,27 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     if (!pop.hidden && !sentenceWrap.contains(e.target as Node) && !pop.contains(e.target as Node)) setPop(false);
   };
   if (typeof document !== 'undefined') document.addEventListener('pointerdown', onDocDown);
-  play.addEventListener('click', () => { act(() => player?.toggle()); paintOp(); });
-  prev.addEventListener('click', () => { act(() => player?.step(-1)); syncPlay(); });
-  next.addEventListener('click', () => { act(() => player?.step(1)); syncPlay(); });
-  scrub.addEventListener('input', () => act(() => player?.scrub(Number(scrub.value))));
+  /** Play / Pause from the button or Space: a pause ends a quick run started from the lobby. */
+  const toggle = (): void => {
+    applyPace();
+    act(() => player?.toggle());
+    paintOp();
+  };
+  const stepBy = (d: number): void => {
+    quickRun = false;
+    applyPace();
+    act(() => player?.step(d));
+    syncPlay();
+  };
+  play.addEventListener('click', toggle);
+  prev.addEventListener('click', () => stepBy(-1));
+  next.addEventListener('click', () => stepBy(1));
+  // A scrub or a jump is the visitor's own navigation: the run is no longer the lobby's quick pass.
+  const leaveQuickRun = (): void => {
+    quickRun = false;
+    applyPace();
+  };
+  scrub.addEventListener('input', () => { leaveQuickRun(); act(() => player?.scrub(Number(scrub.value))); });
   speedBtn.addEventListener('click', cycleSpeed);
   camSel.addEventListener('change', () => {
     player?.setCameraMode(camSel.value as CameraMode);
@@ -897,9 +1046,9 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   });
   layerGo.addEventListener('click', () => {
     const l = Number(layerIn.value);
-    if (layerIn.value !== '' && Number.isInteger(l)) act(() => player?.jumpToLayer(l));
+    if (layerIn.value !== '' && Number.isInteger(l)) { leaveQuickRun(); act(() => player?.jumpToLayer(l)); }
   });
-  kindGo.addEventListener('click', () => act(() => player?.jumpToNext(kindSel.value as OpKind)));
+  kindGo.addEventListener('click', () => { leaveQuickRun(); act(() => player?.jumpToNext(kindSel.value as OpKind)); });
 
   // Keyboard extras (mouse-first; keys are for accessibility): Space play/pause, arrows step.
   const keyDoc = deps.keys === undefined ? (typeof document === 'undefined' ? null : document) : deps.keys;
@@ -911,17 +1060,16 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     if (!player || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       e.preventDefault();
-      act(() => player?.step(e.key === 'ArrowLeft' ? -1 : 1));
-      syncPlay();
+      stepBy(e.key === 'ArrowLeft' ? -1 : 1);
     }
   };
   for (const s of [promptSel, tokenSel, camSel, kindSel]) s.addEventListener('change', () => s.blur());
   for (const s of [promptSel, tokenSel, camSel, kindSel]) s.addEventListener('keydown', onSelectKey);
   const onKey = (e: KeyboardEvent): void => {
     if (!player || e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
-    if (e.key === ' ') { e.preventDefault(); act(() => player?.toggle()); paintOp(); }
-    else if (e.key === 'ArrowLeft') { e.preventDefault(); act(() => player?.step(-1)); syncPlay(); }
-    else if (e.key === 'ArrowRight') { e.preventDefault(); act(() => player?.step(1)); syncPlay(); }
+    if (e.key === ' ') { e.preventDefault(); toggle(); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); stepBy(-1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); stepBy(1); }
   };
   keyDoc?.addEventListener('keydown', onKey);
   const offPrefs = onPrefsChange(paint);
@@ -959,6 +1107,30 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
       levelHint = key;
       paintOp();
     },
+    watch() {
+      const first = [...traces.keys()][0];
+      if (!first) return;
+      if (promptSel.value !== first) {
+        promptSel.value = first;
+        fillTokens(first);
+        build(first, Number(tokenSel.value));
+        paintSentence();
+      }
+      quickRun = true;
+      applyPace();
+      act(() => { player?.scrub(0); player?.play(); });
+      paintOp();
+    },
+    pause() {
+      if (!player?.playing()) return;
+      player.pause();
+      paintOp();
+    },
+    hasTraces: () => traces.size > 0,
+    focusPlay() {
+      if (play.isConnected) play.focus({ preventScroll: true });
+    },
+    traceDate: () => [...traces.values()][0]?.provenance.date ?? null,
     dispose() {
       stripObserver?.disconnect();
       offPrefs();

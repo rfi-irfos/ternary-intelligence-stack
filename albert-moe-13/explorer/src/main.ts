@@ -22,7 +22,7 @@ import { LABEL_CSS } from './data/labeled';
 import { createAnimator } from './flow/animate';
 import { LAYER_CSS, createLayerMode, layerOfId } from './layer/views';
 import { createPlayerBar } from './ui/player';
-import { attachPicking, createHover, createRaycastPicker } from './ui/picking';
+import { attachPicking, createHover, createPickGuard, createRaycastPicker } from './ui/picking';
 import { createTopBar } from './ui/topbar';
 import { createLegend } from './ui/legend';
 import { createHighlighter } from './ui/highlight';
@@ -32,6 +32,10 @@ import { createSelection } from './ui/selection';
 import { onPrefsChange } from './ui/prefs';
 import { measureHud } from './ui/hudInsets';
 import { coachSeen, createCoachMarks } from './ui/coach';
+import { sound, unlockOnGesture } from './audio/sound';
+import { playIntro, shouldPlayIntro, skipIntro } from './intro/cinematic';
+import { type DriftState, createLobby, createLobbyFlow, driftTick, soundToggle } from './ui/lobby';
+import { closeTourMenu, openTourMenu } from './ui/tourMenu';
 
 /** Waits (at most `ms`) for the display face, so the canvas labels of the scene draw in it; runs beside the data loads. */
 async function fontsReady(ms = 1500): Promise<void> {
@@ -131,15 +135,73 @@ async function main(): Promise<void> {
   });
   document.body.appendChild(layerMode.element);
 
-  // Home (overview) closes every open level at once (Esc closes one), leaves layer mode, then flies
-  // to the overview: all on the user's click.
-  top.home.addEventListener('click', () => {
-    void (async () => {
+  // Sound: procedural, off by default; the first pointerdown or key unlocks audio (browser rule).
+  unlockOnGesture(sound);
+  // Cues while a run plays: a soft tick per router, a rising tone when the word enters a new layer.
+  let cueLayer: number | null = null;
+  bar.onOp((op) => {
+    if (!bar.player()?.playing()) { cueLayer = null; return; }
+    if (op.kind === 'router') sound.routerClick();
+    if (op.layer !== undefined && op.layer !== cueLayer) sound.tokenRise(op.layer / Math.max(arch.model.num_layers - 1, 1));
+    cueLayer = op.layer ?? null;
+  });
+
+  // The lobby (title screen) comes first; the scene behind it drifts slowly (the one scripted camera
+  // move: only while the lobby is up, never once the visitor is in the scene).
+  // The media query is read once and kept current by its change event (not re-queried every frame).
+  const motionQuery = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+  const drift: DriftState = { base: null, t: 0, visible: false, still: false, reduced: motionQuery?.matches ?? false };
+  motionQuery?.addEventListener?.('change', (e) => { drift.reduced = e.matches; });
+  const startDrift = (): void => {
+    // A cut behind the lobby (it covers the view), then the sway around the overview pose.
+    void rig.overview(0);
+    drift.base = rig.pose();
+    drift.t = 0;
+    rig.controls.enabled = false;
+  };
+  let coachStarted = false;
+  // Watch it think needs the recorded runs: once loading ended without any, the entry says so.
+  let traceLoaded = false;
+  const lobby = createLobby({
+    arch, sound, traceDate: () => bar.traceDate(), hasTrace: () => !traceLoaded || bar.hasTraces(),
+    onChoose: (e) => {
+      drift.base = null;
+      rig.controls.enabled = true;
+      guard.begin();
+      void flow.choose(e).finally(() => guard.end());
+    },
+  });
+  // The canvas picks nothing while an entry is happening (a double click on an entry must not open a part).
+  const guard = createPickGuard({ isFlying: () => rig.isFlying(), lobbyVisible: () => lobby.visible() });
+  document.body.appendChild(lobby.element);
+  void bar.ready.then(() => { traceLoaded = true; lobby.refresh(); });
+  const flow = createLobbyFlow({
+    lobby, bar, rig,
+    intro: async () => {
+      if (!shouldPlayIntro()) return false;
+      await playIntro(rig, tower, arch);
+      return true;
+    },
+    skipIntro,
+    openTours: () => { openTourMenu({ returnFocus: top.toursButton }); },
+    // Home closes every open level at once (Esc closes one), leaves layer mode and closes the panel.
+    closeAll: async () => {
+      closeTourMenu();
       await layerMode.exit();
       await view.reassembleAll({ restoreCamera: false });
-      await rig.overview();
-    })();
+      panel.close();
+    },
+    onEnter: () => {
+      sound.roomTone(true);
+      if (!coachStarted) { coachStarted = true; startCoach(); }
+    },
+    onLobby: () => {
+      sound.roomTone(false);
+      startDrift();
+    },
   });
+  // Home: back to the main menu, on the user's click.
+  top.home.addEventListener('click', () => { void flow.home(); });
 
   // Highlights: a legend role (hover previews, click pins) or a panel row under the pointer.
   const highlighter = createHighlighter(() => [tower.root, view.root]);
@@ -194,6 +256,8 @@ async function main(): Promise<void> {
   syncSide();
   // First frame of the session: the overview already fits between the HUD (startup, not an inset change).
   void rig.overview(0);
+  lobby.show();
+  startDrift();
   panel.element.addEventListener('pointerover', (e) => {
     const link = (e.target as HTMLElement).closest<HTMLElement>('[data-link]');
     if (link?.dataset.link) {
@@ -228,6 +292,7 @@ async function main(): Promise<void> {
   onPrefsChange(() => tip.refresh());
   const hover = createHover(scene);
   attachPicking(renderer.domElement, {
+    blocked: () => guard.blocked(),
     pickAt: (x, y) => rayAt(x, y)?.id ?? null,
     onPick: (id) => {
       note(id);
@@ -257,6 +322,8 @@ async function main(): Promise<void> {
   const applyQuality = (q: Quality): void => {
     view.refreshLook(() => look.applyQuality(q));
     reapplyPin();
+    // Low: the lobby shows a still frame under a plain veil (no drift, no backdrop blur).
+    lobby.setStill(q === 'low');
   };
   const override = loadOverride();
   applyQuality(override ?? 'high');
@@ -289,18 +356,21 @@ async function main(): Promise<void> {
       startProbe();
     }
   });
-  top.settings.append(menu.element);
+  top.settings.append(menu.element, soundToggle(sound).element);
 
-  // First visit only: three short hints (Play, the tours, click anything), then never again.
-  const coach = createCoachMarks([
-    // The whole dock: a bubble above it never covers the bar's own headline.
-    { key: 'coach.play', target: () => dock },
-    { key: 'coach.tours', target: () => top.toursButton },
-    { key: 'coach.click', target: () => null },
-  ], document, () => legend.setOpen(false));
-  if (coach.element) {
-    document.body.appendChild(coach.element);
-    void bar.ready.then(() => requestAnimationFrame(() => coach.refresh()));
+  // First visit only, once the visitor left the lobby: three short hints (Play, the tours, click
+  // anything), then never again.
+  function startCoach(): void {
+    const coach = createCoachMarks([
+      // The whole dock: a bubble above it never covers the bar's own headline.
+      { key: 'coach.play', target: () => dock },
+      { key: 'coach.tours', target: () => top.toursButton },
+      { key: 'coach.click', target: () => null },
+    ], document, () => legend.setOpen(false));
+    if (coach.element) {
+      document.body.appendChild(coach.element);
+      void bar.ready.then(() => requestAnimationFrame(() => coach.refresh()));
+    }
   }
 
   window.addEventListener('resize', () => {
@@ -309,6 +379,8 @@ async function main(): Promise<void> {
     look.setSize(window.innerWidth, window.innerHeight);
     refadeLabels();
     trayRight();
+    // The lobby covers the view: re-base the drift on the overview of the new window size.
+    if (lobby.visible()) startDrift();
   });
 
   const timer = new THREE.Timer();
@@ -316,6 +388,13 @@ async function main(): Promise<void> {
   renderer.setAnimationLoop((now: number) => {
     timer.update(now);
     const dt = timer.getDelta();
+    drift.visible = lobby.visible();
+    drift.still = lobby.still();
+    const p = driftTick(drift, dt);
+    if (p) {
+      camera.position.copy(p.position);
+      rig.controls.target.copy(p.target);
+    }
     rig.update(dt);
     view.update(dt);
     bar.tick(dt);

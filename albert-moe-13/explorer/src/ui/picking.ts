@@ -7,12 +7,46 @@ export const DRAG_PX = 4;
 export const isClick = (down: { x: number; y: number }, up: { x: number; y: number }): boolean =>
   Math.hypot(up.x - down.x, up.y - down.y) <= DRAG_PX;
 
+/**
+ * Keeps the canvas from picking while a lobby entry is still happening: the second click of a double
+ * click on an entry (or any click while the lobby shows, the entry's flight or intro runs, and for
+ * `holdMs` after) must not open a part behind it. `begin()` when an entry is chosen, `end()` when it
+ * has finished; a flight that an entry started also blocks until it lands (at most `flyMs`).
+ */
+export function createPickGuard(o: {
+  now?: () => number;
+  isFlying: () => boolean;
+  lobbyVisible: () => boolean;
+  holdMs?: number;
+  flyMs?: number;
+}): { begin(): void; end(): void; blocked(): boolean } {
+  const now = o.now ?? (() => performance.now());
+  const holdMs = o.holdMs ?? 400;
+  const flyMs = o.flyMs ?? 2500;
+  let busy = false;
+  let until = 0;
+  let flyUntil = 0;
+  return {
+    begin() {
+      busy = true;
+    },
+    end() {
+      busy = false;
+      until = now() + holdMs;
+      flyUntil = now() + flyMs;
+    },
+    blocked: () => o.lobbyVisible() || busy || now() < until || (now() < flyUntil && o.isFlying()),
+  };
+}
+
 export interface PickingHandlers {
   /** Id under the screen point, or null for empty space. */
   pickAt(x: number, y: number): ComponentId | null;
   onPick(id: ComponentId): void;
   onEmpty(): void;
   onHover?(id: ComponentId | null): void;
+  /** While true, a press and a release on the canvas are ignored (see createPickGuard). */
+  blocked?(): boolean;
 }
 
 /** A press longer than this is a hold, not a click. */
@@ -46,6 +80,10 @@ export function attachPicking(
   let detached = false;
   const pid = (e: MouseEvent): number | undefined => (e as PointerEvent).pointerId;
   const onDown = (e: MouseEvent): void => {
+    if (h.blocked?.()) {
+      down = null;
+      return;
+    }
     down = e.button === 0 && (e as PointerEvent).isPrimary !== false
       ? { x: e.clientX, y: e.clientY, id: pid(e), t: now() }
       : null;
@@ -53,6 +91,7 @@ export function attachPicking(
   const onUp = (e: MouseEvent): void => {
     const d = down;
     down = null;
+    if (h.blocked?.()) return;
     if (e.button !== 0 || !d || d.id !== pid(e) || now() - d.t > CLICK_MS) return;
     if (!isClick(d, { x: e.clientX, y: e.clientY })) return;
     const id = h.pickAt(e.clientX, e.clientY);

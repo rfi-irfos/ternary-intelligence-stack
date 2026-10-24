@@ -32,6 +32,14 @@ export const ICONS = {
   token: svg('<rect x="2.5" y="5.5" width="15" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 8.5h2.6M7.3 8.5v4M11 8.5v4M11 8.5h3M11 10.5h2.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>'),
   layers: svg('<path d="M10 3 18 7l-8 4-8-4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M2 10.5l8 4 8-4M2 14l8 4 8-4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>'),
   lane: svg('<path d="M2 7h16M2 13h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M13 4.5 16 7l-3 2.5M13 10.5l3 2.5-3 2.5" fill="none" stroke="currentColor" stroke-width="1.3"/>'),
+  /** House: back to the main menu (lobby). */
+  home: svg('<path d="M3 9.5 10 3.5l7 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 8.5V16.5h3.8v-4.2h2.4v4.2H15V8.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>'),
+  /** Orbit around a cube: explore freely. */
+  explore: svg('<path d="M10 6.2 13.3 8v3.8L10 13.7 6.7 11.8V8z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><ellipse cx="10" cy="10" rx="8" ry="3.6" fill="none" stroke="currentColor" stroke-width="1.2" transform="rotate(-18 10 10)"/>'),
+  /** Play in a ring: watch a run. */
+  watch: svg('<circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8.3 6.8v6.4l5-3.2z" fill="currentColor"/>'),
+  soundOn: svg('<path d="M3 7.5h3l4-3.5v12l-4-3.5H3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M13 7.2a4 4 0 0 1 0 5.6M15.2 5a7 7 0 0 1 0 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'),
+  soundOff: svg('<path d="M3 7.5h3l4-3.5v12l-4-3.5H3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M13 7.5l5 5M18 7.5l-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'),
   chevron: svg('<path d="M7 5l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'),
 } as const;
 

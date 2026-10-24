@@ -5,7 +5,7 @@ import { closeTourMenu, isTourMenuOpen, openTourMenu } from './tourMenu';
 
 export interface TopBar {
   element: HTMLElement;
-  /** Home: closes every level and shows the whole model (the app wires the click). */
+  /** Home: closes everything and returns to the main menu (lobby); the app wires the click. */
   home: HTMLButtonElement;
   /** Content of the settings popover (quality), behind the gear (both modes). */
   settings: HTMLElement;
@@ -68,7 +68,7 @@ export function createTopBar(title: HTMLElement | null): TopBar {
   home.type = 'button';
   home.className = 'hud-icon tray-item home-btn';
   home.dataset.control = 'home';
-  home.innerHTML = ICONS.overview;
+  home.innerHTML = ICONS.home;
   left.append(home);
 
   const tours = document.createElement('button');
@@ -124,8 +124,8 @@ export function createTopBar(title: HTMLElement | null): TopBar {
   el.append(left, right);
 
   const paint = (): void => {
-    home.title = t('nav.overviewTip');
-    home.setAttribute('aria-label', t('nav.overview'));
+    home.title = t('nav.homeTip');
+    home.setAttribute('aria-label', t('nav.home'));
     toursText.textContent = t('app.tours');
     tours.title = t('app.toursTip', { n: TOUR_IDS.length });
     lang.label.textContent = t('lang.label');

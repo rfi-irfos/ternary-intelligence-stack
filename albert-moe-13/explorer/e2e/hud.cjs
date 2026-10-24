@@ -27,6 +27,8 @@ async function open(browser, w, h, lang, mode, coach = 'done') {
   await page.goto(URL);
   await page.waitForFunction(() => !!window.__albert, null, { timeout: 30000 });
   await page.evaluate(() => window.__albert.bar.ready);
+  // The lobby comes first (Task 12): enter the scene through Explore (reduced motion: no intro).
+  await page.click('.lobby-entry[data-entry="explore"]');
   await sleep(2500);
   return { ctx, page, errors };
 }

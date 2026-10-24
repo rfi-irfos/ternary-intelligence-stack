@@ -71,10 +71,12 @@ describe('strings', () => {
     }
   });
 
-  it('the Overview tooltip says "close all" in Simple', () => {
-    expect(t('nav.overviewTip')).toMatch(/^Close all/);
+  it('the home button is the main menu and its tooltip says "close everything"', () => {
+    expect(t('nav.home')).toBe('Main menu');
+    expect(t('nav.homeTip')).toMatch(/^Close everything/);
     setLang('de');
-    expect(t('nav.overviewTip')).toMatch(/^Alles zuklappen/);
+    expect(t('nav.home')).toBe('Hauptmenü');
+    expect(t('nav.homeTip')).toMatch(/^Alles schließen/);
   });
 });
 
@@ -338,12 +340,15 @@ describe('player bar explains itself', () => {
     expect(head.hidden).toBe(false);
     expect(line.hidden).toBe(true);
     expect(head.title).toContain('Drück auf Start – dann wandert das Wort durch alle 46 Ebenen');
-    b.element.querySelector<HTMLButtonElement>('[data-action="play"]')!.click();
+    const playBtn = b.element.querySelector<HTMLButtonElement>('[data-action="play"]')!;
+    playBtn.click();
     expect(head.hidden).toBe(true);
     expect(line.hidden).toBe(false);
+    // Simple plays the quick pass: the caption names the group's main op (changes once per layer) ...
+    expect(line.querySelector('.step-text')!.textContent).toBe('Wort wird zu Zahlen');
+    playBtn.click(); // pause: ... and the per-op sentence is back.
     expect(line.textContent).toMatch(/^Schritt 1 von \d+ · „earth“ wird zu einer Liste von Zahlen$/);
     const p = b.player()!;
-    p.pause();
     p.jumpToNext('router');
     // The sentence itself (Simple adds the step's few values after it, in the same line).
     const router = line.querySelector('.step-text')!.textContent!;

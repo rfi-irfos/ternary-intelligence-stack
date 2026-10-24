@@ -2,6 +2,8 @@
 declare module 'node:fs' {
   export function readFileSync(path: URL | string): { buffer: ArrayBufferLike; byteOffset: number; byteLength: number };
   export function existsSync(path: URL | string): boolean;
+  export function readdirSync(path: URL | string): string[];
+  export function statSync(path: URL | string): { isDirectory(): boolean };
 }
 declare module 'node:child_process' {
   export function spawnSync(
