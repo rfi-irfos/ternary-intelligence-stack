@@ -30,6 +30,11 @@ export interface PanelDeps {
   beforeNavigate?: () => Promise<void>;
   /** "Step inside" on the card of anything inside a layer: the app opens that layer step by step. */
   onStepInside?: (id: ComponentId) => void;
+  /**
+   * The router's recorded choice for the word on screen in one layer (see PlayerBar.routing). Without it,
+   * or without rows, the "Active experts" list is left out: nothing is invented.
+   */
+  routing?: (layer: number) => { word: string; rows: Array<{ stream: Stream; experts: Array<{ expert: number; share: number }> }> };
 }
 
 export interface Panel {
@@ -375,6 +380,19 @@ export function createPanel(deps: PanelDeps): Panel {
     return `<div class="stat-tiles">${out.join('')}</div>`;
   }
 
+  /** "Active experts" of the Modell section: swatch, expert, recorded share, per stream; only with real routing data. */
+  function activeExperts(p: ParsedId, type: ComponentType): string {
+    if (!deps.routing || !('layer' in p) || !['slab', 'bank', 'router'].includes(type)) return '';
+    const r = deps.routing(p.layer);
+    const rows = r.rows.filter((x) => !('stream' in p && p.stream) || x.stream === p.stream);
+    if (rows.length === 0) return '';
+    const swatch = `<span class="legend-swatch" aria-hidden="true" style="--role: ${ROLE_VAR.expert}"></span>`;
+    const groups = rows.map((g) => `<li class="active-group"><span class="active-stream">${esc(t('active.stream', { s: g.stream }))}</span><ul>${g.experts.map((e) =>
+      `<li class="kv-row active-row" title="${esc(t('active.tip'))}">${swatch}<span class="stat-label">${esc(t('active.expert', { n: e.expert }))}</span>` +
+      `<span class="stat-value">${esc(pctStr(e.share, 1, getLang()))}</span></li>`).join('')}</ul></li>`).join('');
+    return `<section class="active-experts" data-section="active"><h3 class="sec-head"><span class="sec-label">${esc(t('sec.active', { w: r.word }))}</span></h3><ul class="active-list">${groups}</ul></section>`;
+  }
+
   function parts3(id: ComponentId, type: ComponentType, p: ParsedId): { model: string; inspect: string; analysis: string } {
     const c = COMPONENTS[type];
     const rc = contentFor(type, arch, getLang());
@@ -436,6 +454,7 @@ export function createPanel(deps: PanelDeps): Panel {
         <p class="panel-summary">${esc(t(`sum.${type}` as StringKey))}</p>
       </div>
       ${infoCard(p, type, rc, rows)}
+      ${activeExperts(p, type)}
       ${stepInside}
       ${depthButtons}
       <div class="panel-body" data-mode="${simple ? 'simple' : 'advanced'}">

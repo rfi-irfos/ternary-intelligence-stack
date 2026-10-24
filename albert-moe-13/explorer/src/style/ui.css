@@ -17,7 +17,7 @@ button, select, input { font: inherit; color: inherit; }
 .icon { display: block; flex: none; width: 20px; height: 20px; }
 
 /* ---- the glass surface ------------------------------------------------------------------ */
-.hud-frame, .os-sidebar, .layer-panel, .dock, .tour-menu, .legend-card, .settings-pop, .sentence-pop, .coach, .hover-tip, .timeline, .lobby-about {
+.os-sidebar, .layer-panel, .dock, .tour-menu, .legend-card, .sentence-pop, .coach, .hover-tip, .timeline, .lobby-about {
   box-sizing: border-box;
   border: 1px solid var(--c-card-line);
   border-radius: var(--r-panel);
@@ -27,7 +27,7 @@ button, select, input { font: inherit; color: inherit; }
   -webkit-backdrop-filter: blur(14px) saturate(1.15);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .hud-frame, .os-sidebar, .layer-panel, .dock, .tour-menu, .legend-card, .settings-pop, .sentence-pop, .coach, .hover-tip, .timeline, .top-bar, .lobby-about {
+  .os-sidebar, .layer-panel, .dock, .tour-menu, .legend-card, .sentence-pop, .coach, .hover-tip, .timeline, .top-bar, .lobby-about {
     --c-glass-panel: var(--c-card-solid);
   }
 }
@@ -120,8 +120,6 @@ button, select, input { font: inherit; color: inherit; }
 .top-prefs { position: relative; display: flex; align-items: center; gap: var(--space-2); }
 .top-prefs .hud-segment button { height: 24px; padding: 0 var(--space-3); }
 .top-prefs .hud-segment button::before { min-height: 32px; }
-.settings-pop { position: absolute; right: 0; top: calc(100% + 8px); z-index: 30; min-width: 220px; padding: var(--space-4); }
-.top-settings { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-3); }
 .sound-toggle { justify-content: flex-start; }
 .sound-icon .icon { width: 16px; height: 16px; }
 .sound-toggle[aria-pressed="true"] { border-color: var(--c-accent); }
@@ -147,10 +145,10 @@ button.legend-item { cursor: pointer; }
 /* ---- mini dock: caption line, back / play / next / speed, layer stepper ----------------- */
 .dock { position: fixed; z-index: 4; bottom: calc(var(--timeline-h) + 2 * var(--space-2)); left: 50%; transform: translateX(-50%);
   width: min(var(--dock-w), calc(100vw - 2 * var(--edge-pad))); padding: var(--dock-pad) var(--space-4);
-  transition: left var(--t-slow) var(--ease), width var(--t-slow) var(--ease); }
-/* With the side panel open the dock re-centres in the width left of it and never runs under it. */
-body.side-open .dock, body.layer-open .dock { left: calc((100vw - var(--side-w) - var(--edge-pad)) / 2);
-  width: min(var(--dock-w), calc(100vw - var(--side-w) - 3 * var(--edge-pad))); }
+  container-type: inline-size; transition: width var(--t-slow) var(--ease); }
+/* The dock stays centred in the viewport. With the side panel open its half width is capped so that it ends
+   one gap before the panel's left edge: 100vw - 2 x (panel width + panel margin + gap). */
+body.side-open .dock, body.layer-open .dock { width: min(var(--dock-w), calc(100vw - 2 * (var(--side-w) + 2 * var(--edge-pad)))); }
 
 .player-bar { display: flex; flex-direction: column; gap: var(--dock-gap); }
 .player-empty { color: var(--c-text); padding: var(--space-2) 0; }
@@ -172,7 +170,9 @@ body.side-open .dock, body.layer-open .dock { left: calc((100vw - var(--side-w) 
 .player-detail-box .player-row { display: inline; }
 .player-detail-box .player-row::before { content: " · "; }
 /* control row */
-.player-controls { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); height: var(--dock-row); min-width: 0; }
+.player-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3); min-height: var(--dock-row); min-width: 0; }
+/* a dock capped by the open side panel (about 340 px or less) wraps the stepper under the transport */
+@container (max-width: 380px) { .player-controls { justify-content: center; } }
 .hud-group { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .transport { gap: var(--space-2); flex: none; }
 /* the one big control: a round button with a cyan ring */
@@ -269,9 +269,14 @@ body.side-open .dock, body.layer-open .dock { left: calc((100vw - var(--side-w) 
 .sidebar-grip::after { content: ""; position: absolute; left: 5px; top: 50%; width: 3px; height: 36px; margin-top: -18px; border-radius: 2px; background: var(--c-hairline);
   transition: background-color var(--t-fast) var(--ease); }
 .sidebar-grip:hover::after, .sidebar-grip:focus-visible::after { background: var(--c-accent); }
-.sidebar-head { flex: none; display: flex; align-items: center; justify-content: space-between; padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+.sidebar-head { flex: none; display: flex; align-items: center; gap: var(--space-2); box-sizing: border-box; min-height: 48px; padding: var(--space-2) var(--space-1) var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--c-card-line); }
-.sidebar-title { margin: 0; font: 700 16px/1.2 var(--font-display); letter-spacing: -0.005em; }
+.sidebar-title { flex: 1 1 auto; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 14px/32px var(--font-display); letter-spacing: -0.005em; }
+.sidebar-head-tools { flex: none; display: flex; align-items: center; height: 32px; }
+.sidebar-head-tools .display-pane { flex-direction: row; }
+.sidebar-head-tools .hud-segment { box-sizing: border-box; height: 32px; }
+.sidebar-head-tools .hud-segment button { padding: 0 var(--space-2); font-size: 13px; }
+.sidebar-close { flex: none; }
 .sidebar-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 .side-sec { border-bottom: 1px solid var(--c-card-line); }
 .side-sec:last-child { border-bottom: 0; }
@@ -293,6 +298,14 @@ body.side-open .dock, body.layer-open .dock { left: calc((100vw - var(--side-w) 
 .sidebar-edge .icon { transform: rotate(180deg); width: 18px; height: 18px; }
 .sidebar-edge:hover { background: color-mix(in srgb, var(--c-accent) 16%, var(--c-surface)); color: var(--c-accent); }
 body.layer-open .os-sidebar, body.layer-open .sidebar-edge { display: none; }
+/* Modell: the router's chosen experts for the word on screen */
+.active-experts { margin: var(--space-3) 0; }
+.active-experts .sec-head { margin: 0 0 var(--space-2); font: 600 var(--fs-base)/1.3 var(--font-ui); }
+.active-list, .active-list ul { list-style: none; margin: 0; padding: 0; }
+.active-group + .active-group { margin-top: var(--space-2); }
+.active-stream { display: block; color: var(--c-text-muted); font: 500 var(--fs-small)/1.4 var(--font-ui); }
+.active-row { display: flex; align-items: center; gap: var(--space-2); }
+.active-row .stat-label { flex: 1 1 auto; }
 /* Modell: type pill, head and the info card of key / value rows */
 .panel-part { min-width: 0; }
 .panel-head { padding: 0 0 var(--space-2); }
@@ -504,7 +517,7 @@ body.cinema :is(.top-bar, .dock, .timeline, .os-sidebar, .sidebar-edge, .legend-
    and the side-panel button, in the accessible name); the open side panel becomes a full-width sheet over
    the scene and the dock under it waits until it is closed. */
 @media (max-width: 700px) {
-  .home-btn span, .legend-toggle span, .sidebar-btn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .home-btn span, .legend-toggle span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .top-bar { gap: var(--space-2); padding: 0 var(--space-2); }
   .top-left, .top-right, .top-prefs { gap: 0; }
   #app-name { font-size: 15px; }

@@ -37,6 +37,16 @@ export const PILL = {
   line: 0x4aa3f0,
 } as const;
 
+/**
+ * The scene backdrop (Simeon's mockup): a vertical gradient from deep navy at the top to near-black at the
+ * bottom, drawn as the scene background texture (src/scene/backdrop.ts). tokens.css mirrors it as
+ * --bg-top and --bg-bottom, and tests/tokens.test.ts keeps both equal.
+ */
+export const BACKDROP = {
+  top: 0x0a1226,
+  bottom: 0x050914,
+} as const;
+
 /** `#rrggbb` for CSS / SVG use. */
 export function cssHex(c: number): string {
   return `#${c.toString(16).padStart(6, '0')}`;

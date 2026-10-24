@@ -69,17 +69,39 @@ describe('OS sidebar (Task 11d addendum 1)', () => {
     expect(sb.isOpen()).toBe(false);
   });
 
-  it('the top bar button toggles it', () => {
+  it('the top bar has no Panel button; the gear opens the sidebar at Darstellung, the edge tab is reachable by keyboard', () => {
     const sb = make();
-    const top = createTopBar(null);
+    const onGear = vi.fn(() => sb.open(['display']));
+    const top = createTopBar(null, { onGear });
     document.body.append(top.element);
-    expect(top.sidebarButton).toBeDefined();
-    top.sidebarButton.addEventListener('click', () => sb.toggle());
-    top.sidebarButton.click();
+    expect(top.element.querySelector('.sidebar-btn')).toBeNull();
+    expect((top as unknown as Record<string, unknown>).sidebarButton).toBeUndefined();
+    sb.setSectionOpen('display', false);
+    top.gear.click();
+    expect(onGear).toHaveBeenCalledTimes(1);
     expect(sb.isOpen()).toBe(true);
-    top.sidebarButton.click();
-    expect(sb.isOpen()).toBe(false);
+    expect(sb.sectionOpen('display')).toBe(true);
     top.dispose();
+    // the edge tab is a real button (focusable, with a name) that opens the closed panel
+    sb.close();
+    expect(sb.edgeTab.tagName).toBe('BUTTON');
+    expect(sb.edgeTab.tabIndex).toBeGreaterThanOrEqual(0);
+    expect(sb.edgeTab.getAttribute('aria-label')?.length).toBeGreaterThan(0);
+    sb.edgeTab.focus();
+    expect(document.activeElement).toBe(sb.edgeTab);
+  });
+
+  it('the head row holds title, a slot for Einfach | Erweitert, and the close button, in that order', () => {
+    const sb = make();
+    sb.open();
+    const head = sb.element.querySelector('.sidebar-head')!;
+    expect([...head.children].map((x) => x.className)).toEqual(['sidebar-title', 'sidebar-head-tools', 'hud-icon hud-icon--small sidebar-close']);
+    expect(sb.headTools.parentElement).toBe(head);
+    // not inside any section: it stays visible when every section is folded
+    for (const id of SECTION_IDS) sb.setSectionOpen(id, false);
+    sb.headTools.append(document.createElement('button'));
+    expect(sb.headTools.closest('[hidden]')).toBeNull();
+    expect(sb.element.querySelector('.side-sec-body [class*="mode"]')).toBeNull();
   });
 
   it('remembers which sections are folded across a reload', () => {
@@ -109,7 +131,7 @@ describe('OS sidebar (Task 11d addendum 1)', () => {
     expect(sb2.sectionOpen('display')).toBe(true);
   });
 
-  it('clamps the width to 280 px .. 40 % of the viewport and keeps it', () => {
+  it('clamps the width to 280 px .. 40 % of the viewport and keeps it, but only after the visitor resized', () => {
     expect(clampSidebarWidth(100, 1280)).toBe(SIDEBAR_MIN);
     expect(clampSidebarWidth(9999, 1280)).toBe(512);
     expect(clampSidebarWidth(9999, 1920)).toBe(768);
@@ -117,6 +139,10 @@ describe('OS sidebar (Task 11d addendum 1)', () => {
     // A very narrow viewport: the minimum wins.
     expect(clampSidebarWidth(500, 500)).toBe(SIDEBAR_MIN);
     const sb = make();
+    // nothing is stored for the default width, even after opening and folding
+    sb.open();
+    sb.setSectionOpen('analysis', false);
+    expect(JSON.parse(localStorage.getItem(SIDEBAR_KEY)!).width).toBeNull();
     sb.setWidth(50);
     expect(sb.width()).toBe(280);
     sb.setWidth(2000);
@@ -128,6 +154,25 @@ describe('OS sidebar (Task 11d addendum 1)', () => {
     sb.dispose();
     made.pop();
     expect(make().width()).toBe(333);
+  });
+
+  it('until the visitor resizes, the default 22 % follows the viewport', () => {
+    const v = { innerWidth: 1280 };
+    const sb = make({ win: v });
+    expect(sb.width()).toBe(282);
+    v.innerWidth = 1920;
+    window.dispatchEvent(new Event('resize'));
+    expect(sb.width()).toBe(422);
+    expect(localStorage.getItem(SIDEBAR_KEY)).toBeNull();
+    // after a resize by the visitor the width is theirs
+    sb.setWidth(300);
+    v.innerWidth = 1280;
+    window.dispatchEvent(new Event('resize'));
+    expect(sb.width()).toBe(300);
+    // and a user width above the new 40 % limit is clamped without being forgotten
+    v.innerWidth = 600;
+    window.dispatchEvent(new Event('resize'));
+    expect(sb.width()).toBe(280);
   });
 
   it('starts at 22 % of the viewport', () => {

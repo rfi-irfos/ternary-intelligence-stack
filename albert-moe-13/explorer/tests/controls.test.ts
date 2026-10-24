@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import archJson from '../public/data/architecture.json';
-import { boxCorners, createControls, freeRect, overviewPoints, overviewPose } from '../src/camera/controls';
+import { boxCorners, createControls, refitOverview, freeRect, overviewPoints, overviewPose } from '../src/camera/controls';
 import { validateArchitecture } from '../src/data/architecture';
 import { createExplode } from '../src/scene/explode';
 import { buildTower } from '../src/scene/tower';
@@ -190,5 +190,50 @@ describe('HUD-aware framing (1366×768, dock 250 px, panel 396 px)', () => {
 
   it('freeRect falls back to the whole view when the HUD leaves no room', () => {
     expect(freeRect({ top: 0, right: 2000, bottom: 0, left: 0 }, W, H)).toEqual({ x0: -1, x1: 1, y0: -1, y1: 1 });
+  });
+});
+
+describe('overview refit when a panel opens or closes (Task 11d fix round 1)', () => {
+  it('atOverview is true after an overview flight and cleared by a flight elsewhere or by user input', async () => {
+    const { rig: r } = rig();
+    expect(r.atOverview()).toBe(false);
+    void r.overview(0);
+    expect(r.atOverview()).toBe(true);
+    void r.flyTo(new THREE.Vector3(30, 0, 0), 12, 0);
+    expect(r.atOverview()).toBe(false);
+    void r.overview(0);
+    r.controls.dispatchEvent({ type: 'start' });
+    expect(r.atOverview()).toBe(false);
+  });
+
+  it('refits the overview into the area left of the opened panel, only while the camera is still at the overview', async () => {
+    const { camera, rig: r } = rig();
+    let right = 0;
+    r.setInsetsProvider(() => ({ top: 40, right, bottom: 100, left: 0 }));
+    await r.overview(0);
+    const before = camera.position.clone();
+    const tgt = r.controls.target.clone();
+    right = 400; // the side panel opens over the right end of the model
+    // opening alone moves nothing
+    expect(camera.position.distanceTo(before)).toBe(0);
+    expect(refitOverview(r, 0)).toBe(true);
+    expect(camera.position.distanceTo(before)).toBeGreaterThan(0.5);
+    expect(r.controls.target.x).toBeGreaterThan(tgt.x); // the model shifts left of the panel: the view looks further right
+    // closing refits back
+    right = 0;
+    expect(refitOverview(r, 0)).toBe(true);
+    expect(camera.position.distanceTo(before)).toBeLessThan(1e-6);
+  });
+
+  it('a pose the visitor chose is not touched', async () => {
+    const { camera, rig: r } = rig();
+    await r.overview(0);
+    r.controls.dispatchEvent({ type: 'start' }); // user orbit
+    const at = camera.position.clone();
+    expect(refitOverview(r, 0)).toBe(false);
+    expect(camera.position.distanceTo(at)).toBe(0);
+    // a flight to a slab is not the overview either
+    await r.flyTo(new THREE.Vector3(30, 0, 0), 12, 0);
+    expect(refitOverview(r, 0)).toBe(false);
   });
 });

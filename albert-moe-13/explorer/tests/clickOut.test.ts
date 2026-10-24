@@ -354,6 +354,34 @@ describe('R10: canvas labels under a HUD band fade; computed at rest, not per fr
   // The wiring (rig settle and inset changes, never the frame loop) is checked in tests/hudLayout.test.ts.
 });
 
+describe('phone 390 px: the sheet never narrows the framing below a quarter of the viewport', () => {
+  it('a full-width sheet is capped, with and without the legend card', () => {
+    const box = (props: Record<string, number>): HTMLElement => {
+      const x = document.createElement('div');
+      for (const [k, v] of Object.entries(props)) Object.defineProperty(x, k, { value: v });
+      return x;
+    };
+    const win = { innerWidth: 390, innerHeight: 844 };
+    const base = { top: box({ offsetHeight: 36 }), dock: box({ offsetHeight: 0 }), timeline: box({ offsetHeight: 32, offsetTop: 844 - 38 }), gap: 8, win };
+    // the CSS sheet: left 12 px, auto width = 366 px
+    const sheet = box({ offsetWidth: 366, offsetLeft: 12 });
+    const open = measureHud({ ...base, side: () => sheet, legendCard: () => null });
+    expect(open.right).toBeCloseTo(390 * 0.75, 6);
+    expect(390 - open.left - open.right).toBeGreaterThanOrEqual(390 / 4 - 1e-9);
+    // a legend card at the left takes its share first; the sum still leaves a quarter
+    const card = document.createElement('div');
+    card.getBoundingClientRect = () => ({ right: 100 }) as DOMRect;
+    const both = measureHud({ ...base, side: () => sheet, legendCard: () => card });
+    expect(both.left).toBe(108);
+    expect(390 - both.left - both.right).toBeGreaterThanOrEqual(390 / 4 - 1e-9);
+    // desktop widths are not capped: a 422 px panel at 1920
+    const wide = measureHud({ ...base, win: { innerWidth: 1920, innerHeight: 1080 }, side: () => box({ offsetWidth: 422, offsetLeft: 1920 - 12 - 422 }), legendCard: () => null });
+    expect(wide.right).toBe(12 + 422 + 8);
+    // closed: nothing
+    expect(measureHud({ ...base, side: () => null, legendCard: () => null }).right).toBe(0);
+  });
+});
+
 describe('R1: the rig reads the insets at fly time', () => {
   /** The side panel whose layout box follows its state, as the CSS lays it out at 1280 x 720. */
   function hud() {

@@ -26,10 +26,18 @@ export function measureHud(e: HudElements): Insets {
   const card = e.legendCard();
   const legendRight = card && !card.hidden ? card.getBoundingClientRect().right : 0;
   const reach = (x: HTMLElement | undefined): number => (x && x.offsetHeight ? e.win.innerHeight - x.offsetTop + e.gap : 0);
+  const left = legendRight > 0 ? legendRight + e.gap : 0;
+  let right = side && side.offsetWidth ? e.win.innerWidth - side.offsetLeft + e.gap : 0;
+  // On a phone the side panel is a full-width sheet. The camera must never frame the model into less than a
+  // quarter of the viewport width: the right inset gives way (the sheet then simply covers the model's edge).
+  right = Math.min(right, Math.max(0, e.win.innerWidth * (1 - MIN_FREE_FRACTION) - left));
   return {
     top: e.top.offsetHeight,
     bottom: Math.max(reach(e.dock), reach(e.timeline)),
-    right: side && side.offsetWidth ? e.win.innerWidth - side.offsetLeft + e.gap : 0,
-    left: legendRight > 0 ? legendRight + e.gap : 0,
+    right,
+    left,
   };
 }
+
+/** The framing area keeps at least this share of the viewport width. */
+export const MIN_FREE_FRACTION = 0.25;

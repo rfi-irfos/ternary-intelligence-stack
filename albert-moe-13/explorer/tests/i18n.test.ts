@@ -17,6 +17,11 @@ import { createLobby } from '../src/ui/lobby';
 import { createSound } from '../src/audio/sound';
 import { introLine } from '../src/intro/cinematic';
 import { t } from '../src/ui/prefs';
+import { createTopBar } from '../src/ui/topbar';
+import { createSidebar } from '../src/ui/sidebar';
+import { createPlayerBar } from '../src/ui/player';
+import { createLegend } from '../src/ui/legend';
+import { createRunTimeline } from '../src/ui/runTimeline';
 
 const a = validateArchitecture(arch);
 const tower = buildTower(a);
@@ -25,7 +30,11 @@ const kjv = validateTrace(traces['../public/data/trace/kjv.json'], a);
 const loadWeights = async () => validateLayerWeights(fixture);
 
 /** English words that give away an untranslated German text. */
-const GIVEAWAYS = [' the ', ' and ', ' of ', 'which', 'each', 'stream '];
+const GIVEAWAYS = [
+  ' the ', ' and ', ' of ', 'which', 'each', 'stream ',
+  // loanwords that slipped into the German bars and the side panel
+  ' panel ', ' sidebar ', ' workbench ', ' session ', ' inspection ', ' analysis ', ' display ', ' quality ', ' speed ', ' tools ', ' settings ',
+];
 
 /**
  * Visible prose of an element, without code: formulas, tensor paths, source citations and code ids are
@@ -125,6 +134,58 @@ describe('German has no English left in it', () => {
     expect(panel.element.querySelector('tr[data-tensor="blocks.12.experts.7.c_fc.weight"] .t-params')?.textContent).toBe('262.144');
     // No English thousands separator ("262,144"); German decimals such as "0,003" are fine.
     expect(panel.element.textContent).not.toMatch(/\b[1-9]\d{0,2},\d{3}\b/);
+  });
+
+  it('top bar, side panel, legend, mini dock and timeline: German text and tooltips have no English', async () => {
+    setLang('de');
+    const top = createTopBar(null);
+    const sb = createSidebar();
+    const legend = createLegend({ onHighlight: () => undefined });
+    const bar = createPlayerBar({
+      arch: a, tower, rig: { flyTo: vi.fn(() => Promise.resolve()), overview: vi.fn(() => Promise.resolve()) },
+      animator: { show: vi.fn() }, load: (id) => Promise.resolve(validateTrace(traces[`../public/data/trace/${id}.json`], a)),
+    });
+    const tl = createRunTimeline(() => bar.timing());
+    document.body.append(top.element, sb.element, sb.edgeTab, legend.element, bar.element, bar.session, bar.display, tl.element);
+    await bar.ready;
+    legend.setOpen(true);
+    const words = (root: HTMLElement): string => {
+      const clone = root.cloneNode(true) as HTMLElement;
+      for (const o of clone.querySelectorAll('option')) o.remove(); // the example sentences are data
+      const parts = [prose(clone)];
+      for (const x of [clone, ...clone.querySelectorAll('[aria-label], [title]')]) parts.push(x.getAttribute('aria-label') ?? '', x.getAttribute('title') ?? '');
+      return ` ${parts.join(' ').replace(/\s+/g, ' ').toLowerCase()} `;
+    };
+    for (const root of [top.element, sb.element, sb.edgeTab, legend.element, bar.element, bar.session, bar.display, tl.element]) {
+      expect(giveaways(words(root)), root.className).toEqual([]);
+    }
+    expect(words(sb.edgeTab)).toContain('seitenleiste');
+    expect(words(top.element)).not.toContain(' panel ');
+    tl.dispose();
+    top.dispose();
+    sb.dispose();
+    legend.dispose();
+    bar.dispose();
+  });
+
+  it('the speed button shows 0,5× in German and 0.5× in English', async () => {
+    const bar = createPlayerBar({
+      arch: a, tower, rig: { flyTo: vi.fn(() => Promise.resolve()), overview: vi.fn(() => Promise.resolve()) },
+      animator: { show: vi.fn() }, load: (id) => Promise.resolve(validateTrace(traces[`../public/data/trace/${id}.json`], a)),
+    });
+    document.body.append(bar.element);
+    await bar.ready;
+    const pill = bar.element.querySelector<HTMLButtonElement>('.speed-pill')!;
+    setLang('de');
+    const seen: string[] = [];
+    for (let i = 0; i < 4; i++) { pill.click(); seen.push(pill.textContent ?? ''); }
+    expect(seen).toEqual(['2×', '4×', '0,5×', '1×']);
+    pill.click(); pill.click(); pill.click();
+    expect(pill.textContent).toBe('0,5×');
+    expect(pill.getAttribute('aria-label')).toContain('0,5×');
+    setLang('en');
+    expect(pill.textContent).toBe('0.5×');
+    bar.dispose();
   });
 
   it('the check itself catches English', () => {

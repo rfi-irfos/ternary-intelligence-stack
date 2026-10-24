@@ -88,7 +88,7 @@ export function createRunTimeline(timing: () => RunTiming | null): RunTimeline {
   };
 
   const paintText = (): void => {
-    el.title = t('timeline.tip', { key: t('rail.legend') });
+    el.title = t('timeline.tip', { key: t('timeline.gateKey') });
     track.setAttribute('aria-label', t('timeline.label'));
     lastPaint = '';
     builtFor = '';

@@ -593,7 +593,7 @@ describe('reduced HUD', () => {
     const pill = b.element.querySelector<HTMLButtonElement>('.speed-pill')!;
     expect(pill.tagName).toBe('BUTTON');
     expect(pill.textContent).toBe('1×');
-    expect(pill.title).toBe('Speed');
+    expect(pill.title).toBe('Speed: click to cycle 0.5×, 1×, 2×, 4×');
     expect(pill.getAttribute('aria-label')).toBe('Speed: 1×');
     expect(b.player()!.speed()).toBe(1);
     const seen: Array<[string | null, number]> = [];
@@ -601,7 +601,7 @@ describe('reduced HUD', () => {
     expect(seen).toEqual([['2×', 2], ['4×', 4], ['0.5×', 0.5], ['1×', 1]]);
     setLang('de');
     pill.click();
-    expect(pill.title).toBe('Tempo');
+    expect(pill.title).toBe('Tempo: Klick wechselt 0,5×, 1×, 2×, 4×');
     expect(pill.getAttribute('aria-label')).toBe('Tempo: 2×');
     // The choice survives a new sentence (the run is rebuilt with the same speed).
     b.session.querySelector<HTMLButtonElement>('.sentence-chip')!.click();

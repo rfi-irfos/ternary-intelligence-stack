@@ -83,6 +83,16 @@ export const boxCorners = (box: THREE.Box3): THREE.Vector3[] => {
   return out;
 };
 
+/**
+ * A panel opened or closed (the visitor's own action): if the camera still sits at the overview pose,
+ * refit the overview into the new free area (900 ms). A pose the visitor chose is never touched.
+ */
+export function refitOverview(rig: Pick<CameraRig, 'atOverview' | 'overview'>, ms = 900): boolean {
+  if (!rig.atOverview()) return false;
+  void rig.overview(ms);
+  return true;
+}
+
 export interface CameraPose {
   position: THREE.Vector3;
   target: THREE.Vector3;
@@ -122,6 +132,12 @@ export interface CameraRig {
    * level); the rig only flies to overview on Esc when this is unset or returns false.
    */
   escapeGuard: (() => boolean) | null;
+  /**
+   * True while the camera is at the overview pose of the last overview flight: no flight to another pose
+   * and no user orbit, pan or zoom since. The app uses it to refit the overview when a panel opens or
+   * closes (a user action) without ever touching a pose the visitor chose.
+   */
+  atOverview(): boolean;
   dispose(): void;
 }
 
@@ -206,7 +222,9 @@ export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement
     settle();
   };
 
+  let atOv = false;
   const start = (toTarget: THREE.Vector3, toPos: THREE.Vector3, ms: number): Promise<void> => {
+    atOv = false; // overview() sets it again right after it started its own flight
     if (flight) {
       const old = flight;
       flight = null;
@@ -298,13 +316,18 @@ export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement
     },
     overview(ms = 900) {
       pull();
+      let flown: Promise<void>;
       if (!hasInsets()) {
         const { target, distance } = overviewPose(camera.aspect, camera.fov, extent);
-        return start(target, target.clone().addScaledVector(OVERVIEW_DIR, distance), ms);
+        flown = start(target, target.clone().addScaledVector(OVERVIEW_DIR, distance), ms);
+      } else {
+        const p = fit(overviewPoints(extent), OVERVIEW_DIR, 1.08);
+        flown = start(p.target, p.position, ms);
       }
-      const p = fit(overviewPoints(extent), OVERVIEW_DIR, 1.08);
-      return start(p.target, p.position, ms);
+      atOv = true;
+      return flown;
     },
+    atOverview: () => atOv,
     update(dt) {
       const f = flight;
       if (f) {
@@ -327,6 +350,7 @@ export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement
     dispose() {
       dom.ownerDocument.removeEventListener('keydown', onKey);
       controls.removeEventListener('end', onDragEnd);
+      controls.removeEventListener('start', onUserStart);
       if (dragTimer) clearTimeout(dragTimer);
       settled.clear();
       controls.dispose();
@@ -340,6 +364,9 @@ export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement
     dragTimer = setTimeout(() => { dragTimer = null; settle(); }, 500);
   };
   controls.addEventListener('end', onDragEnd);
+  // Any orbit, pan or zoom by the visitor (pointer, wheel, touch) means the pose is theirs now.
+  const onUserStart = (): void => { atOv = false; };
+  controls.addEventListener('start', onUserStart);
 
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === 'Escape' && !rig.escapeGuard?.()) void rig.overview();

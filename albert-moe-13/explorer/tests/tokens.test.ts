@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { PALETTE, cssHex } from '../src/scene/palette';
-import { ACCENT, FONT, PILL, UI } from '../src/style/theme';
+import { ACCENT, BACKDROP, FONT, PILL, UI } from '../src/style/theme';
 import { HEADING_FONT } from '../src/content/brand';
 
 // Read from disk: vitest stubs CSS imports (even ?raw) to an empty string.
@@ -40,6 +40,11 @@ describe('design tokens', () => {
   it('the in-scene pill label colours (canvas textures) equal the --c-pill-* tokens', () => {
     expect(vars.get('--c-pill-fill')).toBe(cssHex(PILL.fill));
     expect(vars.get('--c-pill-line')).toBe(cssHex(PILL.line));
+  });
+
+  it('the backdrop gradient tokens equal src/style/theme.ts', () => {
+    expect(vars.get('--bg-top')).toBe(cssHex(BACKDROP.top));
+    expect(vars.get('--bg-bottom')).toBe(cssHex(BACKDROP.bottom));
   });
 
   it('the mockup card tokens and the sidebar / dock sizes exist', () => {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Headless HUD check of the built explorer (coverage, panel height, A6 table, F-GPU-3, click-out, R1).
+# Headless HUD check of the built explorer (coverage, dock vs sidebar, head row, stepper vs sidebar, click-out, R1).
 # Runs on the Colony (Playwright in ~/work/pw, Chrome with SwiftShader). It never edits this tree: it
 # copies the app to a temp dir, adds the dev-only window.__albert hook THERE, builds and previews it
 # on port 4181, runs e2e/hud.cjs and removes the copy.
@@ -19,7 +19,7 @@ tar -C "$here" --exclude=node_modules --exclude=dist -cf - . | tar -C "$work" -x
 ln -s "$here/node_modules" "$work/node_modules"
 cd "$work"
 grep -q '^  const timer = new THREE.Timer();' src/main.ts || { echo 'hook anchor missing in src/main.ts' >&2; exit 2; }
-sed -i "s|^  const timer = new THREE.Timer();|  (window as any).__albert = { bar, rig, view, panel, layerMode, legend, camera, tower, top, lobby, flow, look };\n  const timer = new THREE.Timer();|" src/main.ts
+sed -i "s|^  const timer = new THREE.Timer();|  (window as any).__albert = { bar, rig, view, panel, layerMode, legend, camera, tower, top, lobby, flow, look, sidebar };\n  const timer = new THREE.Timer();|" src/main.ts
 vite="$here/node_modules/.bin/vite"
 "$vite" build --logLevel error >/dev/null
 # vite itself (not npx), so the pid below is the server and the trap really stops it

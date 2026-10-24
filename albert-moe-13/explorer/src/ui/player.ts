@@ -457,11 +457,16 @@ export interface PlayerBar {
   element: HTMLElement;
   /** Content of the side panel's Sitzung section: sentence picker, word chips and, in Advanced, the expert tools. */
   session: HTMLElement;
-  /** Einfach | Erweitert, for the side panel's Darstellung section. */
+  /** Einfach | Erweitert, for the head row of the side panel (always visible). */
   display: HTMLElement;
   /** Timing of the current run, null before a trace is loaded. */
   timing(): RunTiming | null;
-  /** The layer the stepper shows (a selection from elsewhere moves it; the camera does not move). */
+  /**
+   * The experts the router chose in one layer for the word on screen, per stream, with the recorded
+   * softmax share of each (sums to 1 per stream). Empty before a trace loads; never recomputed.
+   */
+  routing(layer: number): { word: string; rows: Array<{ stream: 'A' | 'B'; experts: Array<{ expert: number; share: number }> }> };
+  /** The layer the stepper shows (a selection from elsewhere moves it and, when paused, the timeline playhead; the camera does not move). */
   setLayer(layer: number): void;
   /** Ready once the traces are loaded (or failed). */
   ready: Promise<void>;
@@ -765,7 +770,7 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   const paintSpeed = (): void => {
     const v = `${decText(speed, speed % 1 === 0 ? 0 : 1)}×`;
     speedBtn.textContent = v;
-    speedBtn.title = t('player.speed');
+    speedBtn.title = t('dock.speedCycle');
     speedBtn.setAttribute('aria-label', t('player.speedAria', { v }));
   };
   const cycleSpeed = (): void => {
@@ -1209,8 +1214,10 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     },
     seek(sec) {
       if (!player) return;
+      // Read the index on the axis the visitor sees (quick pass) BEFORE the pace switches to the full axis.
+      const k = player.indexAtTime(sec);
       leaveQuickRun();
-      act(() => player?.scrub(player.indexAtTime(sec)));
+      act(() => player?.scrub(k));
     },
     step: (d) => stepBy(d),
   };
@@ -1220,9 +1227,27 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     session,
     display,
     timing: () => (player ? timing : null),
+    routing(layer) {
+      const tr = traces.get(promptSel.value);
+      const word = decodeToken(tr?.provenance.tokens[Number(tokenSel.value)] ?? '').trim();
+      const rows: Array<{ stream: 'A' | 'B'; experts: Array<{ expert: number; share: number }> }> = [];
+      for (const op of player?.ops ?? []) {
+        if (op.kind !== 'router' || op.layer !== layer || !op.stream) continue;
+        const d = op.data.value as RouterData;
+        rows.push({ stream: op.stream, experts: d.top3.map((expert, k) => ({ expert, share: d.weights[k] as number })) });
+      }
+      return { word, rows };
+    },
     setLayer(l) {
       layerShown = Math.max(0, Math.min(arch.model.num_layers - 1, Math.trunc(l)));
       paintLayer();
+      // A selection from elsewhere (a click on a slab): the playhead follows to the first op of that layer,
+      // so stepper, sidebar and timeline name the same layer. A playing run keeps its own position, and
+      // no camera follow runs (this is not `act`).
+      const here = player?.ops[player.index()]?.layer;
+      if (player && !player.playing() && here !== layerShown) {
+        player.jumpToLayer(layerShown);
+      }
     },
     ready,
     tick: (dt) => {

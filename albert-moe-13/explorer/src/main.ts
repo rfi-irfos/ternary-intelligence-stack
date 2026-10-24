@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import './style/tokens.css';
 import './style/ui.css';
-import { createControls } from './camera/controls';
+import { createControls, refitOverview } from './camera/controls';
 import { loadArchitecture } from './data/architecture';
 import { buildTower } from './scene/tower';
 import { loadModules } from './scene/modules';
@@ -9,6 +9,8 @@ import { createWeightsLoader } from './data/weights';
 import { createExplode } from './scene/explode';
 import { isExplodable } from './scene/hierarchy';
 import { parseId, slabId } from './scene/ids';
+import { createBackdrop } from './scene/backdrop';
+import { createOverviewLabels } from './scene/overviewLabels';
 import { createPanel, PANEL_CSS } from './ui/panel';
 import { attachDepthKeys } from './ui/depth';
 import { emptyClick, pickAction } from './ui/pickAction';
@@ -58,9 +60,6 @@ async function main(): Promise<void> {
   const sidebar = createSidebar({ yieldEsc: () => escBusy() || isTourMenuOpen() });
   const top = createTopBar(heading, { onGear: () => sidebar.open(['display']) });
   document.body.append(top.element, sidebar.element, sidebar.edgeTab);
-  top.sidebarButton.addEventListener('click', () => sidebar.toggle());
-  const syncSidebarButton = (): void => top.setSidebarOpen(sidebar.isOpen());
-  sidebar.onChange(syncSidebarButton);
   // Fonts, architecture and modules load in parallel; the font wait only caps itself, it never delays the data.
   const [arch, modules] = await Promise.all([loadArchitecture(), loadModules(), fontsReady()]);
   const tower = buildTower(arch, modules);
@@ -74,7 +73,7 @@ async function main(): Promise<void> {
   document.body.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(PALETTE.background);
+  scene.background = createBackdrop();
   scene.add(tower.root);
   scene.add(new THREE.AmbientLight(0xffffff, 0.9));
   const key = new THREE.DirectionalLight(0xffffff, 2.2);
@@ -100,6 +99,8 @@ async function main(): Promise<void> {
   let view: ReturnType<typeof createExplode>;
   const panel = createPanel({
     arch, tower, rig, loadWeights,
+    // The router's recorded choice for the word on screen (real trace data, never computed here).
+    routing: (l) => bar.routing(l),
     // A link flies on its own, so the fold-all does not restore the camera first.
     beforeNavigate: () => view.reassembleAll({ restoreCamera: false }),
     // Contextual "Step inside" on the selection card replaces the old Enter layer button.
@@ -140,6 +141,11 @@ async function main(): Promise<void> {
   attachDepthKeys();
   const animator = createAnimator(tower);
   scene.add(animator.root);
+  // Overview pills (Eingabe, Ebene N, Ausgabe); they hide while a level is open, in layer mode and in the lobby.
+  const overviewLabels = createOverviewLabels({ tower });
+  scene.add(overviewLabels.group);
+  selection.onChange((l) => overviewLabels.setLayer(l));
+  onPrefsChange(() => overviewLabels.refresh());
   // The layer stepper of the dock looks at that layer, like a click on it: it selects it, flies there and
   // opens the side panel at Modell.
   const bar = createPlayerBar({
@@ -161,7 +167,7 @@ async function main(): Promise<void> {
   selection.onChange((l) => { if (l !== null) bar.setLayer(l); });
   // The tool: Sitzung (sentence and words), Darstellung (view mode, quality, sound) hold the bar's controls.
   sidebar.body('session').append(bar.session);
-  sidebar.body('display').append(bar.display);
+  sidebar.headTools.append(bar.display);
   const layerMode = createLayerMode({
     arch, view, rig, loadWeights,
     slabCenter: (l) => new THREE.Vector3(tower.slabX(l), 0, 0),
@@ -280,6 +286,14 @@ async function main(): Promise<void> {
   sideObserver.observe(layerMode.element, { attributes: true, attributeFilter: ['hidden'] });
   sideObserver.observe(legend.element, { attributes: true, attributeFilter: ['class'] });
   sidebar.onChange(syncSide);
+  // Opening or closing the side panel is the visitor's action: a camera still at the overview refits it into
+  // the new free area, so the output end does not hide behind the panel. A pose the visitor chose stays.
+  let sideWasOpen = sidebar.isOpen();
+  sidebar.onChange(() => {
+    if (sidebar.isOpen() === sideWasOpen) return;
+    sideWasOpen = sidebar.isOpen();
+    refitOverview(rig);
+  });
   if (typeof ResizeObserver === 'function') {
     const sizes = new ResizeObserver(refadeLabels);
     for (const x of [top.element, dock, timeline.element, legend.card, sidebar.element, layerMode.element]) sizes.observe(x);
@@ -410,6 +424,7 @@ async function main(): Promise<void> {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     look.setSize(window.innerWidth, window.innerHeight);
+    overviewLabels.resize(window.innerHeight);
     refadeLabels();
     // The lobby covers the view: re-base the drift on the overview of the new window size.
     if (lobby.visible()) startDrift();
@@ -429,6 +444,7 @@ async function main(): Promise<void> {
     }
     rig.update(dt);
     view.update(dt);
+    overviewLabels.setVisible(view.depth() === 0 && layerMode.element.hidden && !lobby.visible());
     bar.tick(dt);
     timeline.update();
     animator.update(dt);

@@ -45,6 +45,8 @@ export interface Sidebar {
   element: HTMLElement;
   /** The slim tab at the right edge that opens the card (visible while it is closed). */
   edgeTab: HTMLButtonElement;
+  /** Slot in the head row between the title and the close button (Einfach | Erweitert sits here). */
+  headTools: HTMLElement;
   /** Body of a section: the app mounts content here. */
   body(id: SectionId): HTMLElement;
   section(id: SectionId): HTMLElement;
@@ -73,13 +75,15 @@ export function createSidebar(deps: SidebarDeps = {}): Sidebar {
   const win = deps.win ?? window;
   const stored = readStored();
   const folded = new Set<SectionId>(stored.folded);
-  let w = clampSidebarWidth(stored.width ?? win.innerWidth * SIDEBAR_DEFAULT_FRACTION, win.innerWidth);
+  // The width is stored only after the visitor resized it; until then the default (22 %) follows the viewport.
+  let userWidth: number | null = stored.width;
+  let w = clampSidebarWidth(userWidth ?? win.innerWidth * SIDEBAR_DEFAULT_FRACTION, win.innerWidth);
   let isOpen = false;
   const listeners = new Set<() => void>();
   const emit = (): void => listeners.forEach((l) => l());
   const persist = (): void => {
     try {
-      localStorage.setItem(SIDEBAR_KEY, JSON.stringify({ width: w, folded: [...folded] }));
+      localStorage.setItem(SIDEBAR_KEY, JSON.stringify({ width: userWidth, folded: [...folded] }));
     } catch {
       /* storage unavailable: the choice stays in memory */
     }
@@ -102,7 +106,9 @@ export function createSidebar(deps: SidebarDeps = {}): Sidebar {
   close.type = 'button';
   close.className = 'hud-icon hud-icon--small sidebar-close';
   close.innerHTML = ICONS.close;
-  head.append(title, close);
+  const headTools = document.createElement('div');
+  headTools.className = 'sidebar-head-tools';
+  head.append(title, headTools, close);
   const scroller = document.createElement('div');
   scroller.className = 'sidebar-body';
   el.append(grip, head, scroller);
@@ -179,7 +185,7 @@ export function createSidebar(deps: SidebarDeps = {}): Sidebar {
   };
 
   const api: Sidebar = {
-    element: el, edgeTab,
+    element: el, edgeTab, headTools,
     body: (id) => sections.get(id)!.body,
     section: (id) => sections.get(id)!.root,
     isOpen: () => isOpen,
@@ -193,8 +199,9 @@ export function createSidebar(deps: SidebarDeps = {}): Sidebar {
     width: () => w,
     setWidth(v) {
       const n = clampSidebarWidth(v, win.innerWidth);
-      if (n === w) return;
+      if (n === w && userWidth !== null) return;
       w = n;
+      userWidth = n;
       applyWidth();
       persist();
       emit();
@@ -253,7 +260,7 @@ export function createSidebar(deps: SidebarDeps = {}): Sidebar {
   };
   document.addEventListener('keydown', onKey);
   const onResize = (): void => {
-    const n = clampSidebarWidth(w, win.innerWidth);
+    const n = clampSidebarWidth(userWidth ?? win.innerWidth * SIDEBAR_DEFAULT_FRACTION, win.innerWidth);
     if (n !== w) { w = n; applyWidth(); emit(); }
   };
   window.addEventListener('resize', onResize);

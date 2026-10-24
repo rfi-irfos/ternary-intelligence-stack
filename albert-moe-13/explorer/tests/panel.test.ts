@@ -11,7 +11,7 @@ import { pickAction } from '../src/ui/pickAction';
 import { isExplodable } from '../src/scene/hierarchy';
 import { SHORT_NAME_MAX, connectionsOf, createPanel, shortNames, tensorRows } from '../src/ui/panel';
 import { setDepth } from '../src/ui/depth';
-import { setMode, t } from '../src/ui/prefs';
+import { setLang, setMode, t } from '../src/ui/prefs';
 import { CAVEATS } from '../src/content/caveats';
 
 const a = validateArchitecture(arch);
@@ -368,4 +368,51 @@ describe('codex panel layout', () => {
     await panel.openPanel('embed');
     expect(panel.element.querySelector('[data-action="step-inside"]')).toBeNull();
   });
+
+describe('Modell: active experts with the recorded share (Task 11d fix round 1)', () => {
+  const routing = vi.fn((layer: number) => ({
+    word: 'earth',
+    rows: [
+      { stream: 'A' as const, experts: [{ expert: 3, share: 0.452 }, { expert: 7, share: 0.31 }, { expert: 1, share: 0.238 }] },
+      { stream: 'B' as const, experts: [{ expert: 2, share: 0.5 }, { expert: 4, share: 0.3 }, { expert: 9, share: 0.2 }] },
+    ].map((r) => ({ ...r, layer })),
+  }));
+  const withRouting = () => {
+    const panel = createPanel({ arch: a, tower, rig: { flyTo: vi.fn(() => Promise.resolve()) }, loadWeights, routing });
+    document.body.appendChild(panel.element);
+    return panel;
+  };
+
+  it('lists swatch, expert and share per stream for a layer, with the language\'s decimal comma', async () => {
+    const panel = withRouting();
+    await panel.openPanel('L12');
+    const box = panel.element.querySelector('.active-experts')!;
+    expect(routing).toHaveBeenLastCalledWith(12);
+    expect(box.querySelector('.sec-label')?.textContent).toBe('Active experts for "earth"');
+    const rows = [...box.querySelectorAll('.active-row')].map((r) => r.textContent);
+    expect(rows).toEqual(['Expert 345.2 %', 'Expert 731.0 %', 'Expert 123.8 %', 'Expert 250.0 %', 'Expert 430.0 %', 'Expert 920.0 %']);
+    expect(box.querySelectorAll('.legend-swatch')).toHaveLength(6);
+    setLang('de');
+    await panel.openPanel('L12');
+    expect([...panel.element.querySelectorAll('.active-row .stat-value')].map((r) => r.textContent)[0]).toBe('45,2 %');
+    expect(panel.element.querySelector('.active-experts .sec-label')?.textContent).toBe('Aktive Experten für „earth“');
+    setLang('en');
+  });
+
+  it('a router shows only its own stream; an expert, a matrix or a missing trace show nothing', async () => {
+    const panel = withRouting();
+    await panel.openPanel('L12.B.router');
+    expect([...panel.element.querySelectorAll('.active-stream')].map((x) => x.textContent)).toEqual(['Stream B']);
+    await panel.openPanel('L12.expert.7');
+    expect(panel.element.querySelector('.active-experts')).toBeNull();
+    const none = createPanel({ arch: a, tower, rig: { flyTo: vi.fn(() => Promise.resolve()) }, loadWeights, routing: () => ({ word: '', rows: [] }) });
+    document.body.appendChild(none.element);
+    await none.openPanel('L12');
+    expect(none.element.querySelector('.active-experts')).toBeNull();
+    const bare = make();
+    await bare.panel.openPanel('L12');
+    expect(bare.panel.element.querySelector('.active-experts')).toBeNull();
+  });
+});
+
 });

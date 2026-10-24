@@ -7,12 +7,7 @@ export interface TopBar {
   element: HTMLElement;
   /** Home: closes everything and returns to the main menu (lobby); the app wires the click. */
   home: HTMLButtonElement;
-  /** Content of the settings popover (quality), behind the gear (both modes). */
-  settings: HTMLElement;
   toursButton: HTMLButtonElement;
-  /** Opens or closes the side panel (the app wires the click; aria-expanded follows setSidebarOpen). */
-  sidebarButton: HTMLButtonElement;
-  setSidebarOpen(open: boolean): void;
   gear: HTMLButtonElement;
   dispose(): void;
 }
@@ -97,51 +92,19 @@ export function createTopBar(title: HTMLElement | null, opts: { onGear?: () => v
   gear.type = 'button';
   gear.className = 'hud-icon tray-item settings-btn';
   gear.innerHTML = ICONS.gear;
-  gear.setAttribute('aria-haspopup', 'dialog');
-  gear.setAttribute('aria-expanded', 'false');
-  const pop = document.createElement('div');
-  pop.className = 'settings-pop';
-  pop.setAttribute('role', 'dialog');
-  pop.tabIndex = -1;
-  pop.hidden = true;
-  const settings = document.createElement('div');
-  settings.className = 'top-settings';
-  pop.append(settings);
-  const setPop = (open: boolean): void => {
-    pop.hidden = !open;
-    gear.setAttribute('aria-expanded', String(open));
-    if (open) (pop.querySelector<HTMLElement>('select, button') ?? pop).focus();
-  };
-  gear.addEventListener('click', () => (opts.onGear ? opts.onGear() : setPop(pop.hidden)));
-  pop.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { e.stopPropagation(); setPop(false); gear.focus(); }
-  });
-  const onDocDown = (e: PointerEvent): void => {
-    if (!pop.hidden && !pop.contains(e.target as Node) && !gear.contains(e.target as Node)) setPop(false);
-  };
-  document.addEventListener('pointerdown', onDocDown);
+  gear.addEventListener('click', () => opts.onGear?.());
   const prefs = document.createElement('div');
   prefs.className = 'top-prefs';
   prefs.dataset.control = 'prefs';
-  const sidebar = document.createElement('button');
-  sidebar.type = 'button';
-  sidebar.className = 'hud-btn tray-item sidebar-btn';
-  sidebar.dataset.control = 'sidebar';
-  sidebar.setAttribute('aria-expanded', 'false');
-  const sidebarText = document.createElement('span');
-  sidebar.innerHTML = ICONS.sidebar;
-  sidebar.append(sidebarText);
-  prefs.append(lang.wrap, gear, pop);
+  prefs.append(lang.wrap, gear);
   const right = document.createElement('div');
   right.className = 'top-right';
-  right.append(tours, prefs, sidebar);
+  right.append(tours, prefs);
   el.append(left, right);
 
   const paint = (): void => {
     home.title = t('nav.homeTip');
     homeText.textContent = t('nav.homeText');
-    sidebarText.textContent = t('side.toggle');
-    sidebar.title = t('side.toggleTip');
     toursText.textContent = t('app.tours');
     tours.title = t('app.toursTip', { n: TOUR_IDS.length });
     lang.label.textContent = t('lang.label');
@@ -153,14 +116,12 @@ export function createTopBar(title: HTMLElement | null, opts: { onGear?: () => v
     }
     gear.setAttribute('aria-label', t('settings.label'));
     gear.title = t('settings.tip');
-    pop.setAttribute('aria-label', t('settings.label'));
     lang.sync();
   };
   paint();
   const off = onPrefsChange(paint);
   return {
-    element: el, home, settings, toursButton: tours, sidebarButton: sidebar, gear,
-    setSidebarOpen: (o) => sidebar.setAttribute('aria-expanded', String(o)),
-    dispose: () => { off(); document.removeEventListener('pointerdown', onDocDown); el.remove(); },
+    element: el, home, toursButton: tours, gear,
+    dispose: () => { off(); el.remove(); },
   };
 }

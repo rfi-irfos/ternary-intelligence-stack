@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { backdropMid } from './backdrop';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
@@ -201,7 +202,7 @@ export function createLook(deps: LookDeps): Look {
   const { renderer, scene, camera, root } = deps;
   const mq = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
   const reduced = deps.reducedMotion ?? ((): boolean => mq?.matches ?? false);
-  const fog = new THREE.FogExp2(PALETTE.background, HAZE_DENSITY);
+  const fog = new THREE.FogExp2(backdropMid(), HAZE_DENSITY);
   const materials = new Map<string, THREE.Material>();
   const size = renderer.getSize(new THREE.Vector2());
   // The tower is built with the low materials; they become the cached low set.

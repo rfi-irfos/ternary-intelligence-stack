@@ -587,4 +587,67 @@ describe('mini dock', () => {
     expect(stepLayer(10, -100, 46)).toBe(0);
     expect(stepLayer(3, 1, 0)).toBe(0);
   });
+
+describe('fix round 1: seek and selection', () => {
+  const makeBar = async () => {
+    const bar = createPlayerBar({
+      arch: a, tower, rig: { flyTo: vi.fn(() => Promise.resolve()), overview: vi.fn(() => Promise.resolve()) },
+      animator: { show: vi.fn() }, load: (id) => Promise.resolve(trace(id)),
+    });
+    document.body.append(bar.element);
+    await bar.ready;
+    return bar;
+  };
+  it('seek during a quick run in Advanced lands on the op that was on screen at that time of the quick axis', async () => {
+    setMode('advanced');
+    const bar = await makeBar();
+    bar.watch();
+    const p = bar.player()!;
+    expect(p.pace()).toBe('quick');
+    const wanted = p.indexAtTime(37.5);
+    const full = (() => { p.setPace('full'); const k = p.indexAtTime(37.5); p.setPace('quick'); return k; })();
+    expect(wanted).not.toBe(full);
+    bar.timing()!.seek(37.5);
+    expect(p.pace()).toBe('full');
+    expect(p.index()).toBe(wanted);
+  });
+
+  it('a layer selected elsewhere moves the stepper and the playhead to the same layer (Simple counts from 1)', async () => {
+    const bar = await makeBar();
+    const p = bar.player()!;
+    p.scrub(0);
+    bar.setLayer(1); // code index 1 = "layer 2" in Simple, like the sidebar says
+    const count = bar.element.querySelector('.layer-count')!;
+    expect(count.textContent).toBe('2 / 46');
+    expect(p.ops[p.index()]!.layer).toBe(1);
+    expect(bar.timing()!.elapsed()).toBeGreaterThan(0);
+    // A repaint of the same op (hint, language) keeps both, the old feedback loop is gone.
+    bar.setHint('hint.levelOpen');
+    expect(count.textContent).toBe('2 / 46');
+    // A playing run keeps its own position.
+    p.play();
+    const at = p.index();
+    bar.setLayer(10);
+    expect(p.index()).toBe(at);
+  });
+});
+
+  it('routing(layer) returns the recorded top-3 and softmax shares per stream (sum 1), the word on screen', async () => {
+    const bar = createPlayerBar({
+      arch: a, tower, rig: { flyTo: vi.fn(() => Promise.resolve()), overview: vi.fn(() => Promise.resolve()) },
+      animator: { show: vi.fn() }, load: (id) => Promise.resolve(trace(id)),
+    });
+    document.body.append(bar.element);
+    await bar.ready;
+    const r = bar.routing(12);
+    expect(r.word).toBe('earth');
+    expect(r.rows.length).toBeGreaterThan(0);
+    for (const row of r.rows) {
+      expect(row.experts).toHaveLength(3);
+      expect(row.experts.reduce((s, e) => s + e.share, 0)).toBeCloseTo(1, 3);
+    }
+    const first = bar.player()!.ops.find((o) => o.kind === 'router' && o.layer === 12 && o.stream === r.rows[0]!.stream)!;
+    expect(r.rows[0]!.experts.map((e) => e.expert)).toEqual((first.data.value as { top3: number[] }).top3);
+  });
+
 });
