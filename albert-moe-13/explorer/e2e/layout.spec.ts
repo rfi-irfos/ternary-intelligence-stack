@@ -4,7 +4,7 @@ import { type Box, box, enter, overlaps, pickPoint, settle, start } from './help
 /** Every HUD part that can be on screen at once, measured by getBoundingClientRect (never read from the CSS). */
 const PARTS = {
   top: '.top-bar', side: '.os-sidebar', edge: '.sidebar-edge', dock: '.dock', timeline: '.timeline',
-  tour: '.tour-card', legend: '.legend-card', menu: '.settings-menu',
+  tour: '.tour-card', legend: '.legend-card', menu: '.settings-menu', debug: '.debug-overlay',
 } as const;
 
 async function hudBoxes(page: Page): Promise<Record<string, Box | null>> {
@@ -76,6 +76,59 @@ for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
     });
   });
 }
+
+/** The `?debug=1` overlay is a HUD part (PARTS.debug): it must keep clear of every other part, in every state. */
+async function debugStates(page: Page, label: string, phone: boolean): Promise<void> {
+  await enter(page, { query: '?debug=1' });
+  await expect(page.locator('.debug-overlay')).toBeVisible();
+  await expectClean(page, `${label} debug closed`);
+  await page.click('.settings-btn');
+  await expectClean(page, `${label} debug, settings menu`);
+  await page.click('.settings-btn');
+  if (phone) await page.tap('.tours-btn'); else await page.click('.tours-btn');
+  await page.click('.tour-item[data-tour="meet"]');
+  await expect(page.locator('.tour-card')).toBeVisible();
+  await settle(page);
+  await expectClean(page, `${label} debug, tour card`);
+  if (!phone) {
+    await page.evaluate(() => window.__albert.sidebar.open());
+    await settle(page);
+    await expectClean(page, `${label} debug, tour card and Workbench`);
+  }
+}
+
+for (const [w, h] of [[1280, 720], [1920, 1080]] as const) {
+  test(`debug overlay (?debug=1) stays clear of the HUD at ${w} × ${h}`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    await debugStates(page, `${w}`, false);
+  });
+}
+
+test.describe('debug overlay on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  test('stays clear of the HUD at 390 × 844', async ({ page }) => {
+    await debugStates(page, 'phone', true);
+  });
+});
+
+test.describe('debug overlay content', () => {
+  test('without the flag there is no overlay; with it fps, draw calls, triangles, preset and canvas are shown', async ({ page }) => {
+    await enter(page);
+    expect(await page.locator('.debug-overlay').count()).toBe(0);
+    await page.goto('about:blank');
+    await enter(page, { query: '?debug=1', quality: 'medium' });
+    const o = page.locator('.debug-overlay');
+    await expect(o).toBeVisible();
+    await page.waitForFunction(() => Number((document.querySelector('.debug-overlay') as HTMLElement).dataset.calls) > 0, null, { timeout: 30_000 });
+    const text = (await o.textContent()) ?? '';
+    for (const part of ['FPS', 'Draw calls', 'Triangles', 'Quality', 'medium', 'Canvas', 'Pixel ratio']) expect(text).toContain(part);
+    expect(Number(await o.getAttribute('data-triangles'))).toBeGreaterThan(0);
+    // ?debug=0 and a bare ?debug do not count
+    await page.goto('about:blank');
+    await enter(page, { query: '?debug=0' });
+    expect(await page.locator('.debug-overlay').count()).toBe(0);
+  });
+});
 
 test.describe('sidebar head row', () => {
   for (const width of [280, 100000]) {

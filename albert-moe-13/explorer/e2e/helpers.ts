@@ -15,11 +15,13 @@ export interface StartOptions {
   coach?: 'done' | null;
   /** The intro film is marked as seen (it would play with motion allowed). */
   introSeen?: boolean;
+  /** Query string for the first page load, for example '?debug=1'. */
+  query?: string;
 }
 
 /** Opens the app with a fixed language, mode and quality preset; waits for the scene and the recorded runs. */
 export async function start(page: Page, o: StartOptions = {}): Promise<void> {
-  const { lang = 'en', mode = 'advanced', quality = 'low', coach = 'done', introSeen = true } = o;
+  const { lang = 'en', mode = 'advanced', quality = 'low', coach = 'done', introSeen = true, query = '' } = o;
   await page.addInitScript(([l, m, q, c, i]) => {
     localStorage.setItem('albert.lang', l as string);
     localStorage.setItem('albert.mode', m as string);
@@ -27,7 +29,7 @@ export async function start(page: Page, o: StartOptions = {}): Promise<void> {
     if (i) localStorage.setItem('albert.introSeen', '1');
     if (q) localStorage.setItem('albert-explorer.quality', q as string);
   }, [lang, mode, quality, coach, introSeen] as const);
-  await page.goto('/');
+  await page.goto(`/${query}`);
   await page.waitForFunction(() => !!window.__albert, null, { timeout: 60_000 });
   await page.evaluate(() => window.__albert.bar.ready);
 }

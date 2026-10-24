@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "caveats": "node tools/render-caveats.ts",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "budgets": "node tools/check_budgets.mjs"
   },
   "dependencies": {
     "three": "0.186.1"

@@ -45,6 +45,7 @@ import { closeTourMenu, isTourMenuOpen, openTourMenu, setTourPick } from './ui/t
 import { createTourRunner } from './tours/engine';
 import { createProgressMap } from './ui/progressMap';
 import { t, tourProgress } from './ui/prefs';
+import { debugRequested } from './ui/debugFlag';
 import { fallbackUrl, hasWebGL2, watchContext } from './ui/glSupport';
 import { attachShortcutsKey, createShortcutsEntry } from './ui/shortcuts';
 
@@ -515,6 +516,13 @@ async function main(): Promise<void> {
       quality: () => activeQuality,
     };
   }
+  // `?debug=1`: fps, draw calls and triangles overlay. The module is only fetched when the flag is set.
+  let debugTick: ((now: number) => void) | null = null;
+  if (debugRequested(window.location.search)) {
+    void import('./ui/debugOverlay').then((m) => {
+      debugTick = m.createDebugOverlay(renderer, () => activeQuality).tick;
+    });
+  }
   let booted = false;
   const frame = (now: number): void => {
     timer.update(now);
@@ -542,6 +550,7 @@ async function main(): Promise<void> {
       menu.setAuto(picked);
       applyQuality(resolveQuality(picked));
     }
+    debugTick?.(now);
     if (!booted) {
       // The first frame is on the canvas: the loading text has done its job.
       booted = true;

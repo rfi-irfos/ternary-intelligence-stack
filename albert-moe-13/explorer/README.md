@@ -69,7 +69,7 @@ regeneration) are done on the team's Colony server; a laptop is fine for the dev
     npm run build      # tsc --noEmit, then vite build into dist/
     npm run preview    # serve the production build locally
 
-Other scripts: `npm test` (vitest), `npm run e2e` (Playwright), `npm run caveats` (regenerate `CAVEATS.md`).
+Other scripts: `npm test` (vitest), `npm run budgets` (asset budgets, after a build), `npm run e2e` (Playwright), `npm run caveats` (regenerate `CAVEATS.md`).
 
 Without WebGL 2 the app redirects to `fallback.html`, which the build writes from `public/data/architecture.json` and
 `src/content/caveats.ts` (the source of `CAVEATS.md`): plain tables in DE and EN.
@@ -84,6 +84,66 @@ Without WebGL 2 the app redirects to `fallback.html`, which the build writes fro
   the `window.__albert` test hook; the normal build has none). Colony only: `npx playwright install chromium`
   once, WebGL 2 comes from SwiftShader. It covers smoke, layout rects at 390 / 1280 / 1920 px, the sidebar
   at 280 px and at its widest, axe-core on every surface, reduced motion, context loss and the fallback page.
+
+## Performance
+
+Budgets are checked by `npm run budgets` after `npm run build` (`tools/check_budgets.mjs`, pure size logic
+tested in `tests/budgets.test.ts`). It prints the measured numbers on every run and exits 1 on a failure:
+
+- initial load (JS and CSS that `index.html` pulls in, plus `architecture.json`, gzip level 9): at most 5 MB
+- whole `dist/` (raw): at most 40 MB
+- any `.glb` (raw): at most 6 MB
+
+Measured on the Colony (build of 2026-10-24, output of the script):
+
+    initial files: assets/index-CD1M-htu.js, assets/index-Cm8I_CIW.css, data/architecture.json
+    PASS  initial JS+CSS+architecture.json (gzip): 281.0 KB (limit 5.00 MB)
+    PASS  dist/ total: 9.14 MB (limit 40.00 MB)
+    PASS  glb assets/embed.glb: 3.6 KB (limit 6.00 MB)
+    PASS  glb assets/lm_head.glb: 3.6 KB (limit 6.00 MB)
+    PASS  glb assets/slab.glb: 52.5 KB (limit 6.00 MB)
+    PASS  glb assets/slab_fusion.glb: 68.6 KB (limit 6.00 MB)
+    budgets: PASS
+
+All budgets hold with a wide margin, so nothing was split out for them. The traces, weights and
+glb files are fetched when needed and are not part of the initial load. Most of the 9 MB is the
+three recorded runs and the weight views in `dist/data`.
+
+### Reading `?debug=1`
+
+Add `?debug=1` to the URL (for example `http://127.0.0.1:4173/?debug=1`). A small box appears at the
+bottom left, above the timeline (under the top bar on screens up to 720 px wide, where it steps aside while the settings menu is open).
+Labels are English in both languages; it is a technical tool. Without `?debug=1` the code is not loaded:
+no DOM, no listener, no per-frame work.
+
+| Row | Meaning |
+|---|---|
+| FPS | frames per second, average over the last second |
+| Draw calls | GPU draw calls of the whole frame (all passes: bloom source, final), from `renderer.info` |
+| Triangles | triangles drawn in the whole frame, from `renderer.info` |
+| Quality | the active preset (High, Medium or Low) |
+| Canvas | drawing buffer size in pixels |
+| Pixel ratio | the ratio the renderer uses, and the ratio the device reports |
+
+The overlay refreshes four times a second. To measure a preset, choose it in the settings gear
+(Advanced mode) first; the choice is stored and `Auto` runs the probe again.
+
+### Quality probe
+
+Without a saved choice, a desktop starts on High and measures the render work time of frames
+(`src/scene/look.ts`, `createProbe`, `chooseQuality`): 8 warm-up frames are skipped, then 30 frames are
+timed (CPU plus a one-pixel GPU read-back, not the vsync interval). Median up to 12 ms gives High, up to 22 ms
+gives Medium, above that Low. It stops early when the median of the first 5 frames is above 44 ms. No usable
+sample counts as a weak device and gives Low. A phone (touch and short side up to 600 px) starts on Low without a probe.
+A saved choice always wins. The thresholds are unchanged: they have no data from real hardware yet.
+The Colony runs SwiftShader (software WebGL), whose frame times say nothing about a laptop GPU, so they are not used to tune anything.
+The probe prints its median and pick to the console at debug level (`[albert] quality probe: ...`).
+
+### Reference hardware
+
+Reference-hardware fps (Medium >= 50 fps, draw calls < 200): **not measured yet, Simeon measures on the ZBook.**
+Open the preview with `?debug=1`, set Medium, and write the FPS and Draw calls rows here for the
+overview, an opened layer and a running token pass.
 
 ## Project layout
 
