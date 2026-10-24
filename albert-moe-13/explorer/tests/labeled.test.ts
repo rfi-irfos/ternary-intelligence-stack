@@ -4,6 +4,7 @@ import indexHtml from '../index.html?raw';
 import arch from '../public/data/architecture.json';
 import fixture from './fixtures/L12.fixture.json';
 import { APP_NAME } from '../src/content/brand';
+import { pageTitle } from '../src/site/seo';
 import {
   type TraceProvenance, fmt, fmtText, illustrative, measured, richHtml, structure,
 } from '../src/data/labeled';
@@ -133,10 +134,11 @@ describe('panel labelling', () => {
 });
 
 describe('app name', () => {
-  it('index.html title and heading equal APP_NAME', () => {
+  it('index.html heading equals APP_NAME and the page title starts with it (title filled at build, tests/seo.test.ts)', () => {
     const doc = new DOMParser().parseFromString(indexHtml, 'text/html');
     expect(APP_NAME).toBe('Xperience albert.');
-    expect(doc.title).toBe(APP_NAME);
+    expect(indexHtml).toContain('<title>@@TITLE@@</title>');
+    expect(pageTitle().startsWith(APP_NAME)).toBe(true);
     expect(doc.getElementById('app-name')?.textContent).toBe(APP_NAME);
     expect(indexHtml).toMatch(/Space Grotesk/);
     expect(indexHtml).not.toMatch(/italic/);

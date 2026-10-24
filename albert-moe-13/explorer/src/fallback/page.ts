@@ -1,6 +1,7 @@
 import type { Architecture } from '../data/architecture';
 import { APP_NAME } from '../content/brand';
 import { CAVEATS, CAVEAT_IDS } from '../content/caveats';
+import { DEFAULT_SITE_URL, fallbackMeta } from '../site/seo';
 import { type Lang, LANGS, type StringKey, tr } from '../ui/strings';
 
 /**
@@ -143,13 +144,14 @@ const SCRIPT = `
 `;
 
 /** The whole fallback page as one HTML document. `base` is the address of the app (the retry link). */
-export function renderFallbackPage(a: Architecture, base = './'): string {
+export function renderFallbackPage(a: Architecture, base = './', site = DEFAULT_SITE_URL): string {
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>${esc(APP_NAME)}</title>
+<title>${esc(APP_NAME)} – ${esc(tr('fallback.title', 'en', 'advanced'))}</title>
+${fallbackMeta(a, site)}
 <link rel="icon" href="favicon.svg" type="image/svg+xml" />
 <style>${STYLE}</style>
 </head>

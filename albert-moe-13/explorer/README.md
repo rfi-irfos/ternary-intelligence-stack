@@ -88,6 +88,22 @@ Without WebGL 2 the app redirects to `fallback.html`, which the build writes fro
   once, WebGL 2 comes from SwiftShader. It covers smoke, layout rects at 390 / 1280 / 1920 px, the sidebar
   at 280 px and at its widest, axe-core on every surface, reduced motion, context loss and the fallback page.
 
+## Sharing and SEO
+
+The page is a canvas app, so everything a link preview or a crawler reads is generated into `index.html` at build
+time (`src/site/seo.ts`, plugin in `vite.config.ts`): title, description, canonical, Open Graph and Twitter tags,
+JSON-LD, a visually hidden text summary and a `<noscript>` text, all from `public/data/architecture.json` and the
+About strings. `robots.txt` and `sitemap.xml` are emitted by the same build (`lastmod` = build date).
+`fallback.html` is an error path and carries `noindex`.
+
+- Site origin: one build-time constant, `VITE_SITE_URL` (default `https://albert.rfi-irfos.com/`). Example:
+  `VITE_SITE_URL=https://example.org/albert/ npm run build` (set `VITE_BASE` to the same path).
+- Preview image `public/og-image.png` (1200 x 630) and the PNG icons come from `tools/render-share-images.mjs`,
+  which screenshots the running app (HUD hidden, wordmark set over it). Regenerate on the Colony:
+  `colony-run -a albert-moe-13/explorer/public/og-image.png -a albert-moe-13/explorer/public/icon-192.png -a albert-moe-13/explorer/public/icon-512.png -a albert-moe-13/explorer/public/apple-touch-icon.png -- 'cd albert-moe-13/explorer && npm ci && npx playwright install chromium && node tools/render-share-images.mjs'`
+  (commit first: `colony-run` copies HEAD).
+- Social platforms cache previews: after a change, re-scrape with their debugger tools.
+
 ## Performance
 
 Budgets are checked by `npm run budgets` after `npm run build` (`tools/check_budgets.mjs`, pure size logic

@@ -3,7 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Xperience albert.</title>
+    <title>@@TITLE@@</title>
+    <!-- Head tags, JSON-LD and the static summary below are filled at build time (src/site/seo.ts, plugin in
+         vite.config.ts) from the architecture data and VITE_SITE_URL: the numbers and the address cannot drift. -->
+    @@HEAD_META@@
+    @@JSONLD@@
     <script>
       // Page language before the app loads: the saved choice, else the browser language (as src/ui/prefs.ts).
       (function () {
@@ -14,6 +18,8 @@
       })();
     </script>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
     <!-- The title, headings and scene labels use Space Grotesk, the UI uses Inter, formulas the math
          serif STIX Two Text: all self-hosted under public/fonts (see README), declared in
          src/style/tokens.css. -->
@@ -32,6 +38,7 @@
         background: #141e3c; border: 1px solid #34457a; border-radius: 8px; cursor: pointer; }
       .boot button:focus-visible { outline: 2px solid #22d3ee; outline-offset: 2px; }
       html:not([lang="de"]) [data-l="de"], html[lang="de"] [data-l="en"] { display: none; }
+      .seo-summary { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
       #app-name { margin: 0; font: 700 28px "Space Grotesk", "Inter", system-ui, sans-serif; color: #f3f0e8; }
     </style>
   </head>
@@ -41,8 +48,9 @@
       <p data-l="en" lang="en">albert. is loading: reading the architecture and building the 3D parts. This takes a few seconds.</p>
       <p data-l="de" lang="de">albert. lädt: Die Architektur wird gelesen und die 3D-Teile werden gebaut. Das dauert einige Sekunden.</p>
     </div>
+    @@SUMMARY@@
     <noscript>
-      <div class="boot"><p>albert. needs JavaScript. / albert. braucht JavaScript.</p></div>
+      @@NOSCRIPT@@
     </noscript>
     <script type="module" src="/src/main.ts"></script>
   </body>

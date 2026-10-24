@@ -54,7 +54,10 @@ const notify = (): void => listeners.forEach((l) => l());
 
 const setHtmlLang = (): void => {
   setLabelLang(lang);
-  if (typeof document !== 'undefined') document.documentElement.lang = lang;
+  if (typeof document !== 'undefined') {
+    document.documentElement.lang = lang;
+    document.title = tr('app.pageTitle', lang, 'advanced'); // the tab title follows the language, like the lang attribute
+  }
 };
 setHtmlLang();
 // Simple always reads at the Intuition depth.

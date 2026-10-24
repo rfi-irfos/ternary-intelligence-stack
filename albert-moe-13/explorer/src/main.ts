@@ -83,7 +83,6 @@ async function main(): Promise<void> {
     toFallback();
     return;
   }
-  document.title = APP_NAME;
   const heading = document.getElementById('app-name');
   if (heading) heading.textContent = APP_NAME;
   // The side panel is created before the camera rig: its Esc listener then runs first and a press that

@@ -26,7 +26,7 @@ test.describe('smoke', () => {
     const res = await request.get('/favicon.svg');
     expect(res.status()).toBe(200);
     expect(res.headers()['content-type']).toContain('svg');
-    expect(await page.title()).toBe('Xperience albert.');
+    expect(await page.title()).toBe('Xperience albert. — a ternary MoE model in 3D');
     await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', '/favicon.svg');
   });
 

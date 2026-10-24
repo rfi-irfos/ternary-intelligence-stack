@@ -22,6 +22,7 @@ export type TourKey = (typeof TOUR_IDS)[number];
 
 const EN = {
   // top bar
+  'app.pageTitle': 'Xperience albert. — a ternary MoE model in 3D',
   'app.tours': 'Tour',
   'app.toursTip': '{n} short tours through albert.',
   'mode.label': 'View',
@@ -556,6 +557,7 @@ const EN = {
 export type StringKey = keyof typeof EN;
 
 const DE: Record<StringKey, Entry> = {
+  'app.pageTitle': 'Xperience albert. — ein ternäres MoE-Modell in 3D',
   'app.tours': 'Tour',
   'app.toursTip': '{n} kurze Touren durch albert.',
   'mode.label': 'Ansicht',
