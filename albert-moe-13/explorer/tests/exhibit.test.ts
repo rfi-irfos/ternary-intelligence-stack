@@ -23,7 +23,7 @@ describe('exhibit caption and assets', () => {
     for (const lang of ['de', 'en'] as const) {
       const cap = resolve(STRINGS[lang]['exhibit.caption'], 'simple');
       expect(cap).toMatch(/28/);
-      expect(cap).toMatch(lang === 'de' ? /echter Screenshot/ : /Real screenshot/);
+      expect(cap).toMatch(lang === 'de' ? /Echter Screenshot/ : /Real screenshot/);
       // the only date is the repository date taken from git history of the file
       expect(cap.match(/\d{2,4}[-.]\d{2}[-.]\d{2,4}/g)).toEqual([lang === 'de' ? '02.07.2026' : '2026-07-02']);
       expect(resolve(STRINGS[lang]['exhibit.alt'], 'simple').length).toBeGreaterThan(20);
@@ -47,7 +47,7 @@ describe('exhibit scene object', () => {
       const frustum = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
       expect(points.every((p) => frustum.containsPoint(p))).toBe(true);
       const box = new THREE.Box3().setFromObject(ex.group);
-      expect(frustum.intersectsBox(box)).toBe(false);
+      expect({ aspect, hit: frustum.intersectsBox(box) }).toEqual({ aspect, hit: false });
     }
     // the exhibit adds nothing to the row extent that the overview frames
     expect(exhibitAnchor(extent).x).toBeGreaterThan(extent.maxX + 100);
