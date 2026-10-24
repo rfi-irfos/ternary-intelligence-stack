@@ -43,6 +43,7 @@ import { createExhibitEntry } from './ui/exhibitEntry';
 import { closeLightbox } from './ui/lightbox';
 import { closeTourMenu, isTourMenuOpen, openTourMenu, setTourPick } from './ui/tourMenu';
 import { createTourRunner } from './tours/engine';
+import { createProgressMap } from './ui/progressMap';
 import { tourProgress } from './ui/prefs';
 
 /** Waits (at most `ms`) for the display face, so the canvas labels of the scene draw in it; runs beside the data loads. */
@@ -156,6 +157,8 @@ async function main(): Promise<void> {
     },
   });
   sidebar.body('analysis').append(exhibitEntry.element);
+  // The quiet mastery map: folded, a check mark per finished thing, no score.
+  sidebar.body('analysis').append(createProgressMap().element);
   window.addEventListener('pagehide', () => { closeLightbox(); exhibit.dispose(); });
   const animator = createAnimator(tower);
   scene.add(animator.root);

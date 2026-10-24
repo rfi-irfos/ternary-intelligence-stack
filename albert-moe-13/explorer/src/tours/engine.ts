@@ -10,7 +10,9 @@ import { type Depth, getDepth, onDepthChange } from '../ui/depth';
 import type { IdPredicate } from '../ui/highlight';
 import { getLang, getMode, layerLabel, lt, onPrefsChange, saveTourProgress, t, tourProgress } from '../ui/prefs';
 import type { TourKey } from '../ui/strings';
+import { markDone } from '../mastery/progress';
 import { renderFigure } from './figures';
+import { residualQuiz } from './residualQuiz';
 import { tourOf } from './index';
 
 /** Tour ids are the keys of `tour.<id>` in strings.ts, in spec §4.9 order. */
@@ -41,6 +43,8 @@ export interface TourStep {
   text: TourText;
   action?: 'free' | PredictAction;
   figure?: TourFigure;
+  /** Three multiple-choice questions under the text. Not scored: the explanation shows after each pick. */
+  quiz?: 'residual';
 }
 
 export interface Tour {
@@ -195,6 +199,8 @@ interface Active {
   tokenPick: number | null;
   gatePick: 'A' | 'B' | 'equal' | null;
   revealed: boolean;
+  /** Picked option per question of the step's quiz (null = not answered). */
+  quizPicks: (number | null)[];
 }
 
 export function createTourRunner(deps: TourDeps): TourRunner {
@@ -286,7 +292,11 @@ export function createTourRunner(deps: TourDeps): TourRunner {
         go.type = 'button';
         go.disabled = a.picks.length !== k;
         go.title = t('tourpred.pickK', { k, c: a.picks.length });
-        go.addEventListener('click', () => { a.revealed = true; paint(); highlightFor(a); });
+        go.addEventListener('click', () => {
+          a.revealed = true;
+          if (expertsAnswer(m, pa.layer, pa.stream)) markDone('predicted:experts');
+          paint(); highlightFor(a);
+        });
         box.append(el('p', 'tour-note', t('tourpred.pickK', { k, c: a.picks.length })), go);
         return;
       }
@@ -334,7 +344,11 @@ export function createTourRunner(deps: TourDeps): TourRunner {
         const go = el('button', 'tour-btn tour-reveal', t('tourpred.reveal'));
         go.type = 'button';
         go.disabled = a.tokenPick === null;
-        go.addEventListener('click', () => { a.revealed = true; paint(); });
+        go.addEventListener('click', () => {
+          a.revealed = true;
+          if (ans?.kind === 'token') markDone('traced:attention');
+          paint();
+        });
         box.append(go);
         return;
       }
@@ -384,6 +398,36 @@ export function createTourRunner(deps: TourDeps): TourRunner {
     );
   };
 
+  const renderQuiz = (a: Active, step: TourStep, box: HTMLElement): void => {
+    box.append(el('p', 'tour-note', t('tourquiz.intro')));
+    const vars = tourVars(deps.arch, step);
+    const n = residualQuiz.length;
+    residualQuiz.forEach((q, qi) => {
+      const picked = a.quizPicks[qi] ?? null;
+      const group = el('div', 'tour-quiz-q');
+      group.setAttribute('role', 'group');
+      group.append(el('p', 'tour-prompt', `${t('tourquiz.q', { i: qi + 1, n })}: ${lt(q.q, vars)}`));
+      const opts = el('div', 'tour-pick-grid tour-quiz-options');
+      q.options.forEach((o, oi) => {
+        const b = el('button', 'tour-pick', lt(o, vars));
+        b.type = 'button';
+        b.dataset.q = String(qi);
+        b.dataset.opt = String(oi);
+        b.setAttribute('aria-pressed', String(picked === oi));
+        b.disabled = picked !== null;
+        b.addEventListener('click', () => {
+          a.quizPicks[qi] = oi;
+          if (residualQuiz.every((_, i) => a.quizPicks[i] != null)) markDone('explained:residual');
+          paint();
+        });
+        opts.append(b);
+      });
+      group.append(opts);
+      if (picked !== null) group.append(el('p', 'tour-note tour-quiz-why', lt(q.why, vars)));
+      box.append(group);
+    });
+  };
+
   const togglePick = (e: number): void => {
     if (!act || act.revealed) return;
     const i = act.picks.indexOf(e);
@@ -422,6 +466,7 @@ export function createTourRunner(deps: TourDeps): TourRunner {
       }).then((node) => { if (act === a && a.seq === seq) fig.replaceChildren(node); });
     }
     renderPrediction(a, step, body.appendChild(el('div', 'tour-pred')));
+    if (step.quiz === 'residual') renderQuiz(a, step, body.appendChild(el('div', 'tour-quiz')));
     refs.back!.disabled = a.i === 0;
     refs.next!.textContent = a.i === n - 1 ? t('tourcard.done') : t('tourcard.next');
     refs.exit!.textContent = t('tourcard.exit');
@@ -435,7 +480,7 @@ export function createTourRunner(deps: TourDeps): TourRunner {
     const a = act;
     a.i = Math.max(0, Math.min(a.tour.steps.length - 1, i));
     a.seq++;
-    a.picks = []; a.tokenPick = null; a.gatePick = null; a.revealed = false;
+    a.picks = []; a.tokenPick = null; a.gatePick = null; a.revealed = false; a.quizPicks = [];
     saveTourProgress(a.tour.id, a.i);
     paint();
     highlightFor(a);
@@ -489,7 +534,7 @@ export function createTourRunner(deps: TourDeps): TourRunner {
       if (act) api.exit();
       act = {
         tour, i: 0, seq: 0, startPose: deps.rig.pose(), landed: null, returnFocus: opts.returnFocus ?? null,
-        picks: [], tokenPick: null, gatePick: null, revealed: false,
+        picks: [], tokenPick: null, gatePick: null, revealed: false, quizPicks: [],
       };
       card = buildCard();
       doc.body.append(card);
@@ -517,7 +562,7 @@ export function createTourRunner(deps: TourDeps): TourRunner {
       // a pose the visitor chose (orbit, pan, zoom, a click on a part) stays.
       const untouched = deps.rig.isFlying() || (a.landed !== null && samePose(deps.rig.pose(), a.landed));
       if (untouched && a.landed !== null) void deps.rig.flyToPose(a.startPose).catch((err: unknown) => console.error(err));
-      if (finished) saveTourProgress(a.tour.id, 0);
+      if (finished) { saveTourProgress(a.tour.id, 0); markDone(`tour:${a.tour.id}`); }
       deps.onExit?.(a.tour.id);
       a.returnFocus?.focus();
     },

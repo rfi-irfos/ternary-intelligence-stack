@@ -31,6 +31,15 @@ export const predictionSteps: TourStep[] = [
     ),
   },
   {
+    camera: 'L23', highlight: ['L23'], quiz: 'residual',
+    text: tx(
+      ['The pack is a running total. A layer adds its result to it and keeps what was there. A layer adds twice in each stream: once after attention and once after the experts. The size stays {hidden} numbers.',
+        'Das Paket ist eine laufende Summe. Eine Ebene addiert ihr Ergebnis dazu und behält, was schon da war. Eine Ebene addiert in jedem Strom zweimal: einmal nach der Attention und einmal nach den Experten. Die Größe bleibt bei {hidden} Zahlen.'],
+      ['Residual stream, per layer and stream: x ← x + attention(ln1(x)), then x ← x + experts(ln2(x)). Two additions per layer and stream. The width stays {hidden} in all {layers} layers.',
+        'Residualstrom, je Ebene und Strom: x ← x + Attention(ln1(x)), danach x ← x + Experten(ln2(x)). Zwei Additionen je Ebene und Strom. Die Breite bleibt in allen {layers} Ebenen {hidden}.'],
+    ),
+  },
+  {
     camera: 'ln_f', highlight: ['ln_f'],
     text: tx(
       ['At the end both streams are joined and the numbers are rescaled one last time.',
