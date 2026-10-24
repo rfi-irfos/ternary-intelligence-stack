@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "context": 512,
+  "training": {
+    "epoch": 9270,
+    "loss_avg": 3.9353,
+    "loss_best": 3.842,
+    "log_date": "2026-09-23",
+    "source": "albert-moe-13/README.md (Training state, from epoch_history.log)"
+  },
+  "surgeries": {
+    "depth": 33,
+    "cord": 1,
+    "from_layers": 12,
+    "to_layers": 46,
+    "last": {
+      "id": "S33",
+      "from_layers": 45,
+      "to_layers": 46,
+      "date": "2026-09-20"
+    },
+    "source": "albert-moe-13/docs/SURGERY_REGISTRY.md (Totals)"
+  },
+  "links": {
+    "repo": "https://github.com/rfi-irfos/ternary-intelligence-stack",
+    "huggingface": "https://huggingface.co/rfi-irfos/albert"
+  }
+}

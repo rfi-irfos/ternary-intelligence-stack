@@ -553,12 +553,25 @@ body.side-open .tour-card, body.layer-open .tour-card { width: min(var(--dock-w)
 .lobby-checkpoint { margin: 0; font: 400 var(--fs-small)/1.4 var(--font-ui); font-feature-settings: "tnum"; color: var(--c-text-muted); }
 .lobby-checkpoint .lv, .lobby-checkpoint time { color: var(--c-text); }
 .kind-tag { display: inline-block; padding: 0 6px; border: 1px solid var(--c-hairline); border-radius: var(--r-control); font: 600 var(--fs-small)/1.4 var(--font-ui); color: var(--c-text-muted); }
-.lobby-about { position: fixed; z-index: 61; right: clamp(20px, 7vw, 128px); bottom: clamp(72px, 12vh, 120px); width: min(460px, calc(100vw - 40px));
-  padding: var(--space-4) var(--space-5) var(--space-3); animation: os-in var(--t-fast) var(--ease); }
+.lobby-about { position: fixed; z-index: 61; inset: 12px 0; margin: auto; height: fit-content; max-height: calc(100dvh - 24px); overflow-y: auto; overscroll-behavior: contain;
+  width: min(680px, calc(100vw - 24px)); padding: 0 clamp(16px, 4vw, 32px) var(--space-4); background: var(--c-card-solid); animation: os-in var(--t-fast) var(--ease); }
 .lobby-about:focus { outline: none; }
-.lobby-about header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-2); }
-.lobby-about h3 { margin: 0; font: 700 18px/1.2 var(--font-display); }
-.lobby-about p { margin: 0 0 var(--space-3); line-height: 1.5; }
+.lobby-about header { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  margin: 0 calc(-1 * clamp(16px, 4vw, 32px)); padding: var(--space-4) clamp(16px, 4vw, 32px) var(--space-2); background: var(--c-card-solid); border-bottom: 1px solid var(--c-hairline); }
+.lobby-about h3 { margin: 0; font: 700 clamp(20px, 5vw, 26px)/1.2 var(--font-display); }
+.lobby-about h4 { margin: 0 0 var(--space-2); font: 700 var(--fs-large)/1.25 var(--font-display); color: var(--c-accent); }
+.lobby-about p { margin: 0 0 var(--space-2); line-height: 1.55; overflow-wrap: anywhere; }
+.lobby-about-close { min-width: 44px; min-height: 44px; flex: none; }
+.about-sec { margin-top: var(--space-4); }
+.about-list { margin: 0; padding-left: 1.2em; line-height: 1.55; overflow-wrap: anywhere; }
+.about-list li { margin-bottom: 2px; }
+.about-links { list-style: none; padding-left: 0; }
+.about-links a { display: inline-block; padding: 8px 0; min-height: 24px; color: var(--c-text); text-decoration: underline; text-underline-offset: 3px; }
+.about-links a:focus-visible, .lobby-about-close:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+.about-src { color: var(--c-text-muted); font-size: var(--fs-small); }
+.about-signoff { margin-top: var(--space-2); font-weight: 700; letter-spacing: 0.04em; }
+.about-credits { margin-top: var(--space-2); color: var(--c-text-muted); }
+.about-realbox { padding: var(--space-3); border: 1px solid var(--c-hairline); border-radius: var(--r-control); }
 /* The HUD stays laid out under the lobby and the intro (insets are measured from it), only unseen. */
 body.in-lobby :is(.top-bar, .dock, .timeline, .os-sidebar, .sidebar-edge, .legend-card, .layer-panel, .hover-tip, .tour-menu, .tour-card, .coach, .sentence-pop),
 body.cinema :is(.top-bar, .dock, .tour-card, .timeline, .os-sidebar, .sidebar-edge, .legend-card, .layer-panel, .hover-tip, .coach, .sentence-pop) { visibility: hidden; }

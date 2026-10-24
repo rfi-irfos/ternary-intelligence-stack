@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "caveats": "node tools/render-caveats.ts",
+    "about": "python3 -I tools/build_about.py ../.. src/data/about.json",
+    "drift": "vitest run tests/drift.test.ts",
     "e2e": "playwright test",
     "budgets": "node tools/check_budgets.mjs"
   },

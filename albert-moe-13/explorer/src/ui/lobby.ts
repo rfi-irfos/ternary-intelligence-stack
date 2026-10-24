@@ -4,6 +4,7 @@ import type { Sound } from '../audio/sound';
 import { APP_NAME } from '../content/brand';
 import type { Architecture } from '../data/architecture';
 import { fmt, kindName, structure } from '../data/labeled';
+import { createAbout, dateText } from './about';
 import { ICONS } from './icons';
 import type { PlayerBar } from './player';
 import { getLang, getMode, onPrefsChange, setLang, setMode, t } from './prefs';
@@ -15,7 +16,7 @@ import { segmented } from './topbar';
  * The lobby: a full-screen title screen over a slowly drifting, blurred view of the real scene. The
  * logotype, one subtitle (counts from architecture.json), three big entries (Explore, Guided tour,
  * Watch it think) and a small footer: DE | EN and Simple | Advanced (the same prefs state as the HUD),
- * the sound toggle (off by default), the checkpoint line and an About blurb. Mouse alone is enough;
+ * the sound toggle (off by default), the checkpoint line and the About button (the About dialog: ui/about.ts). Mouse alone is enough;
  * the arrow keys move between the entries.
  *
  * Camera rule: the drift is the one scripted camera move without a user action. It runs only while the
@@ -119,12 +120,6 @@ export interface Lobby {
   dispose(): void;
 }
 
-const dateText = (iso: string, lang: Lang): string => {
-  const d = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
-  if (!d) return iso;
-  return lang === 'de' ? `${d[3]}.${d[2]}.${d[1]}` : `${d[1]}-${d[2]}-${d[3]}`;
-};
-
 export function createLobby(deps: LobbyDeps): Lobby {
   const doc = deps.doc ?? document;
   const { arch } = deps;
@@ -194,35 +189,10 @@ export function createLobby(deps: LobbyDeps): Lobby {
   meta.append(cp, about);
   foot.append(prefs, meta);
 
-  const box = doc.createElement('div');
-  box.className = 'lobby-about';
-  box.setAttribute('role', 'dialog');
-  box.setAttribute('aria-labelledby', 'lobby-about-title');
-  box.hidden = true;
-  box.tabIndex = -1;
-  const boxHead = doc.createElement('header');
-  const boxTitle = doc.createElement('h3');
-  boxTitle.id = 'lobby-about-title';
-  const boxClose = doc.createElement('button');
-  boxClose.type = 'button';
-  boxClose.className = 'hud-icon lobby-about-close';
-  boxClose.innerHTML = ICONS.close;
-  boxHead.append(boxTitle, boxClose);
-  const pReal = doc.createElement('p');
-  pReal.className = 'about-real';
-  const pIll = doc.createElement('p');
-  pIll.className = 'about-illustrative';
-  box.append(boxHead, pReal, pIll);
-  el.append(inner, foot, box);
+  const dlg = createAbout({ arch, background: () => [inner, foot] });
+  el.append(inner, foot, dlg.element);
 
-  const setAbout = (open: boolean): void => {
-    box.hidden = !open;
-    about.setAttribute('aria-expanded', String(open));
-    if (open) box.focus();
-    else if (!el.hidden) about.focus();
-  };
-  about.addEventListener('click', () => setAbout(box.hidden));
-  boxClose.addEventListener('click', () => setAbout(false));
+  about.addEventListener('click', () => { if (dlg.isOpen()) dlg.close(); else dlg.open(about); });
 
   const paintCheckpoint = (): void => {
     const sha = fmt(structure(arch.checkpoint.sha256.slice(0, 7)));
@@ -273,11 +243,7 @@ export function createLobby(deps: LobbyDeps): Lobby {
     }
     mode.sync();
     about.textContent = t('lobby.about');
-    boxTitle.textContent = t('about.title');
-    boxClose.setAttribute('aria-label', t('about.close'));
-    boxClose.title = t('about.close');
-    pReal.innerHTML = richT('about.real', { layers: m.num_layers, streams: m.num_streams, experts: m.num_experts, params: m.params });
-    pIll.textContent = t('about.illustrative');
+    if (dlg.isOpen()) dlg.paint();
     paintCheckpoint();
   };
   paint();
@@ -296,7 +262,7 @@ export function createLobby(deps: LobbyDeps): Lobby {
     if (e.key === 'Escape') {
       e.stopImmediatePropagation();
       e.preventDefault();
-      if (!box.hidden) setAbout(false);
+      if (dlg.isOpen()) dlg.close();
       return;
     }
     if (!el.contains(e.target as Node)) {
@@ -328,12 +294,12 @@ export function createLobby(deps: LobbyDeps): Lobby {
       buttons[0]?.b.focus({ preventScroll: true });
     },
     hide() {
-      setAbout(false);
+      dlg.close();
       el.hidden = true;
       doc.body.classList.remove('in-lobby');
     },
     visible: () => !el.hidden,
-    aboutOpen: () => !box.hidden,
+    aboutOpen: () => dlg.isOpen(),
     refresh() {
       paint();
     },
@@ -344,6 +310,7 @@ export function createLobby(deps: LobbyDeps): Lobby {
     still: () => isStill,
     dispose() {
       offPrefs();
+      dlg.dispose();
       snd.dispose();
       doc.removeEventListener('keydown', onKey, true);
       doc.body.classList.remove('in-lobby');

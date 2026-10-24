@@ -1,5 +1,5 @@
 import { type Page, expect, test } from '@playwright/test';
-import { axeSerious, enter, settle } from './helpers';
+import { axeSerious, enter, settle, start } from './helpers';
 
 /** No serious or critical axe finding (WCAG 2 A and AA) in the part; a finding fails with the node and the rule. */
 async function clean(page: Page, selector: string): Promise<void> {
@@ -47,6 +47,13 @@ for (const lang of ['en', 'de'] as const) {
       await expect(page.locator('.tour-card')).toBeVisible();
       await settle(page);
       await clean(page, '.tour-card');
+    });
+
+    test('the About dialog of the lobby', async ({ page }) => {
+      await start(page, { lang });
+      await page.click('.lobby-about-btn');
+      await expect(page.locator('.lobby-about')).toBeVisible();
+      await clean(page, '.lobby-about');
     });
 
     test('the legend card, the first-visit hints and the lobby', async ({ page }) => {

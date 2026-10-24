@@ -295,6 +295,51 @@ test.describe('lobby', () => {
     });
   }
 
+  for (const [w, h, phone] of [[1280, 720, false], [1920, 1080, false], [390, 844, true]] as const) {
+    test.describe(`About, ${w} × ${h}`, () => {
+      test.use({ viewport: { width: w, height: h }, isMobile: phone, hasTouch: phone });
+      for (const lang of ['en', 'de'] as const) {
+        test(`${lang}: the dialog fits the screen, scrolls to its last link, covers the HUD and leaves nothing sticking out`, async ({ page }) => {
+          await start(page, { lang });
+          await page.click('.lobby-about-btn');
+          const box = page.locator('.lobby-about');
+          await expect(box).toBeVisible();
+          await page.waitForTimeout(400);
+          const m = await page.evaluate(() => {
+            const d = document.querySelector('.lobby-about') as HTMLElement;
+            const r = d.getBoundingClientRect();
+            const wide = [...d.querySelectorAll('*')].filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && (b.right > r.right + 1 || b.left < r.left - 1); }).map((e) => e.className.toString() || e.tagName);
+            const cx = r.left + r.width / 2;
+            const cy = r.top + Math.min(r.height / 2, 200);
+            const hud = ['.top-bar', '.dock', '.timeline', '.os-sidebar', '.legend-card', '.coach', '.layer-panel'].filter((q) => { const e = document.querySelector(q); return e && getComputedStyle(e).visibility !== 'hidden'; });
+            const close = (d.querySelector('.lobby-about-close') as HTMLElement).getBoundingClientRect();
+            return {
+              r: { top: r.top, bottom: r.bottom, left: r.left, right: r.right }, wide, hud, hit: d.contains(document.elementFromPoint(cx, cy)),
+              scrolls: d.scrollHeight > d.clientHeight + 1, closeSize: Math.min(close.width, close.height), docOverflow: document.documentElement.scrollWidth > innerWidth + 1,
+            };
+          });
+          expect(m.r.top).toBeGreaterThanOrEqual(0);
+          expect(m.r.bottom).toBeLessThanOrEqual(h + 0.5);
+          expect(m.r.left).toBeGreaterThanOrEqual(0);
+          expect(m.r.right).toBeLessThanOrEqual(w + 0.5);
+          expect(m.wide).toEqual([]);
+          expect(m.hud).toEqual([]);
+          expect(m.hit).toBe(true);
+          expect(m.docOverflow).toBe(false);
+          expect(m.closeSize).toBeGreaterThanOrEqual(36);
+          if (phone) expect(m.scrolls).toBe(true);
+          const last = page.locator('.about-links a').last();
+          await last.scrollIntoViewIfNeeded();
+          const inView = await last.evaluate((e) => { const b = e.getBoundingClientRect(); const d = e.closest('.lobby-about')!.getBoundingClientRect(); return b.top >= d.top && b.bottom <= d.bottom + 1; });
+          expect(inView).toBe(true);
+          await page.keyboard.press('Escape');
+          await expect(box).toBeHidden();
+          await expect(page.locator('.lobby-about-btn')).toBeFocused();
+        });
+      }
+    });
+  }
+
   test('the lobby drifts the camera; after Explore the camera rests; Home returns to the lobby', async ({ page }) => {
     await start(page, { quality: 'medium' });
     const pose = () => page.evaluate(() => { const p = window.__albert.rig.pose(); return [p.position.x, p.position.y, p.position.z].map((v: number) => +v.toFixed(3)).join(','); });

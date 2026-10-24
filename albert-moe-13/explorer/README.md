@@ -38,8 +38,11 @@ forward passes of the real model.
 | `public/data/trace/{kjv,de,ternary}.json` | recorded `forward_prefill` runs of three sentences (router weights, selected experts, norms, logits) | `albert_trace` binary (`moe-llm-core`, feature `trace`) via `tools/run_traces.sh`; prompts in `tools/prompts.json` |
 | `public/data/weights/{L0..L45,embed,lm_head}.json` | per-layer weight views for the Tensors tab | `tools/build_weights.py` |
 | `public/assets/*.glb` | four small module meshes (slab, fusion slab, embedding, LM head), geometry only | `blender/build_modules.py` (Blender, background mode) |
-| `src/data/{architecture,trace,weights,labeled,words}.ts` | typed loaders and validators for the files above (`validateTrace` checks layer count and checkpoint hash) | hand-written |
+| `src/data/about.json` | last recorded training state, surgery counts and the two links shown in the About (`npm run about` regenerates it from `README.md`, `albert-moe-13/README.md` and `docs/SURGERY_REGISTRY.md`; it fails when the docs disagree) | `tools/build_about.py` |
+| `src/data/{architecture,trace,weights,labeled,words,about}.ts` | typed loaders and validators for the files above (`validateTrace` checks layer count and checkpoint hash) | hand-written |
 | `src/content/*.ts` | texts, cited Rust line ranges, known caveats (`CAVEATS.md` is generated from `src/content/caveats.ts`) | hand-written |
+
+The lobby's footer button "About albert." opens the About: what albert. is, how it was built and grew, the numbers (all read from the files above), why ternary, how to explore, what is real, and the links. `npm run drift` checks that no number in the About or the caveat texts disagrees with the data.
 
 The scene layout (positions, lanes, camera paths) is generated in code (`src/scene`); the
 module meshes come from Blender.
@@ -78,7 +81,7 @@ Without WebGL 2 the app redirects to `fallback.html`, which the build writes fro
 
 - `npm test` runs `vitest run` over `tests/**/*.test.ts` (scene, UI, i18n, data validation,
   citation checks against the pinned Rust sources in `tests/fixtures/`).
-- `tools/test_build_architecture.py` and `tools/test_build_weights.py` test the Python data
+- `tools/test_build_architecture.py`, `tools/test_build_weights.py` and `tools/test_build_about.py` test the Python data
   builders (pytest).
 - `npm run e2e` runs the Playwright suite in `e2e/*.spec.ts` against a separate build (`VITE_E2E=1`, which adds
   the `window.__albert` test hook; the normal build has none). `npx playwright install chromium`
