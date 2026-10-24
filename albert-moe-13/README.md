@@ -96,7 +96,7 @@ The architecture combines:
 | Quantization | STE with gamma-scaled ternary, gamma cached every 20 steps |
 | Optimizer | AdamW, cosine LR 6e-5 → 2e-5 / 500 steps (sqrt-scaled to the real effective batch size 2026-09-19, see session log) · **BATCH=2** on Modal L40S |
 | **Total parameters** | **331,140,622** (measured from the checkpoint header `albert_v3.0.best.safetensors`, 46 layers, 3606 tensors; checkpoint file dated 2026-09-23, header read 2026-10-24) |
-| **Safetensors (training)** | **~850 MB** (F32 reference checkpoint) at 21L; scales with layer count, current checkpoint larger (46L; the size on disk was not re-measured) |
+| **Safetensors (training)** | **~850 MB** (F32 reference checkpoint) at 21L; scales with layer count, current checkpoint larger (46L: 1,324,935,080 bytes, measured on the file `albert_v3.0.best.safetensors`, dated 2026-09-23) |
 | **Packed footprint** | figures below are from the 21L architecture — see [docs/FOOTPRINT.md](docs/FOOTPRINT.md), not yet re-run at 46L: ~101 MB / 4.08 bits per param deployable (ternary weights 5-trit-packed + f32 embeddings); 39.7 MB / 1.6 bits weights-only |
 | Corpus | **451,418,681 tokens** (stages 1–13, cache-loaded) |
 | GPU | Modal **L40S** (48GB, upgraded from T4→L4→L40S as the arch and batch size grew — see session log 2026-09-16/18) |

@@ -34,7 +34,7 @@ Evidence: moe.rs:240-250, 346
 
 ## A6. Config says 38 layers, the checkpoint has 46
 
-42 layers is the officially documented state: the TIS session_log and convergence_log record the depth up to the 36→42 surgeries of 19 Sep 2026. Layers 43-46 (numbered 42-45 in Advanced mode, which counts from 0) grew afterwards, in the four depth surgeries 42→46 on 19 and 20 Sep 2026, and so far only the training watch log records them, by tensor count (+78 tensors per layer). The explorer shows all 46 real layers: it reads the depth from the checkpoint, not the config.
+46 layers is the documented state: the repository README ("Current state") and docs/SURGERY_REGISTRY.md record the depth surgeries up to 42→46 (S30–S33, 19 and 20 Sep 2026). The training watch log confirms the depth by tensor count (+78 tensors per layer, table below). The config file still says 38. The explorer reads the depth from the checkpoint and shows all 46 layers, numbered 1 to 46 in every mode. The layer index in the weight files starts at 0 (layer 46 has index 45); wherever it appears it is labelled as the index.
 
 | Change | First seen (UTC) | Epoch | tns |
 |---|---|---|---|

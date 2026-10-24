@@ -1,3 +1,4 @@
+import { assetUrl } from './assetUrl';
 export interface Checkpoint {
   file: string;
   bytes: number;
@@ -99,7 +100,7 @@ export function validateArchitecture(a: unknown): Architecture {
   return a as unknown as Architecture;
 }
 
-export async function loadArchitecture(url = '/data/architecture.json'): Promise<Architecture> {
+export async function loadArchitecture(url = assetUrl('data/architecture.json')): Promise<Architecture> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`failed to load ${url}: ${res.status}`);
   return validateArchitecture(await res.json());

@@ -61,7 +61,7 @@ module meshes come from Blender.
 ## Run and build
 
 Needs any machine with Node 20+ and npm. Heavy runs (the full build with tests, trace
-regeneration) are done on the team's Colony server; a laptop is fine for the dev server.
+regeneration) need a machine with enough memory (see below); a laptop is fine for the dev server.
 
     cd albert-moe-13/explorer
     npm ci
@@ -81,7 +81,7 @@ Without WebGL 2 the app redirects to `fallback.html`, which the build writes fro
 - `tools/test_build_architecture.py` and `tools/test_build_weights.py` test the Python data
   builders (pytest).
 - `npm run e2e` runs the Playwright suite in `e2e/*.spec.ts` against a separate build (`VITE_E2E=1`, which adds
-  the `window.__albert` test hook; the normal build has none). Colony only: `npx playwright install chromium`
+  the `window.__albert` test hook; the normal build has none). `npx playwright install chromium`
   once, WebGL 2 comes from SwiftShader. It covers smoke, layout rects at 390 / 1280 / 1920 px, the sidebar
   at 280 px and at its widest, axe-core on every surface, reduced motion, context loss and the fallback page.
 
@@ -94,7 +94,7 @@ tested in `tests/budgets.test.ts`). It prints the measured numbers on every run 
 - whole `dist/` (raw): at most 40 MB
 - any `.glb` (raw): at most 6 MB
 
-Measured on the Colony (build of 2026-10-24, output of the script):
+Measured on a Linux server (build of 2026-10-24, output of the script):
 
     initial files: assets/index-CD1M-htu.js, assets/index-Cm8I_CIW.css, data/architecture.json
     PASS  initial JS+CSS+architecture.json (gzip): 281.0 KB (limit 5.00 MB)
@@ -136,12 +136,12 @@ timed (CPU plus a one-pixel GPU read-back, not the vsync interval). Median up to
 gives Medium, above that Low. It stops early when the median of the first 5 frames is above 44 ms. No usable
 sample counts as a weak device and gives Low. A phone (touch and short side up to 600 px) starts on Low without a probe.
 A saved choice always wins. The thresholds are unchanged: they have no data from real hardware yet.
-The Colony runs SwiftShader (software WebGL), whose frame times say nothing about a laptop GPU, so they are not used to tune anything.
+The measuring server runs SwiftShader (software WebGL), whose frame times say nothing about a laptop GPU, so they are not used to tune anything.
 The probe prints its median and pick to the console at debug level (`[albert] quality probe: ...`).
 
 ### Reference hardware
 
-Reference-hardware fps (Medium >= 50 fps, draw calls < 200): **not measured yet, Simeon measures on the ZBook.**
+Reference-hardware fps (Medium >= 50 fps, draw calls < 200): **not measured yet.**
 Open the preview with `?debug=1`, set Medium, and write the FPS and Draw calls rows here for the
 overview, an opened layer and a running token pass.
 
@@ -168,9 +168,11 @@ README). Fonts keep their own SIL Open Font Licence 1.1 (see "Fonts").
 
 ### Team build command
 
-On this team the full check runs on the Colony, not on the ZBook:
+Run the full check on a machine with Node 22:
 
-    colony-run -- 'cd albert-moe-13/explorer && npm ci && npx vitest run && npm run build'
+    cd albert-moe-13/explorer && npm ci && npm run build && npm run budgets
+
+Tests: `npx vitest run`.
 
 Data: `public/data/architecture.json` (see `tools/build_architecture.py`).
 
@@ -182,7 +184,7 @@ Data: `public/data/architecture.json` (see `tools/build_architecture.py`).
 also multiplies by the traffic-light `output_scales` (stored per event). `num_layers` (46) comes from
 the checkpoint tensor names, not from the config (38).
 
-Regenerate everything (Colony only, needs about 2.5 GB available memory: check `free -m` first):
+Regenerate everything (needs about 2.5 GB available memory: check `free -m` first):
 
     tools/regenerate.sh /path/to/albert_v3.0.best.safetensors
 

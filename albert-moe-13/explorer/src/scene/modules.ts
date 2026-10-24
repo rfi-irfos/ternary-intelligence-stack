@@ -1,3 +1,4 @@
+import { assetUrl } from '../data/assetUrl';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
@@ -63,7 +64,7 @@ export async function parseModules(buffers: Record<(typeof MODULE_FILES)[number]
  * Fetch the four glbs. Resolves null (never throws) when any is missing or
  * unreadable, so callers fall back to procedural geometry.
  */
-export async function loadModules(base = `${import.meta.env?.BASE_URL ?? '/'}assets/`): Promise<Modules | null> {
+export async function loadModules(base = assetUrl('assets/')): Promise<Modules | null> {
   try {
     // Fetched in parallel; any missing or non-glb file (Vite dev serves index.html for missing
     // files) makes the whole set fall back.

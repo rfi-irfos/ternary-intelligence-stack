@@ -6,6 +6,10 @@ on:
     paths:
       - 'albert-moe-13/explorer/**'
       - '.github/workflows/albert-explorer-pages.yml'
+  pull_request:
+    paths:
+      - 'albert-moe-13/explorer/**'
+      - '.github/workflows/albert-explorer-pages.yml'
   workflow_dispatch:
 
 permissions:
@@ -34,12 +38,15 @@ jobs:
       - run: npx vitest run
       - run: npm run build
       - run: npm run budgets
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v5
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
         with:
           path: albert-moe-13/explorer/dist
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     environment:

@@ -1,3 +1,4 @@
+import { assetUrl } from './assetUrl';
 import { type ParsedId } from '../scene/ids';
 
 export interface MatrixData {
@@ -55,7 +56,7 @@ export function validateLayerWeights(w: unknown): LayerWeights {
 /** Lazily fetches `weights/L{n}.json`; each layer is fetched once. */
 export function createWeightsLoader(
   fetchFn: FetchLike = (u) => fetch(u),
-  base = '/data/weights',
+  base = assetUrl('data/weights'),
 ): WeightsLoader {
   const cache = new Map<number, Promise<LayerWeights>>();
   return (layer) => {

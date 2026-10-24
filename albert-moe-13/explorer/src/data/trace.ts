@@ -1,3 +1,4 @@
+import { assetUrl } from './assetUrl';
 import type { Architecture } from './architecture';
 import type { TraceProvenance } from './labeled';
 
@@ -115,7 +116,7 @@ export function validateTrace(t: unknown, a: Architecture): Trace {
   return t as unknown as Trace;
 }
 
-export async function loadTrace(id: string, a: Architecture, base = '/data/trace'): Promise<Trace> {
+export async function loadTrace(id: string, a: Architecture, base = assetUrl('data/trace')): Promise<Trace> {
   const url = `${base}/${id}.json`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`failed to load ${url}: ${res.status}`);

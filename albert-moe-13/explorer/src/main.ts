@@ -38,7 +38,7 @@ import { coachSeen, createCoachMarks } from './ui/coach';
 import { sound, unlockOnGesture } from './audio/sound';
 import { playIntro, shouldPlayIntro, skipIntro } from './intro/cinematic';
 import { type DriftState, createLobby, createLobbyFlow, driftTick, soundToggle } from './ui/lobby';
-import { createExhibit } from './scene/exhibit';
+import { createExhibit, pagehideHandler } from './scene/exhibit';
 import { createExhibitEntry } from './ui/exhibitEntry';
 import { closeLightbox } from './ui/lightbox';
 import { closeTourMenu, isTourMenuOpen, openTourMenu, setTourPick } from './ui/tourMenu';
@@ -194,7 +194,8 @@ async function main(): Promise<void> {
   attachShortcutsKey();
   // The quiet mastery map: folded, a check mark per finished thing, no score.
   sidebar.body('analysis').append(createProgressMap().element);
-  window.addEventListener('pagehide', () => { closeLightbox(); exhibit.dispose(); });
+  // A bfcache restore keeps the page alive: the exhibit is only disposed on a real unload.
+  window.addEventListener('pagehide', pagehideHandler(exhibit, closeLightbox));
   const animator = createAnimator(tower);
   scene.add(animator.root);
   // Overview pills (Eingabe, Ebene N, Ausgabe); they hide while a level is open, in layer mode and in the lobby.

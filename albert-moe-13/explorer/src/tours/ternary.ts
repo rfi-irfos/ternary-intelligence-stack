@@ -35,8 +35,8 @@ export const ternarySteps: TourStep[] = [
         'Das Diagramm zeigt, wie oft −1, 0 und +1 in den echten Matrizen dieser Ebene vorkommen.'],
       ['Share of −1, 0 and +1 per matrix, counted over the full matrix in the checkpoint. The threshold τ of layer {layer} is {tau}.',
         'Anteil von −1, 0 und +1 je Matrix, gezählt über die ganze Matrix im Checkpoint. Der Schwellwert τ der Ebene {layer} ist {tau}.'],
-      ['Fields per matrix in L12.json: frac_neg, frac_zero, frac_pos with frac_neg + frac_zero + frac_pos = 1, counted over all entries of the matrix (not over the 32 × 32 tile). τ of layer {layer} = {tau}.',
-        'Felder je Matrix in L12.json: frac_neg, frac_zero, frac_pos mit frac_neg + frac_zero + frac_pos = 1, gezählt über alle Einträge der Matrix (die ganze Matrix; die Kachel von 32 × 32 zeigt nur einen Ausschnitt). τ der Ebene {layer} = {tau}.'],
+      ['Fields per matrix in L12.json (file names count from 0: L12.json is the 13th layer): frac_neg, frac_zero, frac_pos with frac_neg + frac_zero + frac_pos = 1, counted over all entries of the matrix (not over the 32 × 32 tile). τ of layer {layer} = {tau}.',
+        'Felder je Matrix in der Datei L12.json (Dateinamen zählen ab 0: Datei L12.json ist die 13. Ebene): frac_neg, frac_zero, frac_pos mit frac_neg + frac_zero + frac_pos = 1, gezählt über alle Einträge der Matrix (die ganze Matrix; die Kachel von 32 × 32 zeigt nur einen Ausschnitt). τ der Ebene {layer} = {tau}.'],
     ),
   },
   {

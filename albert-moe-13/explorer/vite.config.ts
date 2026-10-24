@@ -25,8 +25,10 @@ function fallbackPage(): Plugin {
   };
 }
 
+declare const process: { env: Record<string, string | undefined> };
+
 export default defineConfig(() => ({
-  base: '/',
+  base: process.env.VITE_BASE ?? '/',
   plugins: [fallbackPage()],
   test: {
     environment: 'node',

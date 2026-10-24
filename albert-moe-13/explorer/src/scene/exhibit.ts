@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import { PALETTE } from './palette';
 import { UI } from '../style/theme';
+import { assetUrl } from '../data/assetUrl';
 import type { RowExtent } from '../camera/controls';
 
 /** The one exhibit: the real training dashboard (screenshot of the 28-layer stage). Static, never animated. */
-export const EXHIBIT_URL = '/assets/exhibits/dashboard-live.png';
+export const EXHIBIT_URL = assetUrl('assets/exhibits/dashboard-live.png');
 /** Size of the screenshot in pixels (1871 x 932); the picture keeps this ratio. */
 export const EXHIBIT_ASPECT = 1871 / 932;
 /** World height of the picture (the frame comes on top). */
@@ -138,5 +139,17 @@ export function createExhibit(extent: RowExtent, deps: ExhibitDeps = {}): Exhibi
       lineMat.dispose();
       group.removeFromParent();
     },
+  };
+}
+
+/** The pagehide handler: always closes the lightbox, disposes the exhibit only on a real unload.
+ *  A back/forward-cache restore (`persisted`) keeps the page alive and needs the exhibit. */
+export function pagehideHandler(
+  exhibit: { dispose(): void },
+  closeLightbox: () => void,
+): (e: { persisted: boolean }) => void {
+  return (e) => {
+    closeLightbox();
+    if (!e.persisted) exhibit.dispose();
   };
 }

@@ -89,14 +89,16 @@ export const CAVEATS: Record<CaveatId, Caveat> = {
   A6: {
     title: { en: 'Config says 38 layers, the checkpoint has 46', de: 'Die Konfiguration nennt 38 Ebenen, der Checkpoint hat 46' },
     body: {
-      en: '42 layers is the officially documented state: the TIS session_log and convergence_log record the depth up to ' +
-        'the 36→42 surgeries of 19 Sep 2026. Layers 43-46 (numbered 42-45 in Advanced mode, which counts from 0) grew afterwards, in the four depth surgeries 42→46 on 19 and ' +
-        '20 Sep 2026, and so far only the training watch log records them, by tensor count (+78 tensors per layer). ' +
-        'The explorer shows all 46 real layers: it reads the depth from the checkpoint, not the config.',
-      de: '42 Ebenen sind der offiziell dokumentierte Stand: session_log und convergence_log von TIS halten die Tiefe bis zu ' +
-        'den Eingriffen 36→42 vom 19. Sep. 2026 fest. Die Ebenen 43-46 (im Modus „Erweitert“ 42-45, weil er dort ab 0 zählt) kamen danach hinzu, in den vier ' +
-        'Tiefen-Eingriffen 42→46 am 19. und 20. Sep. 2026; bisher hält nur das Trainings-Watch-Log sie fest, über die Zahl der Tensoren ' +
-        '(+78 Tensoren je Ebene). Der Explorer zeigt alle 46 echten Ebenen: er liest die Tiefe aus dem Checkpoint, nicht aus der Konfiguration.',
+      en: '46 layers is the documented state: the repository README ("Current state") and docs/SURGERY_REGISTRY.md record the depth ' +
+        'surgeries up to 42→46 (S30–S33, 19 and 20 Sep 2026). The training watch log confirms the depth by tensor count ' +
+        '(+78 tensors per layer, table below). The config file still says 38. The explorer reads the depth from the checkpoint ' +
+        'and shows all 46 layers, numbered 1 to 46 in every mode. The layer index in the weight files starts at 0 ' +
+        '(layer 46 has index 45); wherever it appears it is labelled as the index.',
+      de: '46 Ebenen sind der dokumentierte Stand: die README des Repositorys („Current state“) und docs/SURGERY_REGISTRY.md halten die ' +
+        'Tiefen-Eingriffe bis 42→46 fest (S30–S33, 19. und 20. Sep. 2026). Das Trainings-Watch-Log bestätigt die Tiefe über die Zahl der ' +
+        'Tensoren (+78 Tensoren je Ebene, Tabelle unten). Die Konfigurationsdatei nennt weiterhin 38. Der Explorer liest die Tiefe aus dem ' +
+        'Checkpoint und zeigt alle 46 Ebenen, in jedem Modus von 1 bis 46 nummeriert. Der Ebenenindex in den Gewichtsdateien beginnt bei 0 ' +
+        '(Ebene 46 hat Index 45); wo er vorkommt, ist er als Index beschriftet.',
     },
     evidence: {
       en: 'models/albert_v3.0.config.json; Colony ~/.albert/albert_watch_log.md (tns per 5-minute sample)',
