@@ -307,3 +307,31 @@ describe('B: opening the sidebar refits the overview, the way the browser does i
     top.dispose();
   });
 });
+
+describe('reduced motion', () => {
+  const make = (reduced: boolean) => {
+    const camera = new THREE.PerspectiveCamera(45, 16 / 9, 0.1, 1000);
+    camera.up.set(0, 0, 1);
+    camera.position.set(10, -10, 5);
+    const dom = document.createElement('canvas');
+    document.body.appendChild(dom);
+    const r = createControls(camera, dom, EXTENT, { reducedMotion: () => reduced });
+    rigs.push(r);
+    return { camera, rig: r };
+  };
+
+  it('every flight is a cut: the pose is final at once and nothing keeps flying', async () => {
+    const { camera, rig: r } = make(true);
+    const p = r.flyTo(new THREE.Vector3(30, 0, 0), 12, 900);
+    expect(r.isFlying()).toBe(false);
+    await p;
+    expect(r.pose().target.x).toBeCloseTo(30, 5);
+    expect(camera.position.distanceTo(r.pose().target)).toBeCloseTo(12, 3);
+  });
+
+  it('without the preference a flight still takes time', () => {
+    const { rig: r } = make(false);
+    void r.flyTo(new THREE.Vector3(30, 0, 0), 12, 900);
+    expect(r.isFlying()).toBe(true);
+  });
+});

@@ -4,6 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Xperience albert.</title>
+    <script>
+      // Page language before the app loads: the saved choice, else the browser language (as src/ui/prefs.ts).
+      (function () {
+        var l = null;
+        try { l = localStorage.getItem('albert.lang'); } catch (e) {}
+        if (l !== 'de' && l !== 'en') l = (navigator.language || '').toLowerCase().indexOf('de') === 0 ? 'de' : 'en';
+        document.documentElement.lang = l;
+      })();
+    </script>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <!-- The title, headings and scene labels use Space Grotesk, the UI uses Inter, formulas the math
          serif STIX Two Text: all self-hosted under public/fonts (see README), declared in
@@ -13,11 +22,28 @@
     <style>
       html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
       canvas { display: block; }
+      /* Loading state: plain text that stands until the scene is ready (no fake progress bar). It is in the page
+         itself, so it shows before any script runs; main.ts removes it once the first frame is drawn. The words
+         are the strings boot.loading of src/ui/strings.ts (tests/boot.test.ts keeps them in step). */
+      .boot { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box;
+        background: #000; color: #e8eefc; font: 400 16px/1.5 Inter, system-ui, sans-serif; text-align: center; }
+      .boot p { max-width: 36em; margin: 0; }
+      .boot button { margin-top: 16px; min-height: 36px; padding: 0 16px; font: 500 14px/1 Inter, system-ui, sans-serif; color: #e8eefc;
+        background: #141e3c; border: 1px solid #34457a; border-radius: 8px; cursor: pointer; }
+      .boot button:focus-visible { outline: 2px solid #22d3ee; outline-offset: 2px; }
+      html:not([lang="de"]) [data-l="de"], html[lang="de"] [data-l="en"] { display: none; }
       #app-name { margin: 0; font: 700 28px "Space Grotesk", "Inter", system-ui, sans-serif; color: #f3f0e8; }
     </style>
   </head>
   <body>
     <h1 id="app-name">Xperience albert.</h1>
+    <div id="boot" class="boot" role="status">
+      <p data-l="en" lang="en">albert. is loading: reading the architecture and building the 3D parts. This takes a few seconds.</p>
+      <p data-l="de" lang="de">albert. lädt: Die Architektur wird gelesen und die 3D-Teile werden gebaut. Das dauert einige Sekunden.</p>
+    </div>
+    <noscript>
+      <div class="boot"><p>albert. needs JavaScript. / albert. braucht JavaScript.</p></div>
+    </noscript>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

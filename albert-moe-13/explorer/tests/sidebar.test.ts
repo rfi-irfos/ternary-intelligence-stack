@@ -217,3 +217,15 @@ describe('OS sidebar (Task 11d addendum 1)', () => {
     expect(cb).toHaveBeenCalledTimes(3);
   });
 });
+
+describe('width handle is an accessible separator', () => {
+  it('carries its value, the minimum and the maximum, and follows the width', () => {
+    const sb = make();
+    const grip = sb.element.querySelector('.sidebar-grip')!;
+    expect(grip.getAttribute('aria-valuenow')).toBe(String(sb.width()));
+    expect(grip.getAttribute('aria-valuemin')).toBe(String(SIDEBAR_MIN));
+    expect(grip.getAttribute('aria-valuemax')).toBe(String(sidebarMax(1280)));
+    sb.setWidth(333);
+    expect(grip.getAttribute('aria-valuenow')).toBe('333');
+  });
+});

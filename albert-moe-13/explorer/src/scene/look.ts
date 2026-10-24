@@ -37,6 +37,16 @@ export const PRESETS: Record<Quality, Preset> = {
 
 export const usesPost = (q: Quality): boolean => PRESETS[q].bloom;
 
+/**
+ * A phone: touch is the main pointer and the short side of the screen is at most 600 px. A phone starts on
+ * Low without a probe (spec §8: Low by default on mobile); a tablet or a laptop with a touch screen keeps the
+ * probe. A saved choice wins over both.
+ */
+export function isPhoneLike(win: { innerWidth: number; innerHeight: number; matchMedia?: (q: string) => { matches: boolean } }): boolean {
+  const coarse = win.matchMedia?.('(pointer: coarse)').matches ?? false;
+  return coarse && Math.min(win.innerWidth, win.innerHeight) <= 600;
+}
+
 /** Median of the finite samples (NaN for none). */
 export function median(xs: number[]): number {
   const v = xs.filter(Number.isFinite).sort((a, b) => a - b);

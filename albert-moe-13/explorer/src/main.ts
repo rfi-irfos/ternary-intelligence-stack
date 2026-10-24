@@ -17,7 +17,7 @@ import { emptyClick, pickAction } from './ui/pickAction';
 import { APP_NAME } from './content/brand';
 import { PALETTE } from './scene/palette';
 import { FONT } from './style/theme';
-import { type Probe, type Quality, createLook, createProbe, loadOverride, resolveQuality } from './scene/look';
+import { type Probe, type Quality, createLook, createProbe, isPhoneLike, loadOverride, resolveQuality } from './scene/look';
 import { QUALITY_MENU_CSS, createQualityMenu } from './ui/qualityMenu';
 import { LABEL_CSS } from './data/labeled';
 import { createAnimator } from './flow/animate';
@@ -44,7 +44,9 @@ import { closeLightbox } from './ui/lightbox';
 import { closeTourMenu, isTourMenuOpen, openTourMenu, setTourPick } from './ui/tourMenu';
 import { createTourRunner } from './tours/engine';
 import { createProgressMap } from './ui/progressMap';
-import { tourProgress } from './ui/prefs';
+import { t, tourProgress } from './ui/prefs';
+import { fallbackUrl, hasWebGL2, watchContext } from './ui/glSupport';
+import { attachShortcutsKey, createShortcutsEntry } from './ui/shortcuts';
 
 /** Waits (at most `ms`) for the display face, so the canvas labels of the scene draw in it; runs beside the data loads. */
 async function fontsReady(ms = 1500): Promise<void> {
@@ -56,7 +58,30 @@ async function fontsReady(ms = 1500): Promise<void> {
   await Promise.race([load, new Promise<void>((r) => setTimeout(r, ms))]);
 }
 
+/** Sends the visitor to the static page (tables of the architecture and the caveats) when WebGL 2 is missing. */
+function toFallback(): void {
+  window.location.replace(fallbackUrl(import.meta.env.BASE_URL));
+}
+
+/** The loading text says what failed and offers a reload; nothing else of the page works without the scene. */
+function showBootError(err: unknown): void {
+  const boot = document.getElementById('boot') ?? document.body.appendChild(Object.assign(document.createElement('div'), { id: 'boot', className: 'boot' }));
+  boot.setAttribute('role', 'alert');
+  const msg = document.createElement('p');
+  msg.textContent = t('boot.failed', { why: err instanceof Error ? err.message : String(err) });
+  const reload = document.createElement('button');
+  reload.type = 'button';
+  reload.textContent = t('boot.reload');
+  reload.addEventListener('click', () => window.location.reload());
+  boot.replaceChildren(msg, reload);
+  reload.focus();
+}
+
 async function main(): Promise<void> {
+  if (!hasWebGL2()) {
+    toFallback();
+    return;
+  }
   document.title = APP_NAME;
   const heading = document.getElementById('app-name');
   if (heading) heading.textContent = APP_NAME;
@@ -74,7 +99,14 @@ async function main(): Promise<void> {
   // Canvas MSAA stays on: Low renders straight to the canvas and relies on it for the thin edges, and
   // the preset can change at runtime without recreating the context. On High and Medium the composer
   // renders into its own MSAA target and the canvas AA only costs the final full-screen copy.
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  let renderer: THREE.WebGLRenderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+  } catch {
+    // The probe context worked but the real one did not (out of contexts, blocked GPU): same page as without WebGL 2.
+    toFallback();
+    return;
+  }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(renderer.domElement);
@@ -157,6 +189,8 @@ async function main(): Promise<void> {
     },
   });
   sidebar.body('analysis').append(exhibitEntry.element);
+  // Keys and mouse actions: the ? key anywhere, and an entry at the foot of the Session section.
+  attachShortcutsKey();
   // The quiet mastery map: folded, a check mark per finished thing, no score.
   sidebar.body('analysis').append(createProgressMap().element);
   window.addEventListener('pagehide', () => { closeLightbox(); exhibit.dispose(); });
@@ -187,7 +221,7 @@ async function main(): Promise<void> {
   bar.onOp((op) => { if (op.layer !== undefined) bar.setLayer(op.layer); });
   selection.onChange((l) => { if (l !== null) bar.setLayer(l); });
   // The tool: Sitzung (sentence and words), Darstellung (view mode, quality, sound) hold the bar's controls.
-  sidebar.body('session').append(bar.session);
+  sidebar.body('session').append(bar.session, createShortcutsEntry().element);
   sidebar.headTools.append(bar.display);
   const layerMode = createLayerMode({
     arch, view, rig, loadWeights,
@@ -402,13 +436,17 @@ async function main(): Promise<void> {
   const look = createLook({ renderer, scene, camera, root: tower.root });
   // Every preset switch goes through the explode view, so an open level keeps the row dimmed.
   const applyQuality = (q: Quality): void => {
+    activeQuality = q;
     view.refreshLook(() => look.applyQuality(q));
     reapplyPin();
     // Low: the lobby shows a still frame under a plain veil (no drift, no backdrop blur).
     lobby.setStill(q === 'low');
   };
   const override = loadOverride();
-  applyQuality(override ?? 'high');
+  // A phone starts on Low and skips the probe (spec §8); everything else starts on High and lets the probe pick.
+  const phone = isPhoneLike(window);
+  let activeQuality: Quality = override ?? (phone ? 'low' : 'high');
+  applyQuality(activeQuality);
   let probe: Probe | null = null;
   let probeToken = 0;
   // Compile the High shaders first (where supported), so the probe measures frames, not compiles.
@@ -425,8 +463,8 @@ async function main(): Promise<void> {
     probeToken++;
     probe = null;
   };
-  if (!override) startProbe();
-  let lastAuto: Quality | null = null;
+  if (!override && !phone) startProbe();
+  let lastAuto: Quality | null = !override && phone ? 'low' : null;
   const menu = createQualityMenu((q) => {
     if (q) {
       stopProbe();
@@ -438,6 +476,7 @@ async function main(): Promise<void> {
       startProbe();
     }
   });
+  if (lastAuto) menu.setAuto(lastAuto);
   // Quality and sound live in the dropdown under the gear of the top bar.
   top.settings.body.append(menu.element, settingsField('settings.sound', soundToggle(sound).element));
 
@@ -468,7 +507,16 @@ async function main(): Promise<void> {
 
   const timer = new THREE.Timer();
   timer.connect(document);
-  renderer.setAnimationLoop((now: number) => {
+  if (import.meta.env.VITE_E2E) {
+    // Test hook of the e2e build (VITE_E2E=1, see playwright.config.ts): not part of the normal build.
+    (window as unknown as { __albert: unknown }).__albert = {
+      bar, rig, view, panel, layerMode, legend, camera, tower, top, lobby, flow, look, sidebar, tours, renderer,
+      pick: (x: number, y: number) => rayAt(x, y)?.id ?? null,
+      quality: () => activeQuality,
+    };
+  }
+  let booted = false;
+  const frame = (now: number): void => {
     timer.update(now);
     const dt = timer.getDelta();
     drift.visible = lobby.visible();
@@ -494,9 +542,24 @@ async function main(): Promise<void> {
       menu.setAuto(picked);
       applyQuality(resolveQuality(picked));
     }
+    if (!booted) {
+      // The first frame is on the canvas: the loading text has done its job.
+      booted = true;
+      document.getElementById('boot')?.remove();
+    }
+  };
+  // A lost WebGL context freezes the view: say so, with a reload. When the browser gives the context back, three.js
+  // re-creates its GPU state; the passes and sizes are rebuilt here and drawing starts again.
+  watchContext(renderer.domElement, {
+    onLost: () => renderer.setAnimationLoop(null),
+    onRestored: () => {
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      look.setSize(window.innerWidth, window.innerHeight);
+      applyQuality(activeQuality);
+      renderer.setAnimationLoop(frame);
+    },
   });
+  renderer.setAnimationLoop(frame);
 }
 
-main().catch((err) => {
-  document.body.textContent = String(err);
-});
+main().catch(showBootError);

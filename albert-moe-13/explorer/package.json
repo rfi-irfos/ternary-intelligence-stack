@@ -8,13 +8,16 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "caveats": "node tools/render-caveats.ts"
+    "caveats": "node tools/render-caveats.ts",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "three": "0.186.1"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.1",
     "@types/three": "0.186.0",
+    "axe-core": "4.14.0",
     "jsdom": "29.1.1",
     "typescript": "5.9.3",
     "vite": "8.3.5",

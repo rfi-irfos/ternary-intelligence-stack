@@ -1,5 +1,6 @@
 // Minimal typings for the node built-ins used by the tests (no @types/node dependency).
 declare module 'node:fs' {
+  export function readFileSync(path: URL | string, encoding: 'utf8'): string;
   export function readFileSync(path: URL | string): { buffer: ArrayBufferLike; byteOffset: number; byteLength: number };
   export function existsSync(path: URL | string): boolean;
   export function readdirSync(path: URL | string): string[];

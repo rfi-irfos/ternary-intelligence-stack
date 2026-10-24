@@ -630,3 +630,30 @@ body.cinema :is(.top-bar, .dock, .tour-card, .timeline, .os-sidebar, .sidebar-ed
   .lightbox { padding: var(--space-2); }
   .lightbox-img { max-height: none; }
 }
+
+/* ---- lost graphics context, shortcut list, keys (Task 15) ---------------------------------- */
+kbd { display: inline-block; min-width: 1.6em; box-sizing: border-box; padding: 2px 6px; border: 1px solid var(--c-hairline); border-bottom-width: 2px; border-radius: 6px;
+  background: var(--c-raised); color: var(--c-text); font: 500 var(--fs-small)/1.2 var(--font-ui); text-align: center; }
+.gl-lost { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center; padding: var(--space-4); box-sizing: border-box; background: rgba(0, 0, 0, 0.82); }
+.gl-lost-card { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); width: min(100%, 460px); padding: var(--space-5); box-sizing: border-box;
+  border: 1px solid var(--c-card-line); border-radius: var(--r-panel); background: var(--c-card-solid); }
+.gl-lost-card h2 { margin: 0; font: 600 var(--fs-large)/1.3 var(--font-display); color: var(--c-text); }
+.gl-lost-card p { margin: 0; font: 400 var(--fs-base)/1.45 var(--font-ui); color: var(--c-text); }
+.shortcuts { position: fixed; inset: 0; z-index: 75; display: flex; align-items: center; justify-content: center; box-sizing: border-box; padding: var(--space-4);
+  background: rgba(0, 0, 0, 0.7); animation: fade-in var(--t-base) var(--ease); }
+.shortcuts-card { display: flex; flex-direction: column; gap: var(--space-3); width: min(100%, 620px); max-height: 100%; padding: var(--space-4); box-sizing: border-box;
+  border: 1px solid var(--c-card-line); border-radius: var(--r-panel); background: var(--c-card-solid); }
+.shortcuts-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.shortcuts-title { margin: 0; font: 600 var(--fs-large)/1.3 var(--font-display); color: var(--c-text); }
+.shortcuts-close { min-width: var(--control-h); min-height: var(--control-h); }
+.shortcuts-body { overflow: auto; min-height: 0; }
+.shortcuts-group { margin: var(--space-3) 0 var(--space-2); font: 600 var(--fs-base)/1.3 var(--font-display); color: var(--c-text); }
+.shortcuts-list { display: grid; grid-template-columns: minmax(8em, max-content) 1fr; gap: var(--space-2) var(--space-4); margin: 0; align-items: baseline; }
+.shortcuts-list dt { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.shortcuts-list dd { margin: 0; font: 400 var(--fs-base)/1.45 var(--font-ui); color: var(--c-text); }
+.shortcuts-entry { margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--c-card-line); }
+.shortcuts-entry-btn { min-height: var(--control-h); }
+@media (max-width: 600px) {
+  .shortcuts-list { grid-template-columns: 1fr; gap: var(--space-1); }
+  .shortcuts-list dd { margin-bottom: var(--space-2); }
+}

@@ -5,7 +5,7 @@ import arch from '../public/data/architecture.json';
 import { validateArchitecture } from '../src/data/architecture';
 import {
   HAZE_DENSITY, PRESETS, PROBE_WARMUP, QUALITY_STORAGE_KEY, type KeyValueStore,
-  chooseQuality, createProbe, hazeDensity, loadOverride, resolveQuality, saveOverride, usesPost,
+  chooseQuality, createProbe, hazeDensity, isPhoneLike, loadOverride, resolveQuality, saveOverride, usesPost,
 } from '../src/scene/look';
 import { BLOOM_LAYER, lookMaterial } from '../src/scene/materials';
 import { PALETTE, cssHex } from '../src/scene/palette';
@@ -200,5 +200,19 @@ describe('palette in the scene', () => {
     probe.set(BLOOM_LAYER);
     tower.root.traverse((o) => { if (o.layers.test(probe)) bloom.push(o.name); });
     expect(bloom.sort()).toEqual(['shaft.A', 'shaft.B']);
+  });
+});
+
+describe('phone default', () => {
+  const win = (w: number, h: number, coarse: boolean) => ({ innerWidth: w, innerHeight: h, matchMedia: (q: string) => ({ matches: coarse && q === '(pointer: coarse)' }) });
+  it('a touch device with a short side of 600 px or less is a phone, in both orientations', () => {
+    expect(isPhoneLike(win(390, 844, true))).toBe(true);
+    expect(isPhoneLike(win(844, 390, true))).toBe(true);
+  });
+  it('a tablet, a laptop and a narrow desktop window are not', () => {
+    expect(isPhoneLike(win(820, 1180, true))).toBe(false);
+    expect(isPhoneLike(win(1366, 768, false))).toBe(false);
+    expect(isPhoneLike(win(390, 844, false))).toBe(false);
+    expect(isPhoneLike({ innerWidth: 390, innerHeight: 844 })).toBe(false);
   });
 });

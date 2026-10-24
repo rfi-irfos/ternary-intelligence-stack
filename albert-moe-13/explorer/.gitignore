@@ -1,3 +1,5 @@
 !public/data/
 !src/data/
 e2e/out/
+dist-e2e/
+test-results/

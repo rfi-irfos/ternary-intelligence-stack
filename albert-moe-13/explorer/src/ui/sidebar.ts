@@ -167,6 +167,10 @@ export function createSidebar(deps: SidebarDeps = {}): Sidebar {
 
   const applyWidth = (): void => {
     el.style.width = `${w}px`;
+    // A focusable separator is a slider for the width: it carries its value (axe: aria-required-attr).
+    grip.setAttribute('aria-valuenow', String(w));
+    grip.setAttribute('aria-valuemin', String(SIDEBAR_MIN));
+    grip.setAttribute('aria-valuemax', String(sidebarMax(win.innerWidth)));
     if (typeof document !== 'undefined') document.documentElement.style.setProperty('--side-w', `${w}px`);
   };
   applyWidth();

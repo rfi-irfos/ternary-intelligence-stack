@@ -69,7 +69,10 @@ regeneration) are done on the team's Colony server; a laptop is fine for the dev
     npm run build      # tsc --noEmit, then vite build into dist/
     npm run preview    # serve the production build locally
 
-Other scripts: `npm test` (vitest), `npm run caveats` (regenerate `CAVEATS.md`).
+Other scripts: `npm test` (vitest), `npm run e2e` (Playwright), `npm run caveats` (regenerate `CAVEATS.md`).
+
+Without WebGL 2 the app redirects to `fallback.html`, which the build writes from `public/data/architecture.json` and
+`src/content/caveats.ts` (the source of `CAVEATS.md`): plain tables in DE and EN.
 
 ## Tests
 
@@ -77,8 +80,10 @@ Other scripts: `npm test` (vitest), `npm run caveats` (regenerate `CAVEATS.md`).
   citation checks against the pinned Rust sources in `tests/fixtures/`).
 - `tools/test_build_architecture.py` and `tools/test_build_weights.py` test the Python data
   builders (pytest).
-- `e2e/run.sh` is a headless HUD check of the built app (Playwright; Colony only, it needs
-  Chrome and `~/work/pw`).
+- `npm run e2e` runs the Playwright suite in `e2e/*.spec.ts` against a separate build (`VITE_E2E=1`, which adds
+  the `window.__albert` test hook; the normal build has none). Colony only: `npx playwright install chromium`
+  once, WebGL 2 comes from SwiftShader. It covers smoke, layout rects at 390 / 1280 / 1920 px, the sidebar
+  at 280 px and at its widest, axe-core on every surface, reduced motion, context loss and the fallback page.
 
 ## Project layout
 

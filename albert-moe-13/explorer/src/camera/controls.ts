@@ -190,7 +190,14 @@ export function overviewPoints(extent: RowExtent): THREE.Vector3[] {
   return out;
 }
 
-export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement, extent: RowExtent): CameraRig {
+export interface ControlsOptions {
+  /** True when the visitor prefers reduced motion: every flight then cuts to its pose. Defaults to the media query. */
+  reducedMotion?: () => boolean;
+}
+
+export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement, extent: RowExtent, opts: ControlsOptions = {}): CameraRig {
+  const motionQuery = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+  const reduced = opts.reducedMotion ?? ((): boolean => motionQuery?.matches ?? false);
   const controls = new OrbitControls(camera, dom);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
@@ -251,7 +258,8 @@ export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement
         toPos: toPos.clone(),
         toTarget: toTarget.clone(),
         elapsed: 0,
-        dur: Math.max(ms, 0) / 1000,
+        // Reduced motion: every flight (tours, links, Home, Esc) is a cut; the camera moves only by the visitor's own drag.
+        dur: reduced() ? 0 : Math.max(ms, 0) / 1000,
         resolve,
       };
       if (f.dur === 0) {
