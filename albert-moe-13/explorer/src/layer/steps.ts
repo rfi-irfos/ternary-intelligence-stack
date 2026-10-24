@@ -2,6 +2,7 @@ import type { CaveatId } from '../content/caveats';
 import type { Architecture } from '../data/architecture';
 import { type LabelKind, type Labeled, illustrative, measured, structure } from '../data/labeled';
 import { type Trace, type TraceEvent, decodeToken } from '../data/trace';
+import { type LayerWeights, ternarySlice } from '../data/weights';
 import type { Depth } from '../ui/depth';
 import type { Lang } from '../ui/strings';
 import { type ComponentId, type Stream, headId, attnId, attnMatrixId, bankId, expertId, expertPartId, gateId, ln1Id, ln2Id, routerId } from '../scene/ids';
@@ -34,8 +35,16 @@ export type ViewSpec =
   }
   /** Numbers with their own labels, listed. */
   | { kind: 'readout'; items: { name: string; value: Labeled<number | string> }[] }
-  /** 4x4 toy of a ternary matmul (W in {-1,0,+1}). Always illustrative. `tiles` are real weight matrices of this layer (structure). */
-  | { kind: 'matmul'; label: 'illustrative'; w: number[][]; x: number[]; y: number[]; tiles: string[] }
+  /**
+   * 4x4 ternary matmul y = gamma * (W x). `label` is the kind of x and y: always illustrative (the trace holds no activation
+   * vectors). `wKind` is the kind of W: structure when it is the real top-left 4x4 corner of `wFrom` read from the layer's
+   * weight file (with that matrix's `gamma`), illustrative for the toy W used while no weight file is loaded.
+   * `tiles` are the real weight matrices of this layer shown beside it.
+   */
+  | {
+    kind: 'matmul'; label: 'illustrative'; w: number[][]; x: number[]; y: number[]; tiles: string[];
+    wKind: 'structure' | 'illustrative'; gamma: number | null; wFrom: string | null;
+  }
   /** Pairwise rotation of Q and K: angle = position * 10000^(-2i/d), d = head_dim (rotate_half pairing). */
   | { kind: 'rope'; label: 'structure'; position: number; headDim: number; pairs: { pair: number; freq: number; angle: number }[]; pairing: string };
 
@@ -77,13 +86,20 @@ export function toyRandom(seed: number): () => number {
 
 const r3 = (x: number): number => Math.round(x * 1000) / 1000;
 
-function toyMatmul(seed: number, tiles: string[]): ViewSpec {
+function toyMatmul(seed: number, tiles: string[], weights: LayerWeights | null = null): ViewSpec {
   const rnd = toyRandom(seed);
   const tri = (): number => { const v = rnd(); return v < -0.34 ? -1 : v > 0.34 ? 1 : 0; };
-  const w = Array.from({ length: 4 }, () => Array.from({ length: 4 }, tri));
+  const toy = Array.from({ length: 4 }, () => Array.from({ length: 4 }, tri));
   const x = Array.from({ length: 4 }, () => r3(rnd()));
-  const y = w.map((row) => r3(row.reduce((s, c, j) => s + c * (x[j] ?? 0), 0)));
-  return { kind: 'matmul', label: 'illustrative', w, x, y, tiles };
+  // The real corner and scale of the first tile matrix when the layer's weight file is loaded (Simeon 2026-10-23: real data only).
+  const real = weights && tiles[0] ? ternarySlice(weights, tiles[0]) : null;
+  if (real) {
+    const g = real.gamma ?? 1;
+    const y = real.w.map((row) => r3(g * row.reduce((s, c, j) => s + c * (x[j] ?? 0), 0)));
+    return { kind: 'matmul', label: 'illustrative', w: real.w, x, y, tiles, wKind: 'structure', gamma: real.gamma, wFrom: real.name };
+  }
+  const y = toy.map((row) => r3(row.reduce((s, c, j) => s + c * (x[j] ?? 0), 0)));
+  return { kind: 'matmul', label: 'illustrative', w: toy, x, y, tiles, wKind: 'illustrative', gamma: null, wFrom: null };
 }
 
 function toySoftmax(seed: number, n: number): number[] {
@@ -113,6 +129,7 @@ function normalise(v: number[]): number[] {
  */
 export function layerSteps(
   t: Trace | null, layer: number, stream: Stream, position: number, a: Architecture, lang: Lang = 'en',
+  weights: LayerWeights | null = null,
 ): Step[] {
   /** Content text as an { en, de } pair, resolved for `lang` (formulas and tensor names are not translated). */
   const L = (x: { en: string; de: string }): string => x[lang];
@@ -176,8 +193,8 @@ export function layerSteps(
       researcher: L({ en: 'Q, K, V = ln1(x) W{q,k,v}, W in {-1, 0, +1} with scale gamma', de: 'Q, K, V = ln1(x) W{q,k,v}, W in {-1, 0, +1} mit Skala gamma' }),
     },
     formula: 'Q = x Wq, K = x Wk, V = x Wv',
-    view: toyMatmul(seed + 1, tiles(['q', 'k', 'v'])),
-    data: illustrative({ note: 'toy 4x4 matmul; the weight tiles in the slab are structure' }),
+    view: toyMatmul(seed + 1, tiles(['q', 'k', 'v']), weights),
+    data: illustrative({ note: 'the input x is an example; W is the real 4x4 corner of the weight tile when the weight file is loaded' }),
     caveats: [], open: attnOpen,
     highlight: (['q', 'k', 'v'] as const).map((x) => attnMatrixId(layer, stream, x)),
   });
@@ -366,7 +383,7 @@ export function layerSteps(
         }),
       },
       formula: 'y = GELU((x + seed_bias) W_fc) W_proj  (heaviest chosen expert)',
-      view: toyMatmul(seed + 2, [`experts.${e0}.c_fc.weight`, `experts.${e0}.c_proj.weight`]),
+      view: toyMatmul(seed + 2, [`experts.${e0}.c_fc.weight`, `experts.${e0}.c_proj.weight`], weights),
       data: router ? m({ expert: e0, weight: wts[heavy], note: 'heaviest chosen expert' }) : illustrative({ expert: e0, note: 'no trace' }),
       caveats: ['A4'], open: [`L${layer}`, bankId(layer), expertId(layer, e0)],
       highlight: (['seed_bias', 'c_fc', 'gelu', 'c_proj'] as const).map((p) => expertPartId(layer, e0, p)),

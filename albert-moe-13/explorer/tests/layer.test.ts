@@ -4,6 +4,8 @@ import arch from '../public/data/architecture.json';
 import { validateArchitecture } from '../src/data/architecture';
 import { measured } from '../src/data/labeled';
 import { validateTrace, type Trace } from '../src/data/trace';
+import realL12 from '../public/data/weights/L12.json';
+import { validateLayerWeights, ternarySlice } from '../src/data/weights';
 import * as THREE from 'three';
 import { layerSteps, STEP_IDS } from '../src/layer/steps';
 import { applyHighlight, createLayerMode, renderStep, renderView, type LayerModeDeps } from '../src/layer/views';
@@ -89,6 +91,36 @@ describe('layerSteps', () => {
       }
       expect(steps.find((x) => x.id === 'qkv')?.data.kind).toBe('illustrative');
     }
+  });
+
+  it('the qkv and expert matmuls use the real 4x4 corner and gamma of the layer file, with the input still illustrative', () => {
+    const w = validateLayerWeights(realL12);
+    const steps = layerSteps(kjv, 12, 'A', 3, a, 'en', w);
+    const qkv = steps.find((x) => x.id === 'qkv')!;
+    if (qkv.view.kind !== 'matmul') throw new Error('wrong view');
+    const q = ternarySlice(w, 'stream_a.attn.q_proj.weight')!;
+    expect(qkv.view.w).toEqual(q.w);
+    expect(qkv.view.gamma).toBe(q.gamma);
+    expect(qkv.view.wKind).toBe('structure');
+    expect(qkv.view.wFrom).toBe('stream_a.attn.q_proj.weight');
+    expect(qkv.view.label).toBe('illustrative');
+    expect(qkv.view.y).toEqual(q.w.map((row) => Math.round(q.gamma! * row.reduce((s, c, j) => s + c * qkv.view.x[j]!, 0) * 1000) / 1000));
+    const html = renderView(qkv.view, w);
+    expect(html.querySelector('.layer-kind--structure')).not.toBeNull();
+    expect(html.querySelector('.layer-kind--illustrative')).not.toBeNull();
+    const ex = steps.find((x) => x.id === 'expert')!;
+    if (ex.view.kind !== 'matmul') throw new Error('wrong view');
+    expect(ex.view.wFrom).toMatch(/^experts\.\d+\.c_fc\.weight$/);
+    expect(ex.view.w).toEqual(ternarySlice(w, ex.view.wFrom!)!.w);
+    // the other stream reads its own matrices
+    const b = layerSteps(kjv, 12, 'B', 3, a, 'en', w).find((x) => x.id === 'qkv')!;
+    if (b.view.kind !== 'matmul') throw new Error('wrong view');
+    expect(b.view.wFrom).toBe('stream_b.attn.q_proj.weight');
+    // without a weight file the toy W stays and says so
+    const toy = layerSteps(kjv, 12, 'A', 3, a).find((x) => x.id === 'qkv')!;
+    if (toy.view.kind !== 'matmul') throw new Error('wrong view');
+    expect(toy.view.wKind).toBe('illustrative');
+    expect(toy.view.wFrom).toBeNull();
   });
 
   it('A3 caveat when experts 0-3 are involved or the clamp fired; gate uses measured g', () => {

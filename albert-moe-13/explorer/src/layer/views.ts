@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CAVEATS } from '../content/caveats';
 import type { Architecture } from '../data/architecture';
-import { type LabelKind, decText, fmt, fmtText, kindName, structure } from '../data/labeled';
+import { type LabelKind, decText, fmt, numText, fmtText, kindName, structure } from '../data/labeled';
 import { type Trace, decodeToken, loadTrace } from '../data/trace';
 import { type LayerWeights, type WeightsLoader, findMatrix } from '../data/weights';
 import type { ExplodeView } from '../scene/explode';
@@ -176,7 +176,12 @@ function barsView(v: Extract<ViewSpec, { kind: 'bars' }>): HTMLElement {
 function matmulView(v: Extract<ViewSpec, { kind: 'matmul' }>, weights: LayerWeights | null): HTMLElement {
   const box = el('div', 'layer-view layer-view--matmul');
   const head = el('div', 'layer-view-title');
-  head.append(`${t('fig.toy')} `, kindChip('illustrative', t('fig.toyTip')));
+  if (v.wKind === 'structure' && v.wFrom) {
+    // W is the checkpoint's own corner (structure); only the input x and so the output y are examples.
+    head.append(`${t('fig.realW', { name: v.wFrom })} `, kindChip('structure'), ` · ${t('fig.sampleXY', { g: v.gamma === null ? '1' : numText(v.gamma) })} `, kindChip('illustrative', t('fig.toyTip')));
+  } else {
+    head.append(`${t('fig.toy')} `, kindChip('illustrative', t('fig.toyTip')));
+  }
   box.append(head);
   const grid = el('div', 'layer-matmul');
   const cell = (txt: string, color?: string): HTMLElement => {
@@ -468,7 +473,7 @@ export function createLayerMode(deps: LayerModeDeps): LayerMode {
     tokenSel.value = String(Math.max(0, Math.min(toks.length - 1, keep)));
   };
   const rebuild = (): void => {
-    stepList = layerSteps(trace, layer, streamSel.value as Stream, position(), arch, getLang());
+    stepList = layerSteps(trace, layer, streamSel.value as Stream, position(), arch, getLang(), weights);
     i = Math.min(i, stepList.length - 1);
     target = i;
   };
