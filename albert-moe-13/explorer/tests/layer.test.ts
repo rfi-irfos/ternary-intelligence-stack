@@ -98,13 +98,14 @@ describe('layerSteps', () => {
     const steps = layerSteps(kjv, 12, 'A', 3, a, 'en', w);
     const qkv = steps.find((x) => x.id === 'qkv')!;
     if (qkv.view.kind !== 'matmul') throw new Error('wrong view');
+    const qv = qkv.view;
     const q = ternarySlice(w, 'stream_a.attn.q_proj.weight')!;
     expect(qkv.view.w).toEqual(q.w);
     expect(qkv.view.gamma).toBe(q.gamma);
     expect(qkv.view.wKind).toBe('structure');
     expect(qkv.view.wFrom).toBe('stream_a.attn.q_proj.weight');
     expect(qkv.view.label).toBe('illustrative');
-    expect(qkv.view.y).toEqual(q.w.map((row) => Math.round(q.gamma! * row.reduce((s, c, j) => s + c * qkv.view.x[j]!, 0) * 1000) / 1000));
+    expect(qkv.view.y).toEqual(q.w.map((row) => Math.round(q.gamma! * row.reduce((s, c, j) => s + c * qv.x[j]!, 0) * 1000) / 1000));
     const html = renderView(qkv.view, w);
     expect(html.querySelector('.layer-kind--structure')).not.toBeNull();
     expect(html.querySelector('.layer-kind--illustrative')).not.toBeNull();

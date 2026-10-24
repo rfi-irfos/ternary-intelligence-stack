@@ -11,6 +11,8 @@ export const ternarySteps: TourStep[] = [
         'Ternär heißt: Jedes Gewicht ist −1, 0 oder +1. Rechnen wird zu Addieren, Abziehen und Überspringen. Das sind die ersten 4 × 4 Gewichte einer echten Matrix.'],
       ['Weights are signs in {−1, 0, +1}: y = γ · (W x). The dot product needs adds and subtracts only. W below is read from the layer {layer} weight file.',
         'Gewichte sind Vorzeichen in {−1, 0, +1}: y = γ · (W x). Das Skalarprodukt braucht nur Additionen und Subtraktionen. W unten stammt aus der Gewichtsdatei der Ebene {layer}.'],
+      ['Tensor stream_a.attn.q_proj.weight, [{hidden} × {hidden}] = {hidden} × {hidden} signs. W[j][i] = sign(w_ji) · [|w_ji| > τ], τ = {tau} for this layer. The 4 × 4 corner is read from the stored 32 × 32 tile; γ comes from the same file.',
+        'Tensor stream_a.attn.q_proj.weight, [{hidden} × {hidden}] = {hidden} × {hidden} Vorzeichen. W[j][i] = sign(w_ji) · [|w_ji| > τ], τ = {tau} in dieser Ebene. Die 4x4-Ecke stammt aus der gespeicherten Kachel von 32 × 32; γ stammt aus derselben Datei.'],
     ),
   },
   {
@@ -21,6 +23,8 @@ export const ternarySteps: TourStep[] = [
         'Zu jeder Matrix gehört eine Skalenzahl γ. Sie gibt den Ergebnissen ihre Größe zurück. Jede Matrix hat ihr eigenes γ.'],
       ['γ = mean(|w|) of the F32 latent weights; the model uses w_t = γ · sign(w) · [|w| > τ]. Shown: c_fc of expert 0 in layer {layer}.',
         'γ = mean(|w|) der latenten F32-Gewichte; das Modell nutzt w_t = γ · sign(w) · [|w| > τ]. Gezeigt: c_fc von Experte 0 in Ebene {layer}.'],
+      ['Tensor experts.0.c_fc.weight, [{ffn} × {hidden}], {ffn} × {hidden} raw weights, one γ for the whole matrix. Dequantised weight w_t = γ · t with t in {−1, 0, +1}, so y = γ · (T x) needs one multiplication per output row.',
+        'Tensor experts.0.c_fc.weight, [{ffn} × {hidden}], {ffn} × {hidden} rohe Gewichte, ein γ für die ganze Matrix. Entquantisiertes Gewicht w_t = γ · t mit t in {−1, 0, +1}, also braucht y = γ · (T x) eine Multiplikation je Ausgabezeile.'],
     ),
   },
   {
@@ -31,6 +35,8 @@ export const ternarySteps: TourStep[] = [
         'Das Diagramm zeigt, wie oft −1, 0 und +1 in den echten Matrizen dieser Ebene vorkommen.'],
       ['Share of −1, 0 and +1 per matrix, counted over the full matrix in the checkpoint. The threshold τ of layer {layer} is {tau}.',
         'Anteil von −1, 0 und +1 je Matrix, gezählt über die ganze Matrix im Checkpoint. Der Schwellwert τ der Ebene {layer} ist {tau}.'],
+      ['Fields per matrix in L12.json: frac_neg, frac_zero, frac_pos with frac_neg + frac_zero + frac_pos = 1, counted over all entries of the matrix (not over the 32 × 32 tile). τ of layer {layer} = {tau}.',
+        'Felder je Matrix in L12.json: frac_neg, frac_zero, frac_pos mit frac_neg + frac_zero + frac_pos = 1, gezählt über alle Einträge der Matrix (die ganze Matrix; die Kachel von 32 × 32 zeigt nur einen Ausschnitt). τ der Ebene {layer} = {tau}.'],
     ),
   },
   {
@@ -40,6 +46,8 @@ export const ternarySteps: TourStep[] = [
         'Beim Training bleiben die Gewichte normale Dezimalzahlen (F32). Das Modell macht daraus jedes Mal die ternäre Form. Ein Trick namens STE leitet das Lernsignal hindurch.'],
       ['Training keeps F32 latent weights and ternarises them in the forward pass (threshold τ). The straight-through estimator (ste.rs) passes the gradient as if the rounding were the identity.',
         'Das Training hält latente F32-Gewichte und ternarisiert sie im Vorwärtsschritt (Schwellwert τ). Der Straight-Through-Estimator (ste.rs) reicht den Gradienten durch, als wäre das Runden die Identität.'],
+      ['Forward: t = sign(w) · [|w| > τ]. Backward: ∂L/∂w := ∂L/∂t (straight-through), so w keeps receiving updates even where t is 0.',
+        'Vorwärts: t = sign(w) · [|w| > τ]. Rückwärts: ∂L/∂w := ∂L/∂t (Straight-Through), so erhält w auch dort Updates, wo t gleich 0 ist.'],
     ),
   },
   {

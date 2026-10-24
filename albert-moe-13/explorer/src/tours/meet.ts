@@ -10,6 +10,8 @@ export const meetSteps: TourStep[] = [
         'albert. ist ein Sprachmodell. Hier siehst du es als lange Reihe aus {layers} Ebenen. Jedes Wort läuft von links nach rechts hindurch.'],
       ['{layers} layers, {streams} streams (A and B), {experts} shared experts per layer, {params} parameters. All counts are read from architecture.json.',
         '{layers} Ebenen, {streams} Ströme (A und B), {experts} gemeinsame Experten je Ebene, {params} Parameter. Alle Zahlen stammen aus architecture.json.'],
+      ['{layers} layers, {streams} streams, {experts} shared experts, top-{topk} routing, hidden width {hidden}, FFN width {ffn}, {heads} heads of width {headDim}, vocabulary {vocab}, {params} parameters. Fusion layers counted from 0: {gatesIndex}. The checkpoint ships one weight file per layer (L0.json to L45.json) (matrices with γ and ternary shares, plus F32 vector statistics).',
+        '{layers} Ebenen, {streams} Ströme, {experts} gemeinsame Experten, Top-{topk}-Routing, Breite {hidden}, FFN-Breite {ffn}, {heads} Köpfe der Breite {headDim}, Wortschatz {vocab}, {params} Parameter. Fusionsebenen ab 0 gezählt: {gatesIndex}. Der Checkpoint liefert je Ebene eine Gewichtsdatei (L0.json bis L45.json) (Matrizen mit γ und ternären Anteilen, dazu Statistiken der F32-Vektoren).'],
     ),
   },
   {
@@ -19,6 +21,8 @@ export const meetSteps: TourStep[] = [
         'Ganz links wird ein Wort zu einer Liste aus Zahlen. Mit Zahlen kann das Modell rechnen.'],
       ['embed: a [{vocab} × {hidden}] table in F32. A token id picks one row of {hidden} values. Both streams start from this vector.',
         'embed: eine Tabelle [{vocab} × {hidden}] in F32. Eine Token-ID wählt eine Zeile mit {hidden} Werten. Beide Ströme starten mit diesem Vektor.'],
+      ['embed: x_0 = E[id], E of shape [{vocab} × {hidden}] in F32. One row lookup replaces a matrix product. Both streams receive the same x_0.',
+        'embed: x_0 = E[id] mit E der Form [{vocab} × {hidden}] in F32. Ein Zeilenzugriff ersetzt hier das Matrixprodukt. Beide Ströme erhalten dasselbe x_0.'],
     ),
   },
   {

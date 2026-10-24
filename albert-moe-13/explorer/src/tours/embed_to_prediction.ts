@@ -19,6 +19,8 @@ export const predictionSteps: TourStep[] = [
         'Die ID wählt eine Zeile aus einer großen Tabelle. Die Zeile ist ein Paket aus {hidden} Zahlen, die Einbettung.'],
       ['Embedding lookup: row[id] of a [{vocab} × {hidden}] F32 table. Both streams start with this vector.',
         'Einbettung per Nachschlagen: Zeile[id] einer F32-Tabelle [{vocab} × {hidden}]. Beide Ströme starten mit diesem Vektor.'],
+      ['x_0 = E[id], E of shape [{vocab} × {hidden}] in F32: {vocab} rows of {hidden} values. The lookup reads an F32 table.',
+        'x_0 = E[id] mit E der Form [{vocab} × {hidden}] in F32: {vocab} Zeilen mit je {hidden} Werten. Das Nachschlagen nutzt eine F32-Tabelle.'],
     ),
   },
   {
@@ -55,6 +57,8 @@ export const predictionSteps: TourStep[] = [
         'Der letzte Schritt gibt jedem Wort des Wortschatzes eine Punktzahl: insgesamt {vocab} Punktzahlen.'],
       ['logits = lm_head(h): a ternary [{vocab} × {hidden}] projection. A softmax turns the logits into probabilities.',
         'Logits = lm_head(h): eine ternäre Projektion [{vocab} × {hidden}]. Eine Softmax macht aus den Logits Wahrscheinlichkeiten.'],
+      ['z = W_head h with W_head of shape [{vocab} × {hidden}] (ternary, with γ), so z has {vocab} entries; p_i = exp(z_i) / Σ_j exp(z_j), Σ_i p_i = 1.',
+        'z = W_head h mit W_head der Form [{vocab} × {hidden}] (ternär, mit γ), also hat z {vocab} Einträge; p_i = exp(z_i) / Σ_j exp(z_j), Σ_i p_i = 1.'],
     ),
   },
   {

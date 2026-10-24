@@ -19,6 +19,8 @@ export const threeSteps: TourStep[] = [
         'Vor den Experten sitzt der Router. Er gibt jedem Experten eine Punktzahl für das aktuelle Wort.'],
       ['The router is an F32 linear layer [{experts} × {hidden}] with a temperature. Its {experts} logits decide the top-{topk}.',
         'Der Router ist eine lineare F32-Schicht [{experts} × {hidden}] mit Temperatur. Seine {experts} Logits entscheiden über die Top-{topk}.'],
+      ['Tensor stream_a.moe.gate.weight in L12.json: [{experts} × {hidden}] F32, {experts} × {hidden} raw weights per stream. logits_e = (W_g x)_e / T; the top-{topk} indices select the experts.',
+        'Tensor stream_a.moe.gate.weight in L12.json: [{experts} × {hidden}] F32, je Strom {experts} × {hidden} rohe Gewichte. logits_e = (W_g x)_e / T; die Top-{topk}-Indizes wählen die Experten.'],
     ),
   },
   {
@@ -32,7 +34,9 @@ export const threeSteps: TourStep[] = [
       ['Your turn to guess first. Afterwards you compare your pick with the recorded run.',
         'Du darfst zuerst raten. Danach vergleichst du mit dem aufgezeichneten Durchlauf.'],
       ['Prediction: the answer is the recorded top-3 of the router event for this layer, stream and token. Nothing is recomputed.',
-        'Vorhersage: Die Antwort ist die aufgezeichnete Top-3 des Router-Ereignisses für diese Ebene, diesen Strom und dieses Token. Nichts wird neu gerechnet.'],
+        'Vorhersage: Die Antwort ist die aufgezeichnete Top-3 des Router-Ereignisses für diese Ebene, diesen Strom und dieses Token. Die Antwort stammt unverändert aus der Aufzeichnung.'],
+      ['Prediction: the router event of the trace carries top3 and weights per position. The answer reads these two fields at the token on screen (layer {layer}, index {index}, stream A, eval mode only).',
+        'Vorhersage: Das Router-Ereignis des Traces enthält top3 und weights je Position. Die Antwort liest diese zwei Felder am Token auf dem Bildschirm (Ebene {layer}, Index {index}, Strom A, nur im Eval-Modus).'],
     ),
   },
   {
@@ -42,6 +46,8 @@ export const threeSteps: TourStep[] = [
         'Die gewählten Experten zählen verschieden. Ihre Gewichte ergeben zusammen 100 %. Der stärkste Experte prägt das Ergebnis am meisten.'],
       ['The weights are a softmax over the top-{topk} logits after the A3 clamp for experts 0 to 3 (caveat A3), before the traffic-light output scales.',
         'Die Gewichte sind eine Softmax über die Top-{topk}-Logits nach der A3-Begrenzung für die Experten 0 bis 3 (Befund A3), vor den Ampel-Ausgabeskalen.'],
+      ['w_i = exp(l_i) / Σ_{j in top-{topk}} exp(l_j), so the {topk} shares sum to 1. The clamp of A3 acts on the logits of experts 0 to 3 before this softmax.',
+        'w_i = exp(l_i) / Σ_{j in Top-{topk}} exp(l_j), die {topk} Anteile ergeben also zusammen 1. Die Begrenzung aus A3 wirkt vor dieser Softmax auf die Logits der Experten 0 bis 3.'],
     ),
   },
   {

@@ -520,7 +520,7 @@ export function createTourRunner(deps: TourDeps): TourRunner {
   };
 
   const onKey = (e: KeyboardEvent): void => {
-    if (e.key !== 'Escape' || !act) return;
+    if (e.key !== 'Escape' || !act || e.defaultPrevented) return;
     // Esc leaves the tour (one level). It never reaches the explode view, the side panel or the camera rig.
     e.preventDefault();
     e.stopImmediatePropagation();
@@ -560,8 +560,10 @@ export function createTourRunner(deps: TourDeps): TourRunner {
       deps.highlight(null);
       // The pre-tour pose comes back only when the camera still sits where the tour left it:
       // a pose the visitor chose (orbit, pan, zoom, a click on a part) stays.
-      const untouched = deps.rig.isFlying() || (a.landed !== null && samePose(deps.rig.pose(), a.landed));
-      if (untouched && a.landed !== null) void deps.rig.flyToPose(a.startPose).catch((err: unknown) => console.error(err));
+      // Before the first flight landed, "where the tour left it" is the starting pose itself.
+      const untouched = deps.rig.isFlying()
+        || samePose(deps.rig.pose(), a.landed ?? a.startPose);
+      if (untouched) void deps.rig.flyToPose(a.startPose).catch((err: unknown) => console.error(err));
       if (finished) { saveTourProgress(a.tour.id, 0); markDone(`tour:${a.tour.id}`); }
       deps.onExit?.(a.tour.id);
       a.returnFocus?.focus();

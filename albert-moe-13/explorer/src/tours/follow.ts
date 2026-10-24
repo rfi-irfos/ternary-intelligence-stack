@@ -28,6 +28,8 @@ export const followSteps: TourStep[] = [
         'Zuerst schaut das Wort auf die Wörter vor ihm und holt sich, was wichtig ist.'],
       ['Attention: {heads} heads of width {headDim}, RoPE, causal mask. The result is added to the residual stream.',
         'Attention: {heads} Köpfe der Breite {headDim}, RoPE, kausale Maske. Das Ergebnis wird zum Residualstrom addiert.'],
+      ['Tensors in L12.json, stream A: stream_a.attn.q_proj.weight, k_proj, v_proj, o_proj, each [{hidden} × {hidden}] ternary with its own γ. Stream B has stream_b.attn.* of the same shapes. Output: x ← x + O(softmax(Q Kᵀ / √{headDim}) V).',
+        'Tensoren in L12.json, Strom A: stream_a.attn.q_proj.weight, k_proj, v_proj, o_proj, je [{hidden} × {hidden}] ternär mit eigenem γ. Strom B hat stream_b.attn.* in denselben Formen. Ausgabe: x ← x + O(softmax(Q Kᵀ / √{headDim}) V).'],
     ),
   },
   {
@@ -37,6 +39,8 @@ export const followSteps: TourStep[] = [
         'Der Schalter (der Router) wählt {topk} von {experts} Experten für dieses Wort.'],
       ['The router scores all {experts} experts with an F32 gate, keeps the top-{topk} and takes a softmax over their logits.',
         'Der Router bewertet alle {experts} Experten mit einem F32-Gate, behält die Top-{topk} und bildet die Softmax über ihre Logits.'],
+      ['Tensor stream_a.moe.gate.weight, [{experts} × {hidden}] F32 (stream B: stream_b.moe.gate.weight). logits = W_g x; keep the {topk} largest l_i; w_i = exp(l_i) / Σ_j exp(l_j) over those {topk}.',
+        'Tensor stream_a.moe.gate.weight, [{experts} × {hidden}] F32 (Strom B: stream_b.moe.gate.weight). Logits = W_g x; die {topk} größten l_i bleiben; w_i = exp(l_i) / Σ_j exp(l_j) über diese {topk}.'],
     ),
   },
   {
@@ -46,6 +50,8 @@ export const followSteps: TourStep[] = [
         'Die gewählten Experten rechnen. Ihre Ergebnisse werden addiert, jedes mit eigenem Gewicht.'],
       ['Each expert: seed_bias, c_fc (ternary, {hidden} to {ffn}), GELU, c_proj ({ffn} to {hidden}). The outputs are summed with the softmax shares.',
         'Jeder Experte: seed_bias, c_fc (ternär, {hidden} auf {ffn}), GELU, c_proj ({ffn} auf {hidden}). Die Ausgaben werden mit den Softmax-Anteilen summiert.'],
+      ['Tensors per expert e in L12.json: experts.e.c_fc.weight [{ffn} × {hidden}], experts.e.c_proj.weight [{hidden} × {ffn}] (both ternary), experts.e.seed_bias (F32). Output: Σ_i w_i · c_proj(GELU(c_fc(x) + seed_bias)) over the {topk} chosen experts.',
+        'Tensoren je Experte e in L12.json: experts.e.c_fc.weight [{ffn} × {hidden}], experts.e.c_proj.weight [{hidden} × {ffn}] (beide ternär), experts.e.seed_bias (F32). Ausgabe: Σ_i w_i · c_proj(GELU(c_fc(x) + seed_bias)) über die {topk} gewählten Experten.'],
     ),
   },
   {
@@ -73,6 +79,8 @@ export const followSteps: TourStep[] = [
         'Aus diesem Paket bewertet albert. jedes Wort als nächstes Wort. Drücke Play im Dock, um genau diesen Weg zu sehen.'],
       ['lm_head turns the merged vector into {vocab} logits. Play in the dock follows the recorded run op by op.',
         'lm_head macht aus dem vereinten Vektor {vocab} Logits. Play im Dock folgt dem aufgezeichneten Durchlauf Schritt für Schritt.'],
+      ['logits z = lm_head(h), z has {vocab} entries; p_i = exp(z_i) / Σ_j exp(z_j). The recorded trace holds the events of one run (router, attention, gate, residual) per position.',
+        'Logits z = lm_head(h), z hat {vocab} Einträge; p_i = exp(z_i) / Σ_j exp(z_j). Der aufgezeichnete Trace enthält die Ereignisse eines Durchlaufs (Router, Attention, Tor, Residual) je Position.'],
     ),
   },
 ];

@@ -19,6 +19,8 @@ export const streamsSteps: TourStep[] = [
         'Beide Ströme nutzen dieselben {experts} Experten. Ein Pool, zwei Nutzer.'],
       ['The expert weights exist once per layer and serve both streams. Attention, norms and routers exist per stream.',
         'Die Expertengewichte gibt es einmal je Ebene, sie bedienen beide Ströme. Attention, Normen und Router gibt es je Strom.'],
+      ['Per layer in L12.json: experts.e.c_fc.weight [{ffn} × {hidden}] and experts.e.c_proj.weight [{hidden} × {ffn}] for e = 0 … {experts} − 1, once. Per stream: stream_a.* and stream_b.* attention, norms and moe.gate.weight [{experts} × {hidden}].',
+        'Je Ebene in L12.json: experts.e.c_fc.weight [{ffn} × {hidden}] und experts.e.c_proj.weight [{hidden} × {ffn}] für e = 0 … {experts} − 1, jeweils einmal. Je Strom: stream_a.* und stream_b.* mit Attention, Normen und moe.gate.weight [{experts} × {hidden}].'],
     ),
   },
   {
@@ -52,10 +54,12 @@ export const streamsSteps: TourStep[] = [
   {
     camera: 'L13.gate', highlight: ['L13.gate'], action: 'free',
     text: tx(
-      ['Finding A2: the valve weights sit near their starting values. So each valve passes on about half of the other stream, in {gateCount} layers.',
-        'Befund A2: Die Gewichte der Ventile liegen nahe an ihren Startwerten. So gibt jedes Ventil etwa die Hälfte des anderen Stroms weiter, in {gateCount} Ebenen.'],
-      ['A2: gate weights RMS 0.010 to 0.012, close to the init N(0, 0.01). At inference sigma(~0) is about 0.5. The training path never saw this mixing (see A1).',
-        'A2: Gate-Gewichte mit RMS 0,010 bis 0,012, nahe an der Initialisierung N(0, 0,01). Bei der Inferenz ist sigma(~0) etwa 0,5. Nur der Inferenzpfad erzeugt diese Mischung (siehe A1).'],
+      ['Finding A2 (recorded in the caveats): the valve weights sit near their starting values. So each valve passes on about half of the other stream, in {gateCount} layers.',
+        'Befund A2 (in den Befunden festgehalten): Die Gewichte der Ventile liegen nahe an ihren Startwerten. So gibt jedes Ventil etwa die Hälfte des anderen Stroms weiter, in {gateCount} Ebenen.'],
+      ['A2, as recorded in the caveats (checkpoint read 2026-10-23, not measured by this app): gate weights RMS 0.010 to 0.012, close to the init N(0, 0.01). At inference sigma(~0) is about 0.5. The training path never saw this mixing (see A1).',
+        'A2, so in den Befunden festgehalten (Checkpoint gelesen am 23.10.2026, aus dem Befund übernommen): Gate-Gewichte mit RMS 0,010 bis 0,012, nahe an der Initialisierung N(0, 0,01). Bei der Inferenz ist sigma(~0) etwa 0,5. Nur der Inferenzpfad erzeugt diese Mischung (siehe A1).'],
+      ['A2, as recorded in the caveats (checkpoint read 2026-10-23, source: caveat A2, not recomputed here): RMS 0.010 to 0.012 against the init N(0, 0.01). Tensor anastomosis.4.gate.weight in L13.json is [2 × 512] F32 (rows g_a and g_b over the concatenated streams); the file stores its γ and a histogram. g = sigmoid(W x + b) is about 0.5 when W x + b is about 0.',
+        'A2, so in den Befunden festgehalten (Checkpoint gelesen am 23.10.2026, Quelle: Befund A2, hier unverändert übernommen): RMS 0,010 bis 0,012 gegen die Initialisierung N(0, 0,01). Der Tensor anastomosis.4.gate.weight in L13.json hat die Form [2 × 512] F32 (Zeilen g_a und g_b über die verbundenen Ströme); die Datei speichert sein γ und ein Histogramm. g = sigmoid(W x + b) liegt bei etwa 0,5, wenn W x + b bei etwa 0 liegt.'],
     ),
   },
 ];

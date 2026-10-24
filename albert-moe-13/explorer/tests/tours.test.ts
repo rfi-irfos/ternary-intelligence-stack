@@ -11,7 +11,10 @@ import { buildTower } from '../src/scene/tower';
 import { parseId } from '../src/scene/ids';
 import { setLang, setMode, saveTourProgress, tourProgress } from '../src/ui/prefs';
 import { setDepth } from '../src/ui/depth';
-import { TOUR_IDS } from '../src/ui/strings';
+import { fill, STRINGS, TOUR_IDS } from '../src/ui/strings';
+import { CAVEATS } from '../src/content/caveats';
+import { createCoachMarks } from '../src/ui/coach';
+import { closeLightbox, isLightboxOpen, openLightbox } from '../src/ui/lightbox';
 import { closeTourMenu, openTourMenu, setTourPick } from '../src/ui/tourMenu';
 import { TOURS, tourOf } from '../src/tours/index';
 import { attentionAnswer, createTourRunner, expertsAnswer, gateAnswer, highlightPredicate, tourVars, type Measured, type TourDeps } from '../src/tours/engine';
@@ -108,8 +111,14 @@ describe('the seven tours', () => {
     for (const tour of TOURS) {
       for (const s of tour.steps) {
         for (const d of ['intuition', 'technical', 'researcher'] as const) {
-          expect(s.text[d].en.length, tour.id).toBeGreaterThan(10);
-          expect(s.text[d].de.length, tour.id).toBeGreaterThan(10);
+          for (const lang of ['en', 'de'] as const) {
+            const shown = fill(s.text[d][lang], tourVars(a, s));
+            // a real sentence: several words, a closing mark, every placeholder resolved
+            expect(shown.split(/\s+/).length, `${tour.id} ${d} ${lang}`).toBeGreaterThanOrEqual(6);
+            expect(shown, `${tour.id} ${d} ${lang}`).toMatch(/[.?!)]$/);
+            expect(shown, `${tour.id} ${d} ${lang} unresolved placeholder`).not.toMatch(/\{\w+\}/);
+            expect(shown, `${tour.id} ${d} ${lang} undefined`).not.toMatch(/undefined|NaN|\[object/);
+          }
         }
       }
     }
@@ -133,19 +142,59 @@ describe('the seven tours', () => {
     expect(v.params).toBe('331,140,622');
   });
 
-  it('German texts have no English giveaways and no negation words', () => {
+  it('German tour texts have no English giveaways and no negation words (steps at every depth, tour* strings)', () => {
     const giveaways = [' the ', ' and ', ' of ', 'which', 'each', 'stream '];
-    const negations = [/\bnicht\b/i, /\bkein/i, /\bohne\b/i, /\bnie\b/i, /\bniemals\b/i];
+    const negations = [/\bnicht/i, /\bnichts\b/i, /\bkein/i, /\bohne\b/i, /\bnie\b/i, /\bniemals\b/i, /\bweder\b/i];
+    // Verbatim technical terms that contain a negation word. Keep this list empty unless a term cannot be reworded.
+    const allowed: string[] = [];
+    const scrub = (x: string): string => allowed.reduce((acc, w) => acc.split(w).join(''), x);
     for (const tour of TOURS) {
       for (const s of tour.steps) {
-        for (const d of ['intuition', 'technical'] as const) {
-          const de = ` ${s.text[d].de.toLowerCase()} `;
-          for (const g of giveaways) expect(de.includes(g), `${tour.id} ${g}`).toBe(false);
-          for (const n of negations) expect(n.test(de), `${tour.id} ${n} in ${de}`).toBe(false);
+        for (const d of ['intuition', 'technical', 'researcher'] as const) {
+          const de = ` ${scrub(s.text[d].de).toLowerCase()} `;
+          for (const g of giveaways) expect(de.includes(g), `${tour.id} ${d} ${g}`).toBe(false);
+          for (const n of negations) expect(n.test(de), `${tour.id} ${d} ${n} in ${de}`).toBe(false);
         }
       }
     }
+    const keys = (Object.keys(STRINGS.de) as (keyof typeof STRINGS.de)[]).filter((k) => /^tour(card|pred|fig|quiz|menu)?\./.test(k));
+    expect(keys.length).toBeGreaterThan(20);
+    for (const k of keys) {
+      const e = STRINGS.de[k];
+      const texts = typeof e === 'string' ? [e] : [e.simple, e.advanced];
+      for (const x of texts) {
+        const de = ` ${scrub(x).toLowerCase()} `;
+        for (const n of negations) expect(n.test(de), `${k} ${n} in ${de}`).toBe(false);
+      }
+    }
   });
+
+  it('a tour or caveat never names a layer by its 0-based number without the word index', () => {
+    // "layer 35, index 34" is fine; a bare "layer 34" for the gate at index 34 is not.
+    const zeroBased = new Set(a.model.fusion_layers);
+    const bare = /\b(?:layers?|Ebenen?)\s+(\d+)\b(?![^.;]{0,60}\b(?:[Ii]ndex|Advanced|Erweitert|0-based))/g;
+    const check = (where: string, text: string, lang: 'en' | 'de'): void => {
+      for (const m of text.matchAll(bare)) {
+        const n = Number(m[1]);
+        // a literal number is only allowed when it is the 1-based number of a fusion layer
+        const oneBasedGate = zeroBased.has(n - 1);
+        expect(oneBasedGate, `${where} (${lang}): "${m[0]}" looks 0-based`).toBe(true);
+      }
+    };
+    for (const tour of TOURS) {
+      for (const [i, s] of tour.steps.entries()) {
+        for (const d of ['intuition', 'technical', 'researcher'] as const) {
+          for (const lang of ['en', 'de'] as const) check(`${tour.id}#${i} ${d}`, s.text[d][lang], lang);
+        }
+      }
+    }
+    for (const [id, c] of Object.entries(CAVEATS)) {
+      for (const lang of ['en', 'de'] as const) check(`caveat ${id} body`, c.body[lang], lang);
+    }
+    // the gate caveat itself carries the label
+    expect(CAVEATS.A2.body.en).toMatch(/layer 35, index 34/);
+  });
+
 });
 
 describe('prediction answers come from the trace and are measured', () => {
@@ -227,11 +276,23 @@ describe('prediction answers come from the trace and are measured', () => {
     const att = tourOf('attention')!.steps.findIndex((s) => s.action !== undefined && s.action !== 'free');
     runner.runTour('attention', att);
     await flush();
-    card().querySelector<HTMLButtonElement>('.tour-pick')!.click();
-    click('.tour-reveal');
     const ans = attentionAnswer(real, 12, 'A', 0);
     if (ans?.kind !== 'token') throw new Error('expected a token answer');
+    const wrong = [...card().querySelectorAll<HTMLButtonElement>('.tour-pick')].find((b) => b.dataset.token !== String(ans.index))!;
+    const right = card().querySelector<HTMLButtonElement>(`.tour-pick[data-token="${ans.index}"]`);
+    expect(right, 'the recorded answer sits inside the 15-word pick window').not.toBeNull();
+    // a miss: the pick is shown, without the match mark
+    wrong.click();
+    click('.tour-reveal');
+    expect(card().querySelector('.tour-hit')).toBeNull();
+    expect(card().querySelector('.tour-pred')!.textContent).not.toContain('✓');
     expect(card().querySelector('.tour-pred')!.textContent).toContain(`word ${ans.index + 1}`);
+    // a hit: the same moment again, picking the recorded word
+    click('[data-act="again"]');
+    card().querySelector<HTMLButtonElement>(`.tour-pick[data-token="${ans.index}"]`)!.click();
+    click('.tour-reveal');
+    expect(card().querySelector('.tour-hit')).not.toBeNull();
+    expect(card().querySelector('.tour-pred')!.textContent).toContain('✓');
     expect(card().querySelector('.kind-tag[data-kind="measured"]')).not.toBeNull();
     const gate = tourOf('streams')!.steps.findIndex((s) => s.action !== undefined && s.action !== 'free');
     runner.runTour('streams', gate);
@@ -319,7 +380,6 @@ describe('running a tour', () => {
   });
 
   it('the menu shows the saved step and offers Start over; both reach the engine', async () => {
-    const { runner } = setup();
     saveTourProgress('attention', 2);
     const picks: [string, boolean][] = [];
     setTourPick((id, restart) => { picks.push([id, restart]); });
@@ -331,7 +391,6 @@ describe('running a tour', () => {
     item.click();
     el.querySelector<HTMLButtonElement>('[data-tour-restart="attention"]')!.click();
     expect(picks).toEqual([['attention', false], ['attention', true]]);
-    void runner;
   });
 
   it('Esc leaves the tour, stops there, and focus returns to the trigger', async () => {
@@ -358,6 +417,68 @@ describe('running a tour', () => {
     click('[data-act="exit"]');
     expect(runner.active()).toBeNull();
     expect(document.activeElement).toBe(trigger);
+  });
+
+  it('one Esc closes only the topmost layer: an open lightbox or coach first, the tour with the next Esc', async () => {
+    const esc = (): void => { document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); };
+    const { runner } = setup();
+    runner.runTour('meet', 0);
+    await flush();
+    openLightbox({ src: 'x.png' });
+    expect(isLightboxOpen()).toBe(true);
+    esc();
+    expect(isLightboxOpen()).toBe(false);
+    expect(runner.active()).toBe('meet');
+    esc();
+    expect(runner.active()).toBeNull();
+
+    localStorage.clear();
+    const coach = createCoachMarks([{ key: 'coach.play' as const, target: () => null }]);
+    runner.runTour('meet', 0);
+    await flush();
+    expect(coach.element).not.toBeNull();
+    document.body.append(coach.element!);
+    esc();
+    expect(document.querySelector('.coach')).toBeNull();
+    expect(runner.active()).toBe('meet');
+    esc();
+    expect(runner.active()).toBeNull();
+
+    // a handler that only calls preventDefault also keeps the tour open
+    runner.runTour('meet', 0);
+    await flush();
+    const other = (e: KeyboardEvent): void => { if (e.key === 'Escape') e.preventDefault(); };
+    window.addEventListener('keydown', other, true);
+    esc();
+    window.removeEventListener('keydown', other, true);
+    expect(runner.active()).toBe('meet');
+    closeLightbox();
+  });
+
+  it('leaving during the first flight restores the original pose; a camera the visitor moved stays', async () => {
+    // 1. the first flight has not landed and the camera is still on its way
+    const one = setup();
+    one.rig.moveTo(7);
+    let release: () => void = () => undefined;
+    one.rig.overview.mockImplementation(() => new Promise<void>((res) => { release = res; }));
+    one.rig.isFlying.mockReturnValue(true);
+    one.runner.runTour('meet', 0);
+    await flush();
+    one.runner.exit();
+    expect(one.rig.flyToPose).toHaveBeenCalledTimes(1);
+    expect((one.rig.flyToPose.mock.calls[0]![0] as { position: THREE.Vector3 }).position.x).toBe(7);
+    release();
+    document.body.innerHTML = '';
+
+    // 2. no flight landed and the visitor has moved the camera since: it stays
+    const two = setup();
+    two.rig.moveTo(7);
+    two.rig.overview.mockImplementation(() => new Promise<void>(() => undefined));
+    two.runner.runTour('meet', 0);
+    await flush();
+    two.rig.moveTo(55);
+    two.runner.exit();
+    expect(two.rig.flyToPose).not.toHaveBeenCalled();
   });
 
   it('leaving restores the pre-tour pose only while the camera still sits where the tour left it', async () => {

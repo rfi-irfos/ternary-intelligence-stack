@@ -770,7 +770,7 @@ const DE: Record<StringKey, Entry> = {
   'progress.m.predicted': 'Die Experten eines Wortes geraten',
   'progress.m.traced': 'Geraten, wohin die Attention schaut',
   'progress.m.explained': 'Die drei Fragen zum Residualstrom beantwortet',
-  'tourquiz.intro': 'Drei kurze Fragen. Nichts wird bewertet. Nach jeder Wahl siehst du die Antwort.',
+  'tourquiz.intro': 'Drei kurze Fragen zum Mitdenken. Nach jeder Wahl siehst du die Antwort.',
   'tourquiz.q': 'Frage {i} von {n}',
   'tourpred.yours': 'Dein Tipp',
   'tourpred.measured': 'Gemessen',
@@ -795,7 +795,7 @@ const DE: Record<StringKey, Entry> = {
   'tourfig.fracTitle': 'Anteil von −1, 0 und +1 je Matrix (Ebene {layer}, Struktur)',
   'tourfig.fracRow': '−1: {neg} · 0: {zero} · +1: {pos}',
   'tourfig.topk': 'Tipp für das nächste Wort im aufgezeichneten Durchlauf „{prompt}“ (gemessen)',
-  'tourfig.noTopk': 'Ohne aufgezeichneten Durchlauf bleibt die Anzeige leer.',
+  'tourfig.noTopk': 'Die Anzeige braucht einen geladenen, aufgezeichneten Durchlauf. Lade einen, dann erscheinen die Tipps.',
   // Hauptmenü, Intro, Ton, Schnelldurchlauf (Task 12)
   'lobby.label': 'Hauptmenü',
   'lobby.subtitle': 'Ein Sprachmodell zum Anfassen – {layers} Ebenen, {streams} Ströme, {experts} gemeinsame Experten',
