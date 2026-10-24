@@ -87,10 +87,11 @@ describe('About: model card facts and notes', () => {
     }
   });
 
-  it('every draft line in notes.ts is marked for the makers', () => {
+  it('notes.ts carries no draft marks and no typed numbers (placeholders only)', () => {
     const src = readFileSync('src/content/notes.ts', 'utf8');
-    const marks = src.split('// DRAFT: Simeon/Laura to overwrite').length - 1;
-    expect(marks).toBe(NOTES.paragraphs.length + 2);
+    expect(src).not.toContain('DRAFT');
+    const body = src.slice(src.indexOf('export const NOTES'));
+    expect(body).not.toMatch(/\b\d{2,}\b/);
   });
 });
 

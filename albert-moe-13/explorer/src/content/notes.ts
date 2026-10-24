@@ -1,10 +1,10 @@
 /**
- * "Notes from the makers", shown in the About. Edit the texts here; no UI code needs to change.
+ * "Notes from the team", shown in the About. Edit the texts here; no UI code needs to change.
  * Placeholders in {braces} are filled from the data (see aboutTexts in src/ui/about.ts):
- * {depth} depth surgeries, {from} / {to} layers, {layers}.
+ * {depth} depth surgeries, {from} / {to} layers per stream, {size} checkpoint size in GB.
  *
- * Every paragraph below is a DRAFT in "we" form that states only facts the repo docs support.
- * The personal part is for the makers to add: add or replace paragraphs freely.
+ * Voice: the TIS release notes (v3.0.0, v3.1.0): plain, declarative, "we" for the whole RFI-IRFOS team.
+ * Nothing personal. Every statement is backed by the release notes, the model card or the data.
  */
 export interface Notes {
   title: { en: string; de: string };
@@ -14,25 +14,28 @@ export interface Notes {
 }
 
 export const NOTES: Notes = {
-  // DRAFT: Simeon/Laura to overwrite
-  title: { en: 'Notes from the makers', de: 'Notizen aus dem Team' },
+  title: { en: 'Notes from the team', de: 'Notizen aus dem Team' },
   paragraphs: [
     {
-      // DRAFT: Simeon/Laura to overwrite
-      en: 'We built albert. at RFI-IRFOS in Graz: a language model whose weights are −1, 0 or +1.',
-      de: 'Wir haben albert. bei RFI-IRFOS in Graz gebaut: ein Sprachmodell, dessen Gewichte −1, 0 oder +1 sind.',
+      en: 'albert. is a ternary dual-stream mixture-of-experts model, trained from scratch at RFI-IRFOS in Graz. Its weights are −1, 0 or +1, and the ternary constraint has been active since the first epoch.',
+      de: 'albert. ist ein ternäres Dual-Stream-Mixture-of-Experts-Modell, das bei RFI-IRFOS in Graz von Grund auf trainiert wurde. Seine Gewichte sind −1, 0 oder +1. Die ternäre Beschränkung gilt seit der ersten Epoche.',
     },
     {
-      // DRAFT: Simeon/Laura to overwrite
-      en: 'We grew it layer by layer. {depth} depth surgeries took it from {from} to {to} layers, and each one is written down in our surgery registry.',
-      de: 'Wir haben es Ebene für Ebene wachsen lassen. {depth} Tiefen-Eingriffe führten es von {from} auf {to} Ebenen, und jeder steht in unserem Eingriffsregister.',
+      en: 'The model grew in depth. {depth} depth surgeries took it from {from} to {to} layers per stream, and each one is written down in the surgery registry with its epoch and its loss.',
+      de: 'Das Modell wuchs in die Tiefe. {depth} Tiefen-Eingriffe führten es von {from} auf {to} Ebenen pro Strom, und jeder steht mit Epoche und Loss im Eingriffsregister.',
     },
     {
-      // DRAFT: Simeon/Laura to overwrite
-      en: 'We opened its structure for study. This explorer reads the real model file, and every number carries a label: structure, measured or illustrative.',
-      de: 'Wir haben seinen Aufbau zum Studium geöffnet. Dieser Explorer liest die echte Modelldatei, und jede Zahl trägt ein Etikett: Struktur, gemessen oder illustrativ.',
+      en: 'The training pipeline lives in the same repository as the model, and the full weights are public on Hugging Face, open to everyone.',
+      de: 'Die Trainings-Pipeline liegt im selben Repository wie das Modell, und die vollständigen Gewichte sind öffentlich auf Hugging Face für alle zugänglich.',
+    },
+    {
+      en: 'This explorer opens the structure for study. It reads the real model file, and every number carries a label: structure, measured or illustrative. Where the documentation gives a number, we cite it. Where it gives none, we say so.',
+      de: 'Dieser Explorer öffnet den Aufbau zum Studium. Er liest die echte Modelldatei, und jede Zahl trägt ein Etikett: Struktur, gemessen oder illustrativ. Wo die Dokumentation eine Zahl nennt, zitieren wir sie. Wo sie keine nennt, sagen wir das.',
+    },
+    {
+      en: 'albert. is a research model and still changing. The numbers on this page come from the data and follow it.',
+      de: 'albert. ist ein Forschungsmodell und verändert sich weiter. Die Zahlen auf dieser Seite kommen aus den Daten und folgen ihnen.',
     },
   ],
-  // DRAFT: Simeon/Laura to overwrite
   signoff: 'RFI-IRFOS',
 };
