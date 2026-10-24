@@ -1,5 +1,6 @@
-import { type Lang, LANGS, type Mode, MODES, type StringKey, tr } from './strings';
+import { type Lang, LANGS, type Mode, MODES, type StringKey, fill, tr } from './strings';
 import { getDepth, onDepthChange, setDepth } from './depth';
+import { setLabelLang } from '../data/labeled';
 
 /**
  * UI language (DE | EN) and view mode (Simple | Advanced), both persisted in localStorage.
@@ -52,6 +53,7 @@ const listeners = new Set<Listener>();
 const notify = (): void => listeners.forEach((l) => l());
 
 const setHtmlLang = (): void => {
+  setLabelLang(lang);
   if (typeof document !== 'undefined') document.documentElement.lang = lang;
 };
 setHtmlLang();
@@ -90,6 +92,17 @@ export function onPrefsChange(cb: Listener): () => void {
 
 /** The string `key` in the current language and mode. */
 export const t = (key: StringKey, vars?: Record<string, string | number>): string => tr(key, lang, mode, vars);
+
+/** A content text ({ en, de } pair from src/content) in the current language: the same lookup as `t`. */
+export const lt = (x: { en: string; de: string }, vars?: Record<string, string | number>): string => fill(x[lang], vars);
+
+/**
+ * Layer number as people read it. Simple counts from 1 ("Ebene 13 von 46"); Advanced keeps the 0-based
+ * id of the code and the checkpoint ("L12"). One helper for every place a layer is named.
+ */
+export function layerLabel(i: number, m: Mode = mode): number {
+  return m === 'simple' ? i + 1 : i;
+}
 
 /** Test helper: re-reads storage and the browser language as on a fresh page load. */
 export function reloadPrefsForTest(nav?: { language?: string }): void {

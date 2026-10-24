@@ -1,7 +1,7 @@
 import type { CameraRig } from '../camera/controls';
 import { gateId, slabId } from '../scene/ids';
 import type { TowerScene } from '../scene/tower';
-import { onPrefsChange, t } from './prefs';
+import { layerLabel, onPrefsChange, t } from './prefs';
 import type { Selection } from './selection';
 
 export interface SlabRail {
@@ -24,8 +24,10 @@ const FOCUS_DISTANCE = 14;
 const MAJOR = 5;
 
 /**
- * The slab rail: a ruler of one tick per layer, labelled "Layer 0" and "Layer 45" at its ends, with a
- * one-line key under it. Fusion layers (with an anastomosis gate) are red and taller, the selected
+ * The slab rail is a timeline, not a control: a slim full-width ruler at the bottom edge, one tick per
+ * layer, labelled at its ends ("Ebene 1" … "Ebene 46" in Simple, 0-based ids in Advanced). Its key
+ * ("red = exchange gate") is in its tooltip and in the legend. A tick can still be clicked to look at
+ * that layer. Fusion layers (with an anastomosis gate) are red and taller, the selected
  * layer is white, and during a run a marker and a progress line show where the word is. It follows
  * `selection`, so a scene click or panel link that selects layer N moves the highlight to N.
  */
@@ -55,14 +57,8 @@ export function createSlabRail(
   progress.append(fill);
   track.append(el, progress);
   row.append(first, track, last);
-  const key = document.createElement('p');
-  key.className = 'rail-legend';
-  const swatch = document.createElement('span');
-  swatch.className = 'rail-legend-swatch';
-  swatch.setAttribute('aria-hidden', 'true');
-  const keyText = document.createElement('span');
-  key.append(swatch, keyText);
-  wrap.append(row, key);
+  wrap.className = 'rail-block timeline';
+  wrap.append(row);
   const buttons: HTMLButtonElement[] = [];
   let current: number | null = null;
 
@@ -101,7 +97,7 @@ export function createSlabRail(
     tick.setAttribute('aria-hidden', 'true');
     const num = document.createElement('span');
     num.className = 'rail-num';
-    num.textContent = String(l);
+    num.dataset.layer = String(l);
     b.append(tick, num);
     if (tower.has(gateId(l))) {
       b.classList.add('fusion');
@@ -115,15 +111,15 @@ export function createSlabRail(
 
   const paint = (): void => {
     el.setAttribute('aria-label', t('rail.label'));
-    first.textContent = t('rail.layer', { n: 0 });
+    first.textContent = t('rail.layer', { n: layerLabel(0) });
     first.title = t('rail.firstTip');
-    last.textContent = t('rail.layer', { n: layers - 1 });
+    last.textContent = t('rail.layer', { n: layerLabel(layers - 1) });
     last.title = t('rail.lastTip');
     progress.title = t('rail.progressTip');
-    keyText.textContent = t('rail.legend');
-    key.title = t('rail.fusion');
+    wrap.title = t('timeline.tip', { key: t('rail.legend') });
     buttons.forEach((b, l) => {
-      const name = t('rail.layer', { n: l });
+      (b.querySelector('.rail-num') as HTMLElement).textContent = String(layerLabel(l));
+      const name = t('rail.layer', { n: layerLabel(l) });
       b.title = b.dataset.fusion ? `${name}: ${t('rail.fusion')}` : name;
       b.setAttribute('aria-label', b.title);
     });

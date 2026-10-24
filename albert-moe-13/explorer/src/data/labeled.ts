@@ -56,23 +56,64 @@ export interface FmtOptions {
   note?: string;
 }
 
-/** Plain text of a value: integers with thousands separators, other numbers to 5 significant digits, shapes as [a × b]. */
+/**
+ * A number in the UI language: English 1,104 and 0.5; German 1.104 and 0,5. Integers get thousands
+ * separators, other numbers 5 significant digits.
+ */
+export function numText(v: number, lang: 'en' | 'de' = labelLang): string {
+  if (Number.isInteger(v)) return v.toLocaleString(lang === 'de' ? 'de-DE' : 'en-US');
+  const s = String(Number(v.toPrecision(5)));
+  return lang === 'de' ? s.replace('.', ',') : s;
+}
+
+/** A fixed-decimal number in the UI language (German decimal comma). */
+export function decText(v: number, digits: number, lang: 'en' | 'de' = labelLang): string {
+  const s = v.toFixed(digits);
+  return lang === 'de' ? s.replace('.', ',') : s;
+}
+
+/** A share as a percentage in the UI language: 0.982 -> "98.2 %" / "98,2 %". */
+export function pctStr(v: number, digits = 1, lang: 'en' | 'de' = labelLang): string {
+  return `${decText(v * 100, digits, lang)} %`;
+}
+
+/** Plain text of a value: numbers via numText (UI language), shapes as [a × b]. */
 export function fmtText(l: Labeled<LabeledValue>, opts: FmtOptions = {}): string {
   if (opts.format) return opts.format(l.value);
   const v = l.value;
   if (Array.isArray(v)) return `[${v.join(' × ')}]`;
-  if (typeof v === 'number') return Number.isInteger(v) ? v.toLocaleString('en-US') : String(Number(v.toPrecision(5)));
+  if (typeof v === 'number') return numText(v);
   return v;
 }
 
-const KIND_TITLE: Record<LabelKind, string> = {
-  structure: 'structure: read from the checkpoint, the architecture file or the cited source',
-  measured: 'measured',
-  illustrative: 'illustrative: a schematic, not a measurement',
+/** Language of the badge tooltips; the UI sets it with the DE | EN switch (src/ui/prefs.ts). */
+let labelLang: 'en' | 'de' = 'en';
+export function setLabelLang(l: 'en' | 'de'): void {
+  labelLang = l;
+}
+
+const KIND_TITLES: Record<'en' | 'de', Record<LabelKind, string>> = {
+  en: {
+    structure: 'structure: read from the checkpoint, the architecture file or the cited source',
+    measured: 'measured',
+    illustrative: 'illustrative: a schematic, not a measurement',
+  },
+  de: {
+    structure: 'Struktur: aus dem Checkpoint, der Architekturdatei oder der zitierten Quelle gelesen',
+    measured: 'gemessen',
+    illustrative: 'illustrativ: eine Skizze, keine Messung',
+  },
 };
+const kindTitle = (k: LabelKind): string => KIND_TITLES[labelLang][k];
+
+/** Short name of a label kind in the current label language (chips and tags). */
+export const kindName = (k: LabelKind): string =>
+  labelLang === 'de' ? ({ structure: 'Struktur', measured: 'gemessen', illustrative: 'illustrativ' } as const)[k] : k;
 
 function provenanceTitle(p: TraceProvenance): string {
-  return `measured: prompt ${p.prompt_id}, checkpoint ${p.checkpoint_sha256.slice(0, 12)}, commit ${p.git_commit.slice(0, 12)}, ${p.date}`;
+  return labelLang === 'de'
+    ? `gemessen: Prompt ${p.prompt_id}, Checkpoint ${p.checkpoint_sha256.slice(0, 12)}, Commit ${p.git_commit.slice(0, 12)}, ${p.date}`
+    : `measured: prompt ${p.prompt_id}, checkpoint ${p.checkpoint_sha256.slice(0, 12)}, commit ${p.git_commit.slice(0, 12)}, ${p.date}`;
 }
 
 /** Empty badge element; the look comes from CSS (LABEL_CSS) so textContent stays the bare value. */
@@ -80,7 +121,7 @@ export function badge(kind: LabelKind, provenance?: TraceProvenance, note?: stri
   const b = document.createElement('i');
   b.className = `badge badge--${kind}`;
   b.setAttribute('aria-hidden', 'true');
-  b.title = note ?? (kind === 'measured' && provenance ? provenanceTitle(provenance) : KIND_TITLE[kind]);
+  b.title = note ?? (kind === 'measured' && provenance ? provenanceTitle(provenance) : kindTitle(kind));
   return b;
 }
 
@@ -93,7 +134,7 @@ export function fmt(l: Labeled<LabeledValue>, opts: FmtOptions = {}): HTMLElemen
   v.className = 'lv-v';
   v.textContent = fmtText(l, opts);
   root.append(v, badge(l.kind, l.provenance, opts.note));
-  root.title = opts.note ?? (l.kind === 'measured' && l.provenance ? provenanceTitle(l.provenance) : KIND_TITLE[l.kind]);
+  root.title = opts.note ?? (l.kind === 'measured' && l.provenance ? provenanceTitle(l.provenance) : kindTitle(l.kind));
   if (l.provenance) root.dataset.promptId = l.provenance.prompt_id;
   return root;
 }
@@ -103,7 +144,7 @@ export function labelBlock(kind: LabelKind, inner: string): HTMLElement {
   const d = document.createElement('div');
   d.className = `lv-block lv-block--${kind}`;
   d.dataset.kind = kind;
-  d.title = KIND_TITLE[kind];
+  d.title = kindTitle(kind);
   d.innerHTML = inner;
   d.append(badge(kind));
   return d;
@@ -125,6 +166,8 @@ export interface RichOptions {
 }
 
 export const CITED_NOTE = 'stated in the cited investigation / source';
+/** CITED_NOTE in the current label language. */
+export const citedNote = (): string => (labelLang === 'de' ? 'so in der zitierten Untersuchung / Quelle angegeben' : CITED_NOTE);
 
 export function richHtml(text: string, o: RichOptions = {}): string {
   const kind = o.kind ?? 'structure';

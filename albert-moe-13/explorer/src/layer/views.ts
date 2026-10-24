@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CAVEATS } from '../content/caveats';
 import type { Architecture } from '../data/architecture';
-import { type LabelKind, fmt, fmtText, structure } from '../data/labeled';
+import { type LabelKind, decText, fmt, fmtText, kindName, structure } from '../data/labeled';
 import { type Trace, decodeToken, loadTrace } from '../data/trace';
 import { type LayerWeights, type WeightsLoader, findMatrix } from '../data/weights';
 import type { ExplodeView } from '../scene/explode';
@@ -11,7 +11,8 @@ import { divergingColor, ternaryColor } from '../scene/tile';
 import { PALETTE, cssHex } from '../scene/palette';
 import { DEPTHS, type Depth, getDepth, onDepthChange, setDepth } from '../ui/depth';
 import { ICONS } from '../ui/icons';
-import { getMode, onPrefsChange, t } from '../ui/prefs';
+import { getLang, getMode, layerLabel, lt, onPrefsChange, t } from '../ui/prefs';
+import { defaultPosition } from '../ui/player';
 import type { StringKey } from '../ui/strings';
 import { type Step, type ViewSpec, layerSteps } from './steps';
 
@@ -25,7 +26,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
 
 /** Label chip: the kind of every number drawn in a figure. */
 function kindChip(kind: LabelKind, note?: string): HTMLElement {
-  const c = el('span', `layer-kind layer-kind--${kind}`, kind);
+  const c = el('span', `layer-kind layer-kind--${kind}`, kindName(kind));
   c.dataset.kind = kind;
   if (note) c.title = note;
   return c;
@@ -61,24 +62,24 @@ function heatView(v: Extract<ViewSpec, { kind: 'heat' }>): HTMLElement {
       r.append(el('span', 'layer-heat-name', s.name), heatStrip(s.values, from, to));
       body.append(r);
     }
-    info.textContent = `showing ${from}..${to - 1} of ${total}`;
+    info.textContent = t('fig.showing', { a: from, b: to - 1, n: total });
   };
   const zoom = el('input');
   zoom.type = 'range';
   zoom.min = '0';
   zoom.max = String(Math.max(0, total - (to - from)));
   zoom.value = String(from);
-  zoom.setAttribute('aria-label', 'Slice start');
+  zoom.setAttribute('aria-label', t('fig.sliceStart'));
   zoom.addEventListener('input', () => {
     const w = to - from;
     from = Number(zoom.value);
     to = from + w;
     draw();
   });
-  const full = el('button', undefined, 'whole vector');
+  const full = el('button', undefined, t('fig.whole'));
   full.type = 'button';
   full.addEventListener('click', () => { from = 0; to = total; zoom.value = '0'; draw(); });
-  const part = el('button', undefined, 'zoom slice');
+  const part = el('button', undefined, t('fig.zoom'));
   part.type = 'button';
   part.addEventListener('click', () => { to = Math.min(total, from + Math.min(64, total)); draw(); });
   draw();
@@ -90,7 +91,7 @@ function heatView(v: Extract<ViewSpec, { kind: 'heat' }>): HTMLElement {
 function attentionView(v: Extract<ViewSpec, { kind: 'attention' }>): HTMLElement {
   const box = el('div', 'layer-view layer-view--attn');
   const head = el('div', 'layer-view-title');
-  head.append(`attention of position ${v.position} `, kindChip(v.label, v.note));
+  head.append(`${t('fig.attnOf', { p: v.position })} `, kindChip(v.label, v.note));
   box.append(head);
   if (v.truncated) {
     const t = el('div', 'layer-truncated', v.note);
@@ -106,7 +107,7 @@ function attentionView(v: Extract<ViewSpec, { kind: 'attention' }>): HTMLElement
     h.row.forEach((w, i) => {
       const c = el('span', 'layer-heat-cell');
       c.style.background = hex(divergingColor(w, mx));
-      c.title = `${toks[i] ?? i}: ${w.toFixed(3)}`;
+      c.title = `${toks[i] ?? i}: ${decText(w, 3)}`;
       c.dataset.weight = String(w);
       strip.append(c);
     });
@@ -114,14 +115,14 @@ function attentionView(v: Extract<ViewSpec, { kind: 'attention' }>): HTMLElement
     box.append(r);
   }
   const mat = el('div', 'layer-attn-matrix');
-  mat.title = 'head 0: rows = queries, columns = keys (causal)';
+  mat.title = t('fig.head0');
   v.matrix.forEach((row, qi) => {
     const r = el('div', 'layer-attn-mrow');
     const mx = Math.max(0, ...row);
     row.forEach((w, ki) => {
       const c = el('span', 'layer-heat-cell');
       c.style.background = hex(divergingColor(w, mx));
-      c.title = `query ${qi} -> key ${ki}: ${w.toFixed(3)}`;
+      c.title = t('fig.queryKey', { q: qi, k: ki, w: decText(w, 3) });
       r.append(c);
     });
     mat.append(r);
@@ -132,12 +133,12 @@ function attentionView(v: Extract<ViewSpec, { kind: 'attention' }>): HTMLElement
 
 function maskView(v: Extract<ViewSpec, { kind: 'mask' }>): HTMLElement {
   const box = el('div', 'layer-view layer-view--mask');
-  box.append(el('div', 'layer-view-title', `causal mask for query ${v.position}`));
+  box.append(el('div', 'layer-view-title', t('fig.mask', { p: v.position })));
   const strip = el('div', 'layer-heat');
   for (let k = 0; k < v.size; k++) {
     const c = el('span', 'layer-heat-cell');
     c.style.background = k <= v.position ? hex(PALETTE.neutral) : hex(PALETTE.ternaryZero);
-    c.title = k <= v.position ? `key ${k}: visible` : `key ${k}: masked`;
+    c.title = k <= v.position ? t('fig.visible', { k }) : t('fig.masked', { k });
     strip.append(c);
   }
   box.append(strip, kindChip('structure'));
@@ -151,7 +152,7 @@ function barsView(v: Extract<ViewSpec, { kind: 'bars' }>): HTMLElement {
   box.append(head);
   const mx = Math.max(1e-9, ...v.values.map(Math.abs));
   const chart = el('div', 'layer-bars');
-  chart.append(Object.assign(el('div', 'layer-bars-zero'), { title: 'zero' }));
+  chart.append(Object.assign(el('div', 'layer-bars-zero'), { title: t('fig.zero') }));
   v.values.forEach((x, i) => {
     const col = el('div', 'layer-bar');
     const isMarked = v.marked.includes(i);
@@ -161,21 +162,21 @@ function barsView(v: Extract<ViewSpec, { kind: 'bars' }>): HTMLElement {
     col.classList.toggle('layer-bar--a3', isClamped);
     const bar = el('span', `layer-bar-fill ${x >= 0 ? 'layer-bar--pos' : 'layer-bar--neg'}`);
     bar.style.height = `${Math.round((Math.abs(x) / mx) * 44)}px`;
-    col.title = `${v.labels?.[i] ?? i}: ${Number(x.toPrecision(4))}${isMarked ? ' (chosen)' : ''}${isClamped ? ' (A3 clamp may have changed this logit)' : ''}`;
+    col.title = `${v.labels?.[i] ?? i}: ${Number(x.toPrecision(4))}${isMarked ? t('fig.chosen') : ''}${isClamped ? t('fig.a3') : ''}`;
     col.append(bar);
-    if (isMarked) col.append(el('span', 'layer-bar-chosen', 'chosen'));
+    if (isMarked) col.append(el('span', 'layer-bar-chosen', t('fig.chosenTag')));
     if (isClamped) col.append(el('span', 'layer-bar-a3', 'A3'));
     col.append(el('span', 'layer-bar-label', v.labels?.[i] ?? String(i)));
     chart.append(col);
   });
-  box.append(chart, el('div', 'layer-legend', 'bar up = positive, down = negative; outlined and labelled "chosen" = selected expert; A3 = clamp flag set for this token'));
+  box.append(chart, el('div', 'layer-legend', t('fig.barsLegend')));
   return box;
 }
 
 function matmulView(v: Extract<ViewSpec, { kind: 'matmul' }>, weights: LayerWeights | null): HTMLElement {
   const box = el('div', 'layer-view layer-view--matmul');
   const head = el('div', 'layer-view-title');
-  head.append('toy 4x4 ternary matmul ', kindChip('illustrative', 'a schematic, not the checkpoint'));
+  head.append(`${t('fig.toy')} `, kindChip('illustrative', t('fig.toyTip')));
   box.append(head);
   const grid = el('div', 'layer-matmul');
   const cell = (txt: string, color?: string): HTMLElement => {
@@ -197,7 +198,7 @@ function matmulView(v: Extract<ViewSpec, { kind: 'matmul' }>, weights: LayerWeig
       const m = findMatrix(weights, name);
       if (!m) continue;
       const line = el('div', 'layer-tile');
-      line.append(`${name} `, fmt(structure(m.shape)), ' real checkpoint tile ', kindChip('structure'));
+      line.append(`${name} `, fmt(structure(m.shape)), ` ${t('fig.realTile')} `, kindChip('structure'));
       real.append(line);
     }
     box.append(real);
@@ -216,10 +217,10 @@ export function renderView(v: ViewSpec, weights: LayerWeights | null = null): HT
     case 'rope': {
       const box = el('div', 'layer-view layer-view--rope');
       const head = el('div', 'layer-view-title');
-      head.append(`rotation angles at position ${v.position}, head_dim ${v.headDim} `, kindChip('structure'));
+      head.append(`${t('fig.rope', { p: v.position, d: v.headDim })} `, kindChip('structure'));
       box.append(head, el('div', 'layer-rope-pairing', v.pairing));
       for (const p of v.pairs) {
-        box.append(el('div', 'layer-rope-row', `pair ${p.pair}: freq ${Number(p.freq.toPrecision(4))}, angle ${Number(p.angle.toPrecision(4))} rad`));
+        box.append(el('div', 'layer-rope-row', t('fig.ropeRow', { i: p.pair, f: Number(p.freq.toPrecision(4)), a: Number(p.angle.toPrecision(4)) })));
       }
       return box;
     }
@@ -239,16 +240,16 @@ export function renderView(v: ViewSpec, weights: LayerWeights | null = null): HT
 export function renderStep(step: Step, depth: Depth, weights: LayerWeights | null = null): HTMLElement {
   const box = el('div', 'layer-step');
   box.dataset.step = step.id;
-  // The Intuition title is UI text (strings.ts, both languages); Technical and Researcher stay technical English.
-  box.append(el('h3', 'layer-step-title', depth === 'intuition' ? t(`step.${step.id}` as StringKey) : step.title[depth]));
+  // Every depth's title comes from layerSteps in the current language (src/layer/steps.ts).
+  box.append(el('h3', 'layer-step-title', step.title[depth]));
   const f = el('code', 'layer-formula', step.formula);
   box.append(f, renderView(step.view, weights));
   const foot = el('div', 'layer-step-foot');
-  foot.append('data: ', kindChip(step.data.kind, step.data.provenance ? `prompt ${step.data.provenance.prompt_id}` : undefined));
+  foot.append(`${t('fig.data')} `, kindChip(step.data.kind, step.data.provenance ? t('fig.prompt', { id: step.data.provenance.prompt_id }) : undefined));
   for (const id of step.caveats) {
     const c = el('span', 'layer-caveat', id);
     c.dataset.caveat = id;
-    c.title = CAVEATS[id].title;
+    c.title = lt(CAVEATS[id].title);
     foot.append(' ', c);
   }
   box.append(foot);
@@ -363,6 +364,8 @@ export interface LayerMode {
   prev(): Promise<void>;
   /** Resolves when every queued draw has finished. */
   idle(): Promise<void>;
+  /** Removes the depth and prefs listeners and the element. */
+  dispose(): void;
 }
 
 /** Layer of a component id (null for embed, lm_head, ln_f, shafts). */
@@ -387,15 +390,15 @@ export function createLayerMode(deps: LayerModeDeps): LayerMode {
   root.hidden = true;
   root.setAttribute('role', 'region');
   const prompt = el('select', 'hud-select');
-  prompt.setAttribute('aria-label', 'Prompt');
+
   prompt.append(new Option('', ''), ...ids.map((i) => new Option(i, i)));
   const tokenSel = el('select', 'hud-select');
-  tokenSel.setAttribute('aria-label', 'Token');
+
   const streamSel = el('select', 'hud-select');
-  streamSel.setAttribute('aria-label', 'Stream');
+
   streamSel.append(new Option('', 'A'), new Option('', 'B'));
   const depthSel = el('select', 'hud-select');
-  depthSel.setAttribute('aria-label', 'Depth');
+
   depthSel.dataset.adv = 'true';
   for (const d of DEPTHS) depthSel.append(new Option(d, d));
   const prev = el('button', 'hud-btn');
@@ -412,6 +415,10 @@ export function createLayerMode(deps: LayerModeDeps): LayerMode {
   /** Labels of the current language and mode (values and the open step stay). */
   const paintChrome = (): void => {
     root.setAttribute('aria-label', t('layer.region'));
+    prompt.setAttribute('aria-label', t('layer.prompt'));
+    tokenSel.setAttribute('aria-label', t('layer.token'));
+    streamSel.setAttribute('aria-label', t('layer.stream'));
+    depthSel.setAttribute('aria-label', t('layer.depth'));
     (prompt.options[0] as HTMLOptionElement).text = t('layer.noTrace');
     (streamSel.options[0] as HTMLOptionElement).text = t('layer.streamA');
     (streamSel.options[1] as HTMLOptionElement).text = t('layer.streamB');
@@ -456,12 +463,12 @@ export function createLayerMode(deps: LayerModeDeps): LayerMode {
 
   const fillTokens = (keep: number): void => {
     tokenSel.replaceChildren();
-    const toks = trace ? trace.provenance.tokens.map(decodeToken) : Array.from({ length: 12 }, (_, k) => `toy ${k}`);
+    const toks = trace ? trace.provenance.tokens.map(decodeToken) : Array.from({ length: 12 }, (_, k) => t('layer.toy', { k }));
     toks.forEach((t, k) => tokenSel.append(new Option(`${k}: ${JSON.stringify(t)}`, String(k))));
     tokenSel.value = String(Math.max(0, Math.min(toks.length - 1, keep)));
   };
   const rebuild = (): void => {
-    stepList = layerSteps(trace, layer, streamSel.value as Stream, position(), arch);
+    stepList = layerSteps(trace, layer, streamSel.value as Stream, position(), arch, getLang());
     i = Math.min(i, stepList.length - 1);
     target = i;
   };
@@ -516,7 +523,7 @@ export function createLayerMode(deps: LayerModeDeps): LayerMode {
     const step = stepList[i];
     if (!step) return;
     body.replaceChildren(renderStep(step, getDepth(), weights));
-    where.textContent = t('layer.where', { l: layer, s: streamSel.value, p: position(), i: i + 1, n: stepList.length });
+    where.textContent = t('layer.where', { l: layerLabel(layer), s: streamSel.value, p: position(), i: i + 1, n: stepList.length });
   };
   const draw = async (): Promise<void> => {
     const step = stepList[i];
@@ -541,13 +548,22 @@ export function createLayerMode(deps: LayerModeDeps): LayerMode {
     await draw();
   });
 
-  prompt.addEventListener('change', () => { void (async () => { tokenSel.value = '0'; await reload(); })(); });
+  // A new sentence follows its default word (the last non-punctuation token), as the player and tours do.
+  prompt.addEventListener('change', () => {
+    void enqueue(async () => {
+      await ensureTrace(prompt.value);
+      fillTokens(trace ? defaultPosition(trace.provenance.tokens.map(decodeToken)) : 0);
+      rebuild();
+      await draw();
+    });
+  });
   tokenSel.addEventListener('change', () => { void reload(); });
   streamSel.addEventListener('change', () => { void reload(); });
   // The depth select is the global depth (one concept with the panel and the Simple/Advanced mode).
   depthSel.addEventListener('change', () => { setDepth(depthSel.value as Depth); show(); });
-  onDepthChange((d) => { depthSel.value = d; if (active) show(); });
-  onPrefsChange(() => { paintChrome(); if (active) show(); });
+  const offDepth = onDepthChange((d) => { depthSel.value = d; if (active) show(); });
+  // A language change rebuilds the steps (their texts are per language); the open step stays.
+  const offPrefs = onPrefsChange(() => { paintChrome(); if (active) { rebuild(); show(); } });
   prev.addEventListener('click', () => void go(target - 1));
   next.addEventListener('click', () => void go(target + 1));
   close.addEventListener('click', () => void api.exit());
@@ -602,6 +618,11 @@ export function createLayerMode(deps: LayerModeDeps): LayerMode {
     next: () => go(target + 1),
     prev: () => go(target - 1),
     idle: () => chain,
+    dispose() {
+      offDepth();
+      offPrefs();
+      root.remove();
+    },
   };
   return api;
 }

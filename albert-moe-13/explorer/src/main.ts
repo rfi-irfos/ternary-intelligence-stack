@@ -26,13 +26,13 @@ import { attachPicking, createHover, createRaycastPicker } from './ui/picking';
 import { createTopBar } from './ui/topbar';
 import { createLegend } from './ui/legend';
 import { createHighlighter } from './ui/highlight';
-import { matchesRole } from './ui/roles';
+import { componentName, matchesRole } from './ui/roles';
 import { createHoverTip } from './ui/tooltip';
 import { createSelection } from './ui/selection';
 import { onPrefsChange } from './ui/prefs';
-import { createCoachMarks } from './ui/coach';
+import { coachSeen, createCoachMarks } from './ui/coach';
 
-/** Waits (at most `ms`) for the display face, so the canvas labels of the scene draw in it. */
+/** Waits (at most `ms`) for the display face, so the canvas labels of the scene draw in it; runs beside the data loads. */
 async function fontsReady(ms = 1500): Promise<void> {
   if (typeof document === 'undefined' || !document.fonts) return;
   const load = Promise.all([
@@ -48,9 +48,9 @@ async function main(): Promise<void> {
   if (heading) heading.textContent = APP_NAME;
   const top = createTopBar(heading);
   document.body.appendChild(top.element);
-  await fontsReady();
-  const arch = await loadArchitecture();
-  const tower = buildTower(arch, await loadModules());
+  // Fonts, architecture and modules load in parallel; the font wait only caps itself, it never delays the data.
+  const [arch, modules] = await Promise.all([loadArchitecture(), loadModules(), fontsReady()]);
+  const tower = buildTower(arch, modules);
 
   // Canvas MSAA stays on: Low renders straight to the canvas and relies on it for the thin edges, and
   // the preset can change at runtime without recreating the context. On High and Medium the composer
@@ -71,7 +71,6 @@ async function main(): Promise<void> {
   const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
   camera.up.set(0, 0, 1);
   const rig = createControls(camera, renderer.domElement, tower.rowExtent);
-  void rig.overview(0);
 
   // Functional layout rules that live with their modules; the look comes from src/style/*.css.
   const style = document.createElement('style');
@@ -100,9 +99,10 @@ async function main(): Promise<void> {
   });
   document.body.appendChild(panel.element);
   view = createExplode({
-    tower, arch, rig, loadWeights,
+    tower, arch, rig, loadWeights, name: componentName,
     onChange: (id) => {
       note(id);
+      reapplyPin();
       if (id) void panel.openPanel(id);
       else panel.close();
     },
@@ -118,10 +118,10 @@ async function main(): Promise<void> {
   const bar = createPlayerBar({ arch, tower, rig, animator });
   const dock = document.createElement('div');
   dock.className = 'dock';
-  dock.append(bar.element, rail.element);
-  // The rail doubles as the run's progress: a marker on the layer the word is in, a line under it.
+  dock.append(bar.element);
+  // The rail is the run's timeline along the bottom edge: a marker on the layer the word is in, a fill.
   bar.onOp((op, i, n) => rail.flow(op.layer ?? null, n > 1 ? i / (n - 1) : 0));
-  document.body.appendChild(dock);
+  document.body.append(dock, rail.element);
   const layerMode = createLayerMode({
     arch, view, rig, loadWeights,
     slabCenter: (l) => new THREE.Vector3(tower.slabX(l), 0, 0),
@@ -140,21 +140,66 @@ async function main(): Promise<void> {
     })();
   });
 
-  // The side column (inspection panel or layer steps) and the dock never overlap: the dock moves left.
-  const syncSide = (): void => {
-    document.body.classList.toggle('side-open', !panel.element.hidden || !layerMode.element.hidden);
-  };
-  const sideObserver = new MutationObserver(syncSide);
-  sideObserver.observe(panel.element, { attributes: true, attributeFilter: ['hidden'] });
-  sideObserver.observe(layerMode.element, { attributes: true, attributeFilter: ['hidden'] });
-  syncSide();
-
   // Highlights: a legend role (hover previews, click pins) or a panel row under the pointer.
   const highlighter = createHighlighter(() => [tower.root, view.root]);
   const legend = createLegend({
     onHighlight: (role) => highlighter.show(role ? (id) => matchesRole(id, role) : null),
   });
-  document.body.appendChild(legend.element);
+  // The legend chip is a tray item of the system bar (left, after home); its key drops down below.
+  (top.element.querySelector('.top-left') ?? document.body).appendChild(legend.element);
+  // Open on the first visit only (beside the coach marks); afterwards a collapsed chip.
+  legend.setOpen(!coachSeen());
+  /** The pinned legend role again, after an explode level or a quality switch rebuilt colours. */
+  const reapplyPin = (): void => {
+    const role = legend.pinned();
+    if (role) highlighter.show((id) => matchesRole(id, role));
+  };
+
+  // The HUD insets the camera frames around (top bar, dock, side column, legend). Measured when the
+  // layout changes (side column opens or closes, a HUD element resizes, the window resizes), never per
+  // frame; a new measure never moves the camera, the next user-triggered flight uses it.
+  const GAP = 8;
+  /** Right edge of the open legend key (it drops down under its chip in the system bar). */
+  const legendRight = (): number => {
+    const list = legend.element.querySelector<HTMLElement>('.legend-list');
+    return list && !list.hidden ? list.getBoundingClientRect().right : 0;
+  };
+  const measureInsets = (): void => {
+    // A collapsed panel is a small tray tab in the corner: it takes no column from the scene.
+    const side = !layerMode.element.hidden ? layerMode.element : !panel.element.hidden && !panel.collapsed() ? panel.element : null;
+    const edge = (x: HTMLElement): number => window.innerWidth - x.offsetLeft;
+    rig.setInsets({
+      top: top.element.offsetHeight,
+      bottom: dock.offsetHeight ? window.innerHeight - dock.offsetTop + GAP : 0,
+      right: side && side.offsetWidth ? edge(side) + GAP : 0,
+      left: legend.element.classList.contains('open') ? legendRight() + GAP : 0,
+    });
+  };
+  // The side column (inspection panel or layer steps) and the dock never overlap: the dock moves left.
+  const syncSide = (): void => {
+    document.body.classList.toggle('side-open', (!panel.element.hidden && !panel.collapsed()) || !layerMode.element.hidden);
+    measureInsets();
+  };
+  const sideObserver = new MutationObserver(syncSide);
+  sideObserver.observe(panel.element, { attributes: true, attributeFilter: ['hidden', 'class'] });
+  sideObserver.observe(layerMode.element, { attributes: true, attributeFilter: ['hidden'] });
+  sideObserver.observe(legend.element, { attributes: true, attributeFilter: ['class'] });
+  // The collapsed panel docks into the system bar left of its right cluster (Tour, DE | EN, gear).
+  const trayRight = (): void => {
+    const cluster = top.element.querySelector<HTMLElement>('.top-right');
+    if (cluster) document.documentElement.style.setProperty('--tray-right', `${window.innerWidth - cluster.getBoundingClientRect().left + GAP}px`);
+  };
+  trayRight();
+  if (typeof ResizeObserver === 'function') {
+    const cluster = top.element.querySelector<HTMLElement>('.top-right');
+    if (cluster) new ResizeObserver(trayRight).observe(cluster);
+    const sizes = new ResizeObserver(measureInsets);
+    const key = legend.element.querySelector<HTMLElement>('.legend-list');
+    for (const x of [top.element, dock, key ?? legend.element, panel.element, layerMode.element]) sizes.observe(x);
+  }
+  syncSide();
+  // First frame of the session: the overview already fits between the HUD (startup, not an inset change).
+  void rig.overview(0);
   panel.element.addEventListener('pointerover', (e) => {
     const link = (e.target as HTMLElement).closest<HTMLElement>('[data-link]');
     if (link?.dataset.link) {
@@ -171,8 +216,11 @@ async function main(): Promise<void> {
     }
   });
 
-  const rayAt = createRaycastPicker(camera, renderer.domElement, () => view.pickRoot(),
+  const rayAtRaw = createRaycastPicker(camera, renderer.domElement, () => view.pickRoot(),
     (hit) => (view.depth() > 0 ? view.pick(hit) : tower.pick(hit)));
+  // The hit of the last raycast: hover outline and tooltip reuse it (one raycast per frame, not two).
+  let lastHit: ReturnType<typeof rayAtRaw> = null;
+  const rayAt = (x: number, y: number): ReturnType<typeof rayAtRaw> => (lastHit = rayAtRaw(x, y));
   let lastX = 0;
   let lastY = 0;
   const tip = createHoverTip();
@@ -200,7 +248,7 @@ async function main(): Promise<void> {
       else panel.close();
     },
     onHover: (id) => {
-      hover.show(id ? rayAt(lastX, lastY) : null);
+      hover.show(id && lastHit?.id === id ? lastHit : null);
       tip.show(id);
       if (id) tip.move(lastX, lastY);
     },
@@ -210,7 +258,10 @@ async function main(): Promise<void> {
   // probe of their render work time picks the preset (weak GPU -> Low, never a black screen).
   const look = createLook({ renderer, scene, camera, root: tower.root });
   // Every preset switch goes through the explode view, so an open level keeps the row dimmed.
-  const applyQuality = (q: Quality): void => view.refreshLook(() => look.applyQuality(q));
+  const applyQuality = (q: Quality): void => {
+    view.refreshLook(() => look.applyQuality(q));
+    reapplyPin();
+  };
   const override = loadOverride();
   applyQuality(override ?? 'high');
   let probe: Probe | null = null;
@@ -250,7 +301,7 @@ async function main(): Promise<void> {
     { key: 'coach.play', target: () => dock },
     { key: 'coach.tours', target: () => top.toursButton },
     { key: 'coach.click', target: () => null },
-  ]);
+  ], document, () => legend.setOpen(false));
   if (coach.element) {
     document.body.appendChild(coach.element);
     void bar.ready.then(() => requestAnimationFrame(() => coach.refresh()));
@@ -260,6 +311,8 @@ async function main(): Promise<void> {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     look.setSize(window.innerWidth, window.innerHeight);
+    measureInsets();
+    trayRight();
   });
 
   const timer = new THREE.Timer();

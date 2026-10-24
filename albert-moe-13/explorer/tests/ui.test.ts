@@ -8,7 +8,7 @@ import { buildTower } from '../src/scene/tower';
 import { createControls } from '../src/camera/controls';
 import { getDepth, setDepth } from '../src/ui/depth';
 import {
-  LANG_KEY, MODE_KEY, getLang, getMode, initialLang, langFromNavigator, reloadPrefsForTest, setLang, setMode, t,
+  LANG_KEY, MODE_KEY, getLang, getMode, initialLang, langFromNavigator, layerLabel, reloadPrefsForTest, setLang, setMode, t,
 } from '../src/ui/prefs';
 import { LANGS, MODES, STRINGS, TOUR_IDS, type StringKey, resolve } from '../src/ui/strings';
 import { createTopBar } from '../src/ui/topbar';
@@ -18,7 +18,8 @@ import { createHoverTip } from '../src/ui/tooltip';
 import { closeTourMenu, isTourMenuOpen, openTourMenu } from '../src/ui/tourMenu';
 import { createSelection } from '../src/ui/selection';
 import { createSlabRail } from '../src/ui/slabRail';
-import { createPlayerBar, opLabel } from '../src/ui/player';
+import { createPlayerBar, defaultPosition, opLabel, stepSentence, wordGroups } from '../src/ui/player';
+import { decodeToken } from '../src/data/trace';
 import { attachPicking } from '../src/ui/picking';
 import { COACH_KEY, coachSeen, createCoachMarks } from '../src/ui/coach';
 import { createHighlighter, HIGHLIGHT_DIM } from '../src/ui/highlight';
@@ -109,28 +110,36 @@ describe('language', () => {
     const b = bar();
     await b.ready;
     const play = b.element.querySelector('button[data-action="play"]')!;
-    expect(play.getAttribute('aria-label')).toBe('Durchlauf starten');
+    expect(play.getAttribute('aria-label')).toBe('Start');
     b.player()?.jumpToNext('router');
     const chip = b.element.querySelector('.step-line')!;
     expect(chip.textContent).toContain('Die Weiche wählt 3 von 12 Experten');
     const sameEl = b.element;
     setLang('en');
     expect(b.element).toBe(sameEl);
-    expect(play.getAttribute('aria-label')).toBe('Watch albert think');
-    expect(play.textContent).toBe('Watch albert think');
+    expect(play.getAttribute('aria-label')).toBe('Play');
+    expect(play.textContent).toBe('Play');
     expect(chip.textContent).toContain('The switch picks 3 of 12 experts');
     expect(chip.textContent).not.toContain('Weiche');
   });
 });
 
 describe('Simple | Advanced', () => {
-  it('defaults to Simple; the toggle persists and maps to the depth', () => {
+  it('defaults to Simple; the toggle persists and maps to the depth', async () => {
     expect(getMode()).toBe('simple');
     const top = createTopBar(null);
     document.body.appendChild(top.element);
+    // Einfach | Erweitert lives in the dock, not in the top bar; the gear shows in both modes.
+    expect(top.element.querySelector('.mode-toggle')).toBeNull();
     const gear = top.element.querySelector<HTMLElement>('.settings-btn')!;
-    expect(gear.hidden).toBe(true);
-    top.element.querySelector<HTMLButtonElement>('.mode-toggle button[data-value="advanced"]')!.click();
+    expect(gear.hidden).toBe(false);
+    const b = createPlayerBar({
+      arch: a, tower, rig: { flyTo: vi.fn(() => Promise.resolve()), overview: vi.fn(() => Promise.resolve()) },
+      animator: { show: vi.fn() }, load: (id) => Promise.resolve(trace(id)),
+    });
+    document.body.appendChild(b.element);
+    await b.ready;
+    b.element.querySelector<HTMLButtonElement>('.mode-toggle button[data-value="advanced"]')!.click();
     expect(getMode()).toBe('advanced');
     expect(localStorage.getItem(MODE_KEY)).toBe('advanced');
     expect(getDepth()).toBe('technical');
@@ -206,11 +215,16 @@ describe('player bar explains itself', () => {
     expect(h.textContent).toBe('Watch albert read a sentence – layer by layer.');
   });
 
-  it('the sentence shows as word chips, one per token, the followed word marked', async () => {
+  it('the sentence shows as word chips, the followed word marked; by default the last word', async () => {
     const b = bar();
     await b.ready;
     const tr = trace('kjv');
+    const decoded = tr.provenance.tokens.map(decodeToken);
+    // The default word is the last one that is not punctuation ("earth" in "… the earth.").
+    expect(b.selection()!.position).toBe(defaultPosition(decoded));
+    expect(decoded[b.selection()!.position]!.trim()).toBe('earth');
     const chips = [...b.element.querySelectorAll<HTMLButtonElement>('.word-strip .word-chip')];
+    // English: every token starts a word here, so one chip per token.
     expect(chips).toHaveLength(tr.provenance.tokens.length);
     const current = chips.filter((c) => c.classList.contains('current'));
     expect(current).toHaveLength(1);
@@ -223,6 +237,34 @@ describe('player bar explains itself', () => {
     expect(b.selection()!.position).toBe(3);
     const now = [...b.element.querySelectorAll<HTMLElement>('.word-chip.current')];
     expect(now.map((c) => c.dataset.pos)).toEqual(['3']);
+  });
+
+  it('German subword pieces are grouped into word chips; a chip follows its last piece', async () => {
+    const b = bar();
+    await b.ready;
+    b.element.querySelector<HTMLButtonElement>('.sentence-chip')!.click();
+    document.querySelector<HTMLElement>('.sentence-pop [data-prompt="de"]')!.click();
+    await b.ready;
+    await new Promise((r) => setTimeout(r, 0));
+    const tr = trace('de');
+    const n = tr.provenance.tokens.length;
+    // The traced sentence keeps its own language (kjv and ternary are lang="en", also in the German UI).
+    expect(b.element.querySelector<HTMLElement>('.word-strip')!.lang).toBe('de');
+    const chips = [...b.element.querySelectorAll<HTMLButtonElement>('.word-strip .word-chip')];
+    expect(chips.length).toBeGreaterThan(0);
+    expect(chips.length).toBeLessThan(n);
+    // Every token belongs to exactly one chip.
+    const owner = new Array<number>(n).fill(0);
+    for (const c of chips) for (let k = Number(c.dataset.from); k <= Number(c.dataset.to); k++) owner[k]!++;
+    expect(owner).toEqual(new Array<number>(n).fill(1));
+    expect(wordGroups(tr.provenance.tokens.map(decodeToken))).toHaveLength(chips.length);
+    // The pieces of a grouped chip are spans; its tooltip lists them.
+    const grouped = chips.find((c) => c.classList.contains('word-chip--pieces'))!;
+    expect(grouped.querySelectorAll('.word-piece').length).toBeGreaterThan(1);
+    expect(grouped.title).toMatch(/·/);
+    grouped.click();
+    expect(b.selection()!.position).toBe(Number(grouped.dataset.to));
+    expect(grouped.dataset.pos).toBe(grouped.dataset.to);
   });
 
   it('a punctuation token is a visible chip of its own', async () => {
@@ -240,14 +282,21 @@ describe('player bar explains itself', () => {
     const b = bar();
     await b.ready;
     const line = b.element.querySelector<HTMLElement>('.step-line')!;
-    expect(line.textContent).toBe('Drück auf Start – dann wandert das Wort durch alle 46 Ebenen');
+    const head = b.element.querySelector<HTMLElement>('.player-headline')!;
+    // Before the first Play the caption is the headline; the hint is its tooltip.
+    expect(head.hidden).toBe(false);
+    expect(line.hidden).toBe(true);
+    expect(head.title).toContain('Drück auf Start – dann wandert das Wort durch alle 46 Ebenen');
     b.element.querySelector<HTMLButtonElement>('[data-action="play"]')!.click();
-    expect(line.textContent).toMatch(/^Schritt 1 von \d+ · „\.“ wird zu einer Liste von Zahlen$/);
+    expect(head.hidden).toBe(true);
+    expect(line.hidden).toBe(false);
+    expect(line.textContent).toMatch(/^Schritt 1 von \d+ · „earth“ wird zu einer Liste von Zahlen$/);
     const p = b.player()!;
     p.pause();
     p.jumpToNext('router');
-    const router = line.textContent!;
-    expect(router).toMatch(/^Schritt \d+ von \d+ · Ebene 0 von 46(?: · Strom [AB])? · Die Weiche wählt 3 von 12 Experten$/);
+    // The sentence itself (Simple adds the step's few values after it, in the same line).
+    const router = line.querySelector('.step-text')!.textContent!;
+    expect(router).toMatch(/^Schritt \d+ von \d+ · Ebene 1 von 46(?: · Strom [AB])? · Die Weiche wählt 3 von 12 Experten$/);
     expect(line.dataset.role).toBe('router');
     p.jumpToNext('gate');
     expect(line.textContent).not.toBe(router);
@@ -258,12 +307,32 @@ describe('player bar explains itself', () => {
     expect(b.element.querySelector('.player-details')?.textContent).toBe('');
   });
 
+  it('every step sentence is short enough for the one caption line of the 720 px dock (no "…")', async () => {
+    const b = bar();
+    await b.ready;
+    const ops = b.player()!.ops;
+    const kinds = new Map(ops.map((op, i) => [op.kind, i]));
+    // The highest step and layer numbers give the longest sentence of each kind.
+    const last = new Map<string, number>();
+    ops.forEach((op, i) => last.set(`${op.kind}${op.stream ?? ''}`, i));
+    for (const lang of LANGS) for (const mode of MODES) {
+      setLang(lang);
+      setMode(mode);
+      for (const i of [...kinds.values(), ...last.values()]) {
+        const text = stepSentence(ops[i]!, ops.length - 1, ops.length, a, ' beginning');
+        // About 7 px per character of Inter 14px: 86 characters stay inside the ~676 px of the caption line.
+        expect(text.length, `${lang} ${mode} ${text}`).toBeLessThanOrEqual(86);
+      }
+    }
+  });
+
   it('the sentence picker is a chip that lists the three sentences in full', async () => {
     setLang('de');
     const b = bar();
     await b.ready;
     const chip = b.element.querySelector<HTMLButtonElement>('.sentence-chip')!;
-    expect(chip.textContent).toBe('Anderen Satz wählen');
+    expect(chip.getAttribute('aria-label')).toBe('Anderen Satz wählen');
+    expect(chip.querySelector('svg')).not.toBeNull();
     expect(chip.title.length).toBeGreaterThan(0);
     chip.click();
     const opts = [...document.querySelectorAll<HTMLElement>('.sentence-pop [data-prompt]')];
@@ -272,19 +341,29 @@ describe('player bar explains itself', () => {
 });
 
 describe('legend', () => {
-  it('Simple: a quiet key, always visible, without buttons', () => {
+  it('Simple: a "Legend" chip opens a quiet key without buttons; hover previews, nothing pins', () => {
     const onHighlight = vi.fn();
     const legend = createLegend({ onHighlight });
     document.body.appendChild(legend.element);
+    const toggle = legend.element.querySelector<HTMLButtonElement>('.legend-toggle')!;
+    expect(toggle.hidden).toBe(false);
+    expect(toggle.textContent).toContain('Legend');
+    expect(legend.element.querySelector('.legend-list')?.closest('[hidden]')).not.toBeNull();
+    toggle.click();
     expect(legend.element.querySelector('.legend-list')?.closest('[hidden]')).toBeNull();
-    expect(legend.element.querySelector<HTMLElement>('.legend-toggle')!.hidden).toBe(true);
     expect(legend.element.querySelectorAll('button.legend-item')).toHaveLength(0);
+    // The timeline key is part of the legend.
+    expect(legend.element.querySelector('.legend-rail')?.textContent).toContain(t('rail.legend'));
     const items = [...legend.element.querySelectorAll<HTMLElement>('.legend-item')];
     expect(items.map((x) => x.dataset.role)).toEqual(ROLES);
     items[2]!.dispatchEvent(new Event('pointerenter'));
     expect(onHighlight).toHaveBeenLastCalledWith('expert');
     items[2]!.dispatchEvent(new Event('pointerleave'));
     expect(onHighlight).toHaveBeenLastCalledWith(null);
+    items[2]!.click();
+    expect(legend.pinned()).toBeNull();
+    setLang('de');
+    expect(toggle.textContent).toContain('Legende');
     legend.dispose();
   });
 
@@ -366,7 +445,9 @@ describe('tour menu', () => {
   it('the top bar opens it from the tours button', () => {
     const top = createTopBar(null);
     document.body.appendChild(top.element);
-    expect(top.toursButton.textContent).toBe('Guided tours');
+    expect(top.toursButton.textContent).toBe('Tour');
+    expect(top.toursButton.title).toContain(String(TOUR_IDS.length));
+    expect(top.toursButton.querySelector('svg')).not.toBeNull();
     top.toursButton.click();
     expect(isTourMenuOpen()).toBe(true);
     top.dispose();
@@ -375,14 +456,18 @@ describe('tour menu', () => {
 
 describe('hover tooltip', () => {
   it('names an expert with its layer, in the role colour', () => {
-    expect(hoverText('L12.expert.3')).toBe('Expert 3 · layer 12');
+    // Simple counts layers from 1 (blocks.12 is layer 13); Advanced shows the code index.
+    expect(hoverText('L12.expert.3')).toBe('Expert 3 · layer 13');
     const tip = createHoverTip();
     document.body.appendChild(tip.element);
     tip.show('L12.expert.3');
     expect(tip.element.hidden).toBe(false);
-    expect(tip.element.textContent).toBe('Expert 3 · layer 12');
+    expect(tip.element.textContent).toBe('Expert 3 · layer 13');
     expect(tip.element.dataset.role).toBe('expert');
     setLang('de');
+    tip.refresh();
+    expect(tip.element.textContent).toBe('Experte 3 · Ebene 13');
+    setMode('advanced');
     tip.refresh();
     expect(tip.element.textContent).toBe('Experte 3 · Ebene 12');
     tip.show(null);
@@ -428,16 +513,18 @@ describe('slab rail', () => {
     rail.dispose();
   });
 
-  it('is labelled at both ends, keyed in one line, and shows the run with a marker and a fill', () => {
+  it('is a timeline labelled at both ends, keyed in its tooltip, and shows the run with a marker and a fill', () => {
     setLang('de');
     const camera = new THREE.PerspectiveCamera(45, 1.5, 0.1, 1000);
     const rig = createControls(camera, document.createElement('canvas'), tower.rowExtent);
     cleanup.push(() => rig.dispose());
     const rail = createSlabRail(tower, rig, vi.fn());
     document.body.appendChild(rail.element);
-    expect(rail.element.querySelector('.rail-end--first')?.textContent).toBe('Ebene 0');
-    expect(rail.element.querySelector('.rail-end--last')?.textContent).toBe('Ebene 45');
-    expect(rail.element.querySelector('.rail-legend')?.textContent).toBe('rot = Austausch-Tor zwischen den Strömen');
+    expect(rail.element.classList.contains('timeline')).toBe(true);
+    expect(rail.element.querySelector('.rail-end--first')?.textContent).toBe('Ebene 1');
+    expect(rail.element.querySelector('.rail-end--last')?.textContent).toBe('Ebene 46');
+    expect(rail.element.title).toContain('rot = Austausch-Tor zwischen den Strömen');
+    expect(rail.element.querySelector('.rail-legend')).toBeNull();
     rail.flow(12, 0.25);
     expect([...rail.element.querySelectorAll<HTMLElement>('.flow')].map((x) => x.dataset.layer)).toEqual(['12']);
     expect(rail.element.querySelector<HTMLElement>('.rail-progress > span')!.style.transform).toBe('scaleX(0.25)');
@@ -471,7 +558,7 @@ describe('reduced HUD', () => {
     return { all, orphans, groups };
   }
 
-  it('Simple shows at most five controls: home, tours, preferences, play and the sentence', async () => {
+  it('Simple shows at most five controls: home, guide (tour + legend), preferences, play and the sentence', async () => {
     const top = createTopBar(null);
     const b = bar();
     const legend = createLegend({ onHighlight: vi.fn() });
@@ -479,7 +566,7 @@ describe('reduced HUD', () => {
     await b.ready;
     const c = controls([top.element, b.element, legend.element]);
     expect(c.orphans).toEqual([]);
-    expect([...c.groups].sort()).toEqual(['home', 'play', 'prefs', 'sentence', 'tours']);
+    expect([...c.groups].sort()).toEqual(['guide', 'home', 'play', 'prefs', 'sentence']);
     expect(c.groups.size).toBeLessThanOrEqual(5);
     expect(c.all.filter((x) => x.tagName === 'SELECT' || x.tagName === 'INPUT')).toEqual([]);
     // The transport is Play alone until a run was started and paused.
@@ -513,10 +600,13 @@ describe('reduced HUD', () => {
     document.body.appendChild(b.element);
     await b.ready;
     const chip = b.element.querySelector<HTMLButtonElement>('.sentence-chip')!;
-    expect(chip.textContent).toBe('Choose another sentence');
+    expect(chip.getAttribute('aria-label')).toBe('Choose another sentence');
     chip.click();
     const pop = document.querySelector<HTMLElement>('.sentence-pop')!;
     expect(pop.hidden).toBe(false);
+    // The popover takes focus when it opens.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(pop.contains(document.activeElement)).toBe(true);
     expect(pop.querySelectorAll('[data-prompt]')).toHaveLength(3);
     b.element.querySelector<HTMLElement>('.word-strip [data-pos="1"]')!.click();
     expect(b.selection()?.position).toBe(1);
@@ -549,11 +639,64 @@ describe('reduced HUD', () => {
     expect(createCoachMarks(steps).element).toBeNull();
   });
 
+  it('Esc closes the sentence popover with focus on the body; the camera does not move', async () => {
+    const camera = new THREE.PerspectiveCamera(45, 1.5, 0.1, 1000);
+    const rig = createControls(camera, document.createElement('canvas'), tower.rowExtent);
+    cleanup.push(() => rig.dispose());
+    const overview = vi.spyOn(rig, 'overview');
+    const flyTo = vi.spyOn(rig, 'flyTo');
+    const b = bar();
+    await b.ready;
+    b.element.querySelector<HTMLButtonElement>('.sentence-chip')!.click();
+    const pop = document.querySelector<HTMLElement>('.sentence-pop')!;
+    expect(pop.hidden).toBe(false);
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(document.activeElement).toBe(document.body);
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(pop.hidden).toBe(true);
+    expect(overview).not.toHaveBeenCalled();
+    expect(flyTo).not.toHaveBeenCalled();
+    // With nothing open, Esc reaches the camera again.
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(overview).toHaveBeenCalledTimes(1);
+    b.dispose?.();
+  });
+
+  it('coach marks take focus, are labelled by their text, and Esc ends them without moving the camera', async () => {
+    const camera = new THREE.PerspectiveCamera(45, 1.5, 0.1, 1000);
+    const rig = createControls(camera, document.createElement('canvas'), tower.rowExtent);
+    cleanup.push(() => rig.dispose());
+    const overview = vi.spyOn(rig, 'overview');
+    const onEnd = vi.fn();
+    const c = createCoachMarks([{ key: 'coach.play', target: () => null }], document, onEnd);
+    document.body.appendChild(c.element!);
+    await Promise.resolve();
+    expect(c.element!.contains(document.activeElement)).toBe(true);
+    const ids = (c.element!.getAttribute('aria-labelledby') ?? '').split(/\s+/);
+    expect(ids.length).toBeGreaterThan(0);
+    for (const id of ids) expect(document.getElementById(id), id).not.toBeNull();
+    (document.activeElement as HTMLElement | null)?.blur();
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(document.body.contains(c.element)).toBe(false);
+    expect(coachSeen()).toBe(true);
+    expect(onEnd).toHaveBeenCalled();
+    expect(overview).not.toHaveBeenCalled();
+  });
+
   it('closing the coach marks early also ends them for good', () => {
     const c = createCoachMarks([{ key: 'coach.play', target: () => null }]);
     document.body.appendChild(c.element!);
     c.element!.querySelector<HTMLElement>('.coach-skip')!.click();
     expect(coachSeen()).toBe(true);
     expect(createCoachMarks([{ key: 'coach.play', target: () => null }]).element).toBeNull();
+  });
+});
+
+describe('layer numbers', () => {
+  it('Simple counts from 1, Advanced shows the code index', () => {
+    expect(layerLabel(0, 'simple')).toBe(1);
+    expect(layerLabel(45, 'simple')).toBe(46);
+    expect(layerLabel(0, 'advanced')).toBe(0);
+    expect(layerLabel(45, 'advanced')).toBe(45);
   });
 });

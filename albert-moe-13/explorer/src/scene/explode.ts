@@ -28,10 +28,16 @@ export interface TileInfo {
 export interface ExplodeDeps {
   tower: TowerScene;
   arch: Architecture;
-  rig: Pick<CameraRig, 'flyTo' | 'escapeGuard'>;
+  /** `frameBox` (optional for test shims) fits a level into the free rect left by the HUD. */
+  rig: Pick<CameraRig, 'flyTo' | 'escapeGuard'> & Partial<Pick<CameraRig, 'frameBox'>>;
   loadWeights: WeightsLoader;
   /** Text label factory; defaults to a serif canvas sprite. Tests inject a stub. */
   label?: (text: string, kind?: LabelKind) => THREE.Object3D;
+  /**
+   * Name of a part in the UI language (the app passes roles.componentName). Parts named after a tensor
+   * or code id (Q, K, V, O, gate, c_fc, c_proj, seed_bias, GELU, ln1/ln2) keep their code name.
+   */
+  name?: (id: ComponentId) => string;
   /** Animation length in ms (0 = instant). */
   ms?: number;
   /** True when the user prefers reduced motion: parts and the row shift then move instantly. Defaults to the media query. */
@@ -357,8 +363,12 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
   let closing = 0;
   const top = (): Level | undefined => stack[stack.length - 1];
 
+  /** Frames a level: its whole (nudged) box fits the free rect when the rig knows the HUD insets. */
   const flyTo = (level: Level, extent: number): void => {
-    void rig.flyTo(level.center, extent * 3 + 4, reduced() ? 0 : undefined);
+    const ms = reduced() ? 0 : undefined;
+    const box = rig.frameBox ? levelBox(level) : null;
+    if (rig.frameBox && box && !box.isEmpty()) void rig.frameBox(box, ms);
+    else void rig.flyTo(level.center, extent * 3 + 4, ms);
   };
 
   // --- layout: nested nudges, then the row shift ---
@@ -556,7 +566,8 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
       outline.raycast = (): void => {};
       mesh.add(outline);
       mesh.position.copy(start());
-      const text = label(c.label, 'structure');
+      const named = c.kind === 'attn' || c.kind === 'router' || c.kind === 'bank' || c.kind === 'expert' || c.kind === 'head';
+      const text = label(named && deps.name ? deps.name(c.id) : c.label, 'structure');
       text.userData.label = true;
       // Just under the part; experts sit closer (and their grid rows further apart, hierarchy.ts) so no
       // caption hides under the cube of the next row.
@@ -683,10 +694,12 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
         addLanes(level);
       });
       const last = built[built.length - 1]!;
-      flyTo(last.level, last.extent);
       deps.onChange?.(id);
       const moves = built.flatMap((b) => b.targets.map(([o, to]) => animate(o, to, 0.2, 1)));
-      await Promise.all([...moves, ...relayout()]);
+      // Layout first (it sets the nudges), then frame the level at its final place.
+      const lay = relayout();
+      flyTo(last.level, last.extent);
+      await Promise.all([...moves, ...lay]);
       if (top() === last.level) showLanes();
     },
 

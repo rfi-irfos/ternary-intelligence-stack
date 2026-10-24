@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { MatrixData } from '../data/weights';
-import { fmtText, structure } from '../data/labeled';
+import { fmtText, pctStr, structure } from '../data/labeled';
 import { PALETTE } from './palette';
 
 /** Spec §5 value colours (palette.ts): +1 warm, -1 cold, 0 dark. */
@@ -44,7 +44,7 @@ export function tileGrid(m: MatrixData): TileGrid {
 /** Caption lines under a tile (structure values from the weights file); short enough for the label width. */
 export function tileCaption(m: MatrixData): string[] {
   const num = (v: number | null): string => (v === null ? '—' : fmtText(structure(v)));
-  const pct = (v: number | null): string => (v === null ? '—' : `${(v * 100).toFixed(1)} %`);
+  const pct = (v: number | null): string => (v === null ? '—' : pctStr(v));
   if (!m.ternary) return [m.name, `F32 · ${fmtText(structure(m.shape))}`];
   return [
     m.name,

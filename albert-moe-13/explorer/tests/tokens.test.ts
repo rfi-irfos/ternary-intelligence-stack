@@ -7,6 +7,8 @@ import { HEADING_FONT } from '../src/content/brand';
 // Read from disk: vitest stubs CSS imports (even ?raw) to an empty string.
 const raw = readFileSync(new URL('../src/style/tokens.css', import.meta.url));
 const tokensCss = new TextDecoder().decode(new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength));
+const uiRaw = readFileSync(new URL('../src/style/ui.css', import.meta.url));
+const uiCss = new TextDecoder().decode(new Uint8Array(uiRaw.buffer, uiRaw.byteOffset, uiRaw.byteLength));
 const kebab = (k: string): string => k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
 const vars = new Map([...tokensCss.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)].map((m) => [m[1] as string, (m[2] as string).trim()]));
 
@@ -71,5 +73,17 @@ describe('design tokens', () => {
     expect(FONT.math.startsWith('"STIX Two Text"')).toBe(true);
     expect(vars.get('--font-display')).toBe(FONT.display);
     expect(FONT.ui.startsWith('"Inter"')).toBe(true);
+  });
+});
+
+describe('focus ring', () => {
+  it('buttons, icons, selects and number fields draw the ring inside (outline-offset -3px)', () => {
+    const css = uiCss.replace(/\/\*[\s\S]*?\*\//g, '');
+    const rule = css.match(/([^{}]*:focus-visible[^{}]*)\{([^}]*)\}/g)?.find((r) => /outline-offset:\s*-3px/.test(r));
+    expect(rule, 'a :focus-visible rule with outline-offset: -3px').toBeDefined();
+    for (const sel of ['.hud-btn:focus-visible', '.hud-icon:focus-visible', '.hud-select:focus-visible', '.hud-number:focus-visible']) {
+      expect(rule!, sel).toContain(sel);
+    }
+    expect(rule!).toMatch(/outline:\s*2px solid/);
   });
 });

@@ -19,6 +19,7 @@ from pathlib import Path
 
 NUM_HEADS = 4  # attention.rs: 4 heads x 64 dims
 NUM_STREAMS = 2  # stream_a, stream_b
+TOP_K = 3  # moe.rs:197-381: three max passes pick the experts per token and stream
 DEFAULT_THRESHOLD = 0.02  # config.rs default when `threshold` is absent
 TAU_MIN, TAU_CAP = 0.01, 0.05
 
@@ -204,6 +205,7 @@ def build(checkpoint, config):
             "num_layers": num_layers,
             "num_streams": NUM_STREAMS,
             "num_experts": num_experts,
+            "top_k": TOP_K,
             "hidden": hidden,
             "ffn_inner": up[0],
             "num_heads": NUM_HEADS,

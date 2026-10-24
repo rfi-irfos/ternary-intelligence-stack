@@ -36,17 +36,21 @@ export const coachSeen = (s: Pick<Storage, 'getItem'> | null = store()): boolean
  * then the model itself). "Next" moves on, "Got it" on the last one or the close button ends them, and
  * either way they are stored as seen and never shown again.
  */
-export function createCoachMarks(steps: CoachStep[], doc: Document = document): CoachMarks {
+export function createCoachMarks(steps: CoachStep[], doc: Document = document, onEnd?: () => void): CoachMarks {
   const noop: CoachMarks = { element: null, index: () => -1, next: () => undefined, dismiss: () => undefined, refresh: () => undefined };
   if (coachSeen() || steps.length === 0) return noop;
   const el = doc.createElement('div');
   el.className = 'coach';
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-live', 'polite');
+  el.tabIndex = -1;
   const label = doc.createElement('span');
   label.className = 'coach-count';
+  label.id = 'coach-count';
   const text = doc.createElement('p');
   text.className = 'coach-text';
+  text.id = 'coach-text';
+  el.setAttribute('aria-labelledby', 'coach-count coach-text');
   const row = doc.createElement('div');
   row.className = 'coach-row';
   const skip = doc.createElement('button');
@@ -90,7 +94,9 @@ export function createCoachMarks(steps: CoachStep[], doc: Document = document): 
     off?.();
     off = null;
     if (typeof window !== 'undefined') window.removeEventListener('resize', place);
+    doc.removeEventListener('keydown', onEsc, true);
     el.remove();
+    onEnd?.();
   };
   const next = (): void => {
     if (i >= steps.length - 1) { dismiss(); return; }
@@ -99,11 +105,18 @@ export function createCoachMarks(steps: CoachStep[], doc: Document = document): 
   };
   go.addEventListener('click', next);
   skip.addEventListener('click', dismiss);
-  el.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { e.stopPropagation(); dismiss(); }
-  });
+  // Esc ends the hints wherever focus is: capture phase, so the explode view and the camera never see it.
+  const onEsc = (e: KeyboardEvent): void => {
+    if (e.key !== 'Escape' || !el.isConnected) return;
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    dismiss();
+  };
+  doc.addEventListener('keydown', onEsc, true);
   off = onPrefsChange(paint);
   if (typeof window !== 'undefined') window.addEventListener('resize', place);
   paint();
+  // Focus moves into the hint once it is on the page (the app appends it right after this returns).
+  queueMicrotask(() => { if (el.isConnected) go.focus(); });
   return { element: el, index: () => i, next, dismiss, refresh: place };
 }

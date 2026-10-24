@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { createControls, overviewPose } from '../src/camera/controls';
+import archJson from '../public/data/architecture.json';
+import { boxCorners, createControls, freeRect, overviewPoints, overviewPose } from '../src/camera/controls';
+import { validateArchitecture } from '../src/data/architecture';
+import { createExplode } from '../src/scene/explode';
+import { buildTower } from '../src/scene/tower';
+
+const arch = validateArchitecture(archJson);
 
 const EXTENT = { minX: -3, maxX: 141 };
 const rigs: Array<{ dispose(): void }> = [];
@@ -96,5 +102,93 @@ describe('camera rig', () => {
     const small = overviewPose(16 / 9, 45, { minX: -3, maxX: 9 });
     expect(small.target.x).toBeCloseTo(3, 6);
     expect(small.distance).toBeLessThan(overviewPose(16 / 9, 45, EXTENT).distance);
+  });
+});
+
+describe('HUD-aware framing (1366×768, dock 250 px, panel 396 px)', () => {
+  const W = 1366;
+  const H = 768;
+  const HUD = { top: 0, right: 396, bottom: 250, left: 0 };
+  const yMin = -1 + (2 * HUD.bottom) / H;
+  const xMax = 1 - (2 * HUD.right) / W;
+
+  function hudRig() {
+    const camera = new THREE.PerspectiveCamera(45, W / H, 0.1, 1000);
+    camera.up.set(0, 0, 1);
+    const dom = document.createElement('canvas');
+    Object.defineProperty(dom, 'clientWidth', { value: W });
+    Object.defineProperty(dom, 'clientHeight', { value: H });
+    document.body.appendChild(dom);
+    const tower = buildTower(arch);
+    const r = createControls(camera, dom, tower.rowExtent);
+    rigs.push(r);
+    return { camera, rig: r, tower };
+  }
+  const ndc = (camera: THREE.PerspectiveCamera, p: THREE.Vector3): THREE.Vector3 => {
+    camera.updateMatrixWorld();
+    camera.updateProjectionMatrix();
+    return p.clone().project(camera);
+  };
+  const expectFree = (camera: THREE.PerspectiveCamera, pts: THREE.Vector3[]): void => {
+    for (const p of pts) {
+      const q = ndc(camera, p);
+      expect(q.y).toBeGreaterThan(yMin);
+      expect(q.x).toBeLessThan(xMax);
+      expect(q.y).toBeLessThan(1);
+      expect(q.x).toBeGreaterThan(-1);
+      expect(q.z).toBeLessThan(1);
+    }
+  };
+
+  it('the opened L20 bank box sits above the dock and left of the panel', async () => {
+    const { camera, rig: r, tower } = hudRig();
+    await r.overview(0);
+    r.setInsets(HUD);
+    const boxes: THREE.Box3[] = [];
+    const frameBox = r.frameBox.bind(r);
+    r.frameBox = (b, ms) => { boxes.push(b.clone()); return frameBox(b, 0); };
+    const view = createExplode({ tower, arch, rig: r, loadWeights: async () => { throw new Error('no weights'); }, label: () => new THREE.Object3D(), ms: 0 });
+    rigs.push(view);
+    await view.explode('L20.bank');
+    expect(view.depth()).toBe(2);
+    const box = boxes[boxes.length - 1]!;
+    // The bank's twelve experts (not the slab): the box spans them.
+    for (let e = 0; e < 12; e++) expect(box.containsPoint(view.root.getObjectByName(`L20.expert.${e}`)!.position)).toBe(true);
+    expectFree(camera, boxCorners(box));
+  });
+
+  it('the overview row ends sit above the dock and left of the panel', async () => {
+    const { camera, rig: r, tower } = hudRig();
+    r.setInsets(HUD);
+    await r.overview(0);
+    expectFree(camera, overviewPoints(tower.rowExtent));
+  });
+
+  it('a centred flyTo target lands in the middle of the free rect', async () => {
+    const { camera, rig: r } = hudRig();
+    r.setInsets(HUD);
+    const t = new THREE.Vector3(40, 0, 0);
+    await r.flyTo(t, 20, 0);
+    const q = ndc(camera, t);
+    expect(q.x).toBeCloseTo((-1 + xMax) / 2, 3);
+    expect(q.y).toBeCloseTo((yMin + 1) / 2, 3);
+  });
+
+  it('changing the insets never moves the camera by itself', async () => {
+    const { camera, rig: r } = hudRig();
+    await r.overview(0);
+    const before = r.pose();
+    r.setInsets(HUD);
+    r.update(1 / 60);
+    r.setInsets({ top: 64, right: 0, bottom: 120, left: 260 });
+    r.update(1 / 60);
+    expect(r.isFlying()).toBe(false);
+    expect(camera.position.distanceTo(before.position)).toBeLessThan(1e-6);
+    expect(r.controls.target.distanceTo(before.target)).toBeLessThan(1e-6);
+    expect(r.insets()).toEqual({ top: 64, right: 0, bottom: 120, left: 260 });
+  });
+
+  it('freeRect falls back to the whole view when the HUD leaves no room', () => {
+    expect(freeRect({ top: 0, right: 2000, bottom: 0, left: 0 }, W, H)).toEqual({ x0: -1, x1: 1, y0: -1, y1: 1 });
   });
 });

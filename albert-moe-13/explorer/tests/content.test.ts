@@ -13,12 +13,36 @@ const rust = import.meta.glob('./fixtures/rust-src-45e8af0/**/*.rs', { query: '?
 describe('component content', () => {
   it('every component type has all three depths, non-empty', () => {
     for (const [type, c] of Object.entries(COMPONENTS)) {
-      expect(c.title.length, type).toBeGreaterThan(0);
-      for (const d of DEPTHS) expect(c.text[d].trim().length, `${type}/${d}`).toBeGreaterThan(20);
+      expect(c.title.en.length, type).toBeGreaterThan(0);
+      for (const d of DEPTHS) expect(c.text[d].en.trim().length, `${type}/${d}`).toBeGreaterThan(20);
       expect(c.formula.length, type).toBeGreaterThan(0);
-      expect(c.inputs.length, type).toBeGreaterThan(0);
-      expect(c.outputs.length, type).toBeGreaterThan(0);
+      expect(c.inputs.en.length, type).toBeGreaterThan(0);
+      expect(c.outputs.en.length, type).toBeGreaterThan(0);
       expect(c.source.length, type).toBeGreaterThan(0);
+    }
+  });
+
+  it('every prose entry (components and caveats) has a non-empty German and English text', () => {
+    const pairs: Array<[string, { en: string; de: string }]> = [];
+    for (const [type, c] of Object.entries(COMPONENTS)) {
+      pairs.push([`${type}.title`, c.title], [`${type}.inputs`, c.inputs], [`${type}.outputs`, c.outputs]);
+      for (const d of DEPTHS) pairs.push([`${type}.text.${d}`, c.text[d]]);
+    }
+    for (const id of CAVEAT_IDS) {
+      const cv = CAVEATS[id];
+      pairs.push([`${id}.title`, cv.title], [`${id}.body`, cv.body], [`${id}.evidence`, cv.evidence]);
+      if (cv.label) pairs.push([`${id}.label`, cv.label]);
+      for (const [k, h] of (cv.table?.head ?? []).entries()) pairs.push([`${id}.table.head.${k}`, h]);
+    }
+    expect(pairs.length).toBeGreaterThan(80);
+    for (const [k, v] of pairs) {
+      expect(v.en.trim().length, `${k}.en`).toBeGreaterThan(0);
+      expect(v.de.trim().length, `${k}.de`).toBeGreaterThan(0);
+    }
+    // Every German prose text differs from its English one (code-only entries such as citations excepted).
+    for (const [k, v] of pairs) {
+      if (/\.(evidence|head\.\d+)$/.test(k) || /^[\w./:,\- ]+$/.test(v.en)) continue;
+      expect(v.de, `${k} is not translated`).not.toBe(v.en);
     }
   });
 
@@ -31,19 +55,19 @@ describe('component content', () => {
 
   it('router content references A3 and A9', () => {
     expect(COMPONENTS.router.caveats).toEqual(expect.arrayContaining(['A3', 'A9']));
-    expect(COMPONENTS.router.text.researcher).toMatch(/A3/);
-    expect(COMPONENTS.router.text.researcher).toMatch(/A9/);
+    expect(COMPONENTS.router.text.researcher.en).toMatch(/A3/);
+    expect(COMPONENTS.router.text.researcher.en).toMatch(/A9/);
   });
 
   it('anastomosis content references A1 and A2', () => {
     expect(COMPONENTS.anastomosis.caveats).toEqual(expect.arrayContaining(['A1', 'A2']));
-    expect(COMPONENTS.anastomosis.text.researcher).toMatch(/A1/);
-    expect(COMPONENTS.anastomosis.text.researcher).toMatch(/A2/);
+    expect(COMPONENTS.anastomosis.text.researcher.en).toMatch(/A1/);
+    expect(COMPONENTS.anastomosis.text.researcher.en).toMatch(/A2/);
   });
 
   it('expert content references A4', () => {
     expect(COMPONENTS.expert.caveats).toContain('A4');
-    expect(COMPONENTS.expert.text.researcher).toMatch(/A4/);
+    expect(COMPONENTS.expert.text.researcher.en).toMatch(/A4/);
   });
 
   it('makes no first-of-its-kind claim', () => {
@@ -107,7 +131,7 @@ describe('prose wording', () => {
       expect(all, t).not.toContain('does most of the shaping');
     }
     for (const t of ['seed_bias', 'expert'] as const) {
-      const tech = COMPONENTS[t].text.technical;
+      const tech = COMPONENTS[t].text.technical.en;
       expect(tech).toContain("dominates the expert's input");
       expect(tech).toContain('about 0.7');
       expect(tech).toContain('about 0.003');

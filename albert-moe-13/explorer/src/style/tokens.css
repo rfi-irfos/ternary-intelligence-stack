@@ -74,20 +74,34 @@
   --font-ui: "Inter", system-ui, sans-serif;
   --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
   --font-math: "STIX Two Text", "Times New Roman", serif;
-  --fs-small: 13px;
+  --fs-small: 14px;
   --fs-base: 14px;
   --fs-large: 16px;
   --fs-h2: 22px;
   --fs-title: 28px;
 
-  /* shape and space */
-  --r-control: 6px;
-  --r-panel: 10px;
-  --gap: 8px;
-  --edge-pad: 16px;
-  --top-h: 64px;
-  --side-w: 380px;
+  /* shape and space (one radius style for the whole HUD; spacing about 25 % tighter than before) */
+  --r-control: 8px;
+  --r-panel: 12px;
+  --space-1: 3px;
+  --space-2: 6px;
+  --space-3: 9px;
+  --space-4: 12px;
+  --space-5: 15px;
+  --gap: var(--space-2);
+  --edge-pad: var(--space-4);
+  --top-h: 36px;
+  --timeline-h: 16px;
+  --side-w: clamp(300px, 24vw, 380px);
   --control-h: 32px;
+  /* dock: min(--dock-w, free width); fixed height = 2 x pad + caption + gap + control row + 2 x 1px border */
+  --dock-w: 720px;
+  --dock-pad: 3px;
+  --caption-h: 18px;
+  --dock-gap: 2px;
+  --dock-h: 60px;
+  /* inspection panel: auto height, at most this share of the viewport height (and never below the dock line) */
+  --panel-max-vh: 54;
 
   /* motion */
   --t-fast: 150ms;

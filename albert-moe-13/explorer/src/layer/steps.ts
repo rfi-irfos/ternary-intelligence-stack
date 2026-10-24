@@ -3,6 +3,7 @@ import type { Architecture } from '../data/architecture';
 import { type LabelKind, type Labeled, illustrative, measured, structure } from '../data/labeled';
 import { type Trace, type TraceEvent, decodeToken } from '../data/trace';
 import type { Depth } from '../ui/depth';
+import type { Lang } from '../ui/strings';
 import { type ComponentId, type Stream, headId, attnId, attnMatrixId, bankId, expertId, expertPartId, gateId, ln1Id, ln2Id, routerId } from '../scene/ids';
 
 export type StepId =
@@ -111,8 +112,11 @@ function normalise(v: number[]): number[] {
  * scores, expert activations) are always illustrative toys.
  */
 export function layerSteps(
-  t: Trace | null, layer: number, stream: Stream, position: number, a: Architecture,
+  t: Trace | null, layer: number, stream: Stream, position: number, a: Architecture, lang: Lang = 'en',
 ): Step[] {
+  /** Content text as an { en, de } pair, resolved for `lang` (formulas and tensor names are not translated). */
+  const L = (x: { en: string; de: string }): string => x[lang];
+  const k = a.model.top_k;
   if (!Number.isInteger(layer) || layer < 0 || layer >= a.model.num_layers) throw new Error(`layer ${layer} out of range`);
   if (!Number.isInteger(position) || position < 0) throw new Error(`position ${position} out of range`);
   const n = t ? t.provenance.token_ids.length : TOY_TOKENS;
@@ -149,13 +153,13 @@ export function layerSteps(
     steps.push({
       id: 'ln1',
       title: {
-        intuition: 'Tidy the numbers first',
-        technical: 'ln1: normalise the residual stream',
-        researcher: 'ln1: per-token mean/variance normalisation before attention',
+        intuition: L({ en: 'Tidy the numbers first', de: 'Erst die Zahlen ordnen' }),
+        technical: L({ en: 'ln1: normalise the residual stream', de: 'ln1: den Residualstrom normieren' }),
+        researcher: L({ en: 'ln1: per-token mean/variance normalisation before attention', de: 'ln1: Normierung von Mittelwert und Varianz je Token vor der Attention' }),
       },
       formula: 'y = (x - mean(x)) / sqrt(var(x) + eps) · γ + β',
       view: {
-        kind: 'heat', label: 'illustrative', title: `toy ${hidden}-vector before and after (not a recorded activation)`,
+        kind: 'heat', label: 'illustrative', title: L({ en: `toy ${hidden}-vector before and after (not a recorded activation)`, de: `Spielzeugvektor mit ${hidden} Werten vorher und nachher (keine aufgezeichnete Aktivierung)` }),
         series: [{ name: 'x', values: x }, { name: 'ln1(x)', values: normalise(x) }], slice: [0, Math.min(64, hidden)],
       },
       data: illustrative({ vectorLength: hidden, note: 'toy vector, the trace holds no activation vectors' }),
@@ -167,9 +171,9 @@ export function layerSteps(
   steps.push({
     id: 'qkv',
     title: {
-      intuition: 'Three questions from every token',
-      technical: 'Q, K, V projections with ternary weights',
-      researcher: 'Q, K, V = ln1(x) W{q,k,v}, W in {-1, 0, +1} with scale gamma',
+      intuition: L({ en: 'Three questions from every token', de: 'Drei Fragen aus jedem Wort' }),
+      technical: L({ en: 'Q, K, V projections with ternary weights', de: 'Projektionen Q, K, V mit ternären Gewichten' }),
+      researcher: L({ en: 'Q, K, V = ln1(x) W{q,k,v}, W in {-1, 0, +1} with scale gamma', de: 'Q, K, V = ln1(x) W{q,k,v}, W in {-1, 0, +1} mit Skala gamma' }),
     },
     formula: 'Q = x Wq, K = x Wk, V = x Wv',
     view: toyMatmul(seed + 1, tiles(['q', 'k', 'v'])),
@@ -190,14 +194,17 @@ export function layerSteps(
     steps.push({
       id: 'rope',
       title: {
-        intuition: 'Mark where each token sits',
-        technical: 'RoPE rotates Q and K by position',
-        researcher: `RoPE: dimension i pairs with i+${half} (rotate_half), angle = position * 10000^(-2i/${d})`,
+        intuition: L({ en: 'Mark where each token sits', de: 'Markieren, wo jedes Wort steht' }),
+        technical: L({ en: 'RoPE rotates Q and K by position', de: 'RoPE dreht Q und K je nach Position' }),
+        researcher: L({
+          en: `RoPE: dimension i pairs with i+${half} (rotate_half), angle = position * 10000^(-2i/${d})`,
+          de: `RoPE: Dimension i bildet ein Paar mit i+${half} (rotate_half), Winkel = Position * 10000^(-2i/${d})`,
+        }),
       },
       formula: `angle_i = position * 10000^(-2i/d), d = ${d}; pair (i, i + d/2)`,
       view: {
         kind: 'rope', label: 'structure', position, headDim: d, pairs,
-        pairing: `rotate_half: dimension i is rotated together with dimension i + ${half}`,
+        pairing: L({ en: `rotate_half: dimension i is rotated together with dimension i + ${half}`, de: `rotate_half: Dimension i wird zusammen mit Dimension i + ${half} gedreht` }),
       },
       data: structure({ position, headDim: d, base: 10000 }),
       caveats: [], open: attnOpen, highlight: [attnMatrixId(layer, stream, 'q'), attnMatrixId(layer, stream, 'k')],
@@ -208,9 +215,9 @@ export function layerSteps(
   steps.push({
     id: 'scores',
     title: {
-      intuition: 'Each token looks only backwards',
-      technical: 'Scores Q.K^T / sqrt(d) with a causal mask',
-      researcher: 'S = Q K^T / sqrt(d_head); S[i][j] = -inf for j > i',
+      intuition: L({ en: 'Each token looks only backwards', de: 'Jedes Wort schaut nur zurück' }),
+      technical: L({ en: 'Scores Q.K^T / sqrt(d) with a causal mask', de: 'Scores Q.K^T / sqrt(d) mit kausaler Maske' }),
+      researcher: L({ en: 'S = Q K^T / sqrt(d_head); S[i][j] = -inf for j > i', de: 'S = Q K^T / sqrt(d_head); S[i][j] = -inf für j > i' }),
     },
     formula: 'S = Q K^T / sqrt(d_head), masked where key > query',
     view: { kind: 'mask', label: 'structure', position, size: n },
@@ -239,14 +246,20 @@ export function layerSteps(
     }
     const label = hasTrace && !isFixture ? 'measured' : 'illustrative';
     const note = truncated
-      ? `truncated: position ${position} lies before the recorded window (positions ${windowStart}..${n - 1}); toy rows shown`
-      : hasTrace ? (isFixture ? 'fixture rows, not a measurement' : 'recorded attention weights of this layer and stream') : 'toy rows; no measured trace';
+      ? L({
+        en: `truncated: position ${position} lies before the recorded window (positions ${windowStart}..${n - 1}); toy rows shown`,
+        de: `abgeschnitten: Position ${position} liegt vor dem aufgezeichneten Fenster (Positionen ${windowStart}..${n - 1}); Spielzeugzeilen gezeigt`,
+      })
+      : hasTrace
+        ? (isFixture ? L({ en: 'fixture rows, not a measurement', de: 'Testdaten, keine Messung' })
+          : L({ en: 'recorded attention weights of this layer and stream', de: 'aufgezeichnete Attention-Gewichte dieser Ebene und dieses Stroms' }))
+        : L({ en: 'toy rows; no measured trace', de: 'Spielzeugzeilen; keine gemessene Spur' });
     steps.push({
       id: 'softmax',
       title: {
-        intuition: 'Decide whom to listen to',
-        technical: 'Softmax per head, then the weighted sum of V',
-        researcher: 'A = softmax(S) per head; out_h = A V_h; heads concatenated',
+        intuition: L({ en: 'Decide whom to listen to', de: 'Entscheiden, wem man zuhört' }),
+        technical: L({ en: 'Softmax per head, then the weighted sum of V', de: 'Softmax je Kopf, dann die gewichtete Summe von V' }),
+        researcher: L({ en: 'A = softmax(S) per head; out_h = A V_h; heads concatenated', de: 'A = softmax(S) je Kopf; out_h = A V_h; Köpfe aneinandergehängt' }),
       },
       formula: 'A = softmax(S), out = A V',
       view: {
@@ -263,16 +276,17 @@ export function layerSteps(
   {
     const r = resid.get('post_attn');
     const norm = r?.norm[position];
-    const nv: Labeled<number | string> = r && norm !== undefined ? m(norm) : illustrative('no trace');
+    const noTrace = L({ en: 'no trace', de: 'keine Spur' });
+    const nv: Labeled<number | string> = r && norm !== undefined ? m(norm) : illustrative(noTrace);
     steps.push({
       id: 'o_resid',
       title: {
-        intuition: 'Mix the answers and add them back',
-        technical: 'O projection, then the residual add',
-        researcher: 'x1 = x + concat(heads) Wo',
+        intuition: L({ en: 'Mix the answers and add them back', de: 'Antworten mischen und dazuzählen' }),
+        technical: L({ en: 'O projection, then the residual add', de: 'O-Projektion, dann die Residual-Addition' }),
+        researcher: L({ en: 'x1 = x + concat(heads) Wo', de: 'x1 = x + concat(heads) Wo' }),
       },
       formula: 'x1 = x + out Wo',
-      view: { kind: 'readout', items: [{ name: 'norm of x1 (post attention)', value: nv }] },
+      view: { kind: 'readout', items: [{ name: L({ en: 'norm of x1 (post attention)', de: 'Norm von x1 (nach der Attention)' }), value: nv }] },
       data: r && norm !== undefined ? m({ phase: 'post_attn', norm }) : illustrative({ phase: 'post_attn', note: 'no trace' }),
       caveats: [], open: attnOpen, highlight: [attnMatrixId(layer, stream, 'o')],
     });
@@ -295,13 +309,16 @@ export function layerSteps(
   steps.push({
     id: 'router',
     title: {
-      intuition: 'Which experts fit this token?',
-      technical: `Router: one logit per expert (${a.model.num_experts})`,
-      researcher: 'Router: ln2(x1) Wg gives gate logits after temperature and traffic-light modifiers',
+      intuition: L({ en: 'Which experts fit this token?', de: 'Welche Experten passen zu diesem Wort?' }),
+      technical: L({ en: `Router: one logit per expert (${a.model.num_experts})`, de: `Router: ein Logit je Experte (${a.model.num_experts})` }),
+      researcher: L({
+        en: 'Router: ln2(x1) Wg gives gate logits after temperature and traffic-light modifiers',
+        de: 'Router: ln2(x1) Wg liefert Gate-Logits nach Temperatur und Ampel-Modifikatoren',
+      }),
     },
     formula: 'logits = ln2(x1) Wg',
     view: {
-      kind: 'bars', label: routerLabel, title: 'gate logits per expert', values: logits, marked: [...top3],
+      kind: 'bars', label: routerLabel, title: L({ en: 'gate logits per expert', de: 'Gate-Logits je Experte' }), values: logits, marked: [...top3],
       ...(clamped ? { clamped: top3.filter((e) => e < 4) } : {}),
     },
     data: router ? m(rd) : illustrative(rd),
@@ -312,13 +329,16 @@ export function layerSteps(
   steps.push({
     id: 'top3',
     title: {
-      intuition: 'Pick the best three',
-      technical: 'Top-3 selection and softmax weights',
-      researcher: 'top-3 of the logits; softmax over those three after the A3 clamp, before the output scales',
+      intuition: L({ en: `Pick the best ${k}`, de: `Die besten ${k} wählen` }),
+      technical: L({ en: `Top-${k} selection and softmax weights`, de: `Top-${k}-Auswahl und Softmax-Gewichte` }),
+      researcher: L({
+        en: `top-${k} of the logits; softmax over those ${k} after the A3 clamp, before the output scales`,
+        de: `Top-${k} der Logits; Softmax über diese ${k} nach der A3-Klemme, vor den Ausgabeskalen`,
+      }),
     },
     formula: 'w = softmax(logits[top3])',
     view: {
-      kind: 'bars', label: routerLabel, title: 'weights of the selected experts', values: [...wts], marked: [0, 1, 2],
+      kind: 'bars', label: routerLabel, title: L({ en: 'weights of the selected experts', de: 'Gewichte der gewählten Experten' }), values: [...wts], marked: [0, 1, 2],
       labels: top3.map((e) => `E${e}`), ...(clamped ? { clamped: [0, 1, 2].filter((k) => (top3[k] ?? 9) < 4) } : {}),
     },
     data: router ? m(rd) : illustrative(rd),
@@ -333,9 +353,15 @@ export function layerSteps(
     steps.push({
       id: 'expert',
       title: {
-        intuition: 'One expert does its work',
-        technical: `Expert ${e0} (heaviest chosen expert): seed_bias, c_fc, GELU, c_proj`,
-        researcher: `Expert ${e0}: h = GELU((x + seed_bias) Wfc) ; y = h Wproj, inner width ${inner}`,
+        intuition: L({ en: 'One expert does its work', de: 'Ein Experte macht seine Arbeit' }),
+        technical: L({
+          en: `Expert ${e0} (heaviest chosen expert): seed_bias, c_fc, GELU, c_proj`,
+          de: `Experte ${e0} (am stärksten gewichteter gewählter Experte): seed_bias, c_fc, GELU, c_proj`,
+        }),
+        researcher: L({
+          en: `Expert ${e0}: h = GELU((x + seed_bias) Wfc) ; y = h Wproj, inner width ${inner}`,
+          de: `Experte ${e0}: h = GELU((x + seed_bias) Wfc) ; y = h Wproj, innere Breite ${inner}`,
+        }),
       },
       formula: 'y = GELU((x + seed_bias) W_fc) W_proj  (heaviest chosen expert)',
       view: toyMatmul(seed + 2, [`experts.${e0}.c_fc.weight`, `experts.${e0}.c_proj.weight`]),
@@ -350,16 +376,19 @@ export function layerSteps(
     const r = resid.get('post_moe');
     const norm = r?.norm[position];
     const items: { name: string; value: Labeled<number | string> }[] = top3.map((e, i) => ({
-      name: `weight x output scale, expert ${e}`,
-      value: router ? m(`${r3(wts[i] ?? 0)} x ${router.output_scales[e] ?? 'n/a'}`) : illustrative('no trace'),
+      name: L({ en: `weight x output scale, expert ${e}`, de: `Gewicht x Ausgabeskala, Experte ${e}` }),
+      value: router ? m(`${r3(wts[i] ?? 0)} x ${router.output_scales[e] ?? 'n/a'}`) : illustrative(L({ en: 'no trace', de: 'keine Spur' })),
     }));
-    items.push({ name: 'norm of x2 (post MoE)', value: r && norm !== undefined ? m(norm) : illustrative('no trace') });
+    items.push({
+      name: L({ en: 'norm of x2 (post MoE)', de: 'Norm von x2 (nach dem MoE)' }),
+      value: r && norm !== undefined ? m(norm) : illustrative(L({ en: 'no trace', de: 'keine Spur' })),
+    });
     steps.push({
       id: 'moe_resid',
       title: {
-        intuition: 'Blend the three answers and add them back',
-        technical: 'Weighted expert sum, then the residual add',
-        researcher: 'x2 = x1 + sum_i scale_i * w_i * expert_i(ln2(x1))',
+        intuition: L({ en: `Blend the ${k} answers and add them back`, de: `Die ${k} Antworten mischen und dazuzählen` }),
+        technical: L({ en: 'Weighted expert sum, then the residual add', de: 'Gewichtete Summe der Experten, dann die Residual-Addition' }),
+        researcher: L({ en: 'x2 = x1 + sum_i scale_i * w_i * expert_i(ln2(x1))', de: 'x2 = x1 + sum_i scale_i * w_i * expert_i(ln2(x1))' }),
       },
       formula: 'x2 = x1 + sum_i w_i * expert_i(x)',
       view: { kind: 'readout', items },
@@ -377,9 +406,9 @@ export function layerSteps(
     steps.push({
       id: 'gate',
       title: {
-        intuition: 'The two streams swap a little',
-        technical: 'Anastomosis: each stream adds a gated share of the other',
-        researcher: 'A += g_a * B ; B += g_b * A with g = sigmoid(Wg x + b), per token',
+        intuition: L({ en: 'The two streams swap a little', de: 'Die zwei Ströme tauschen sich ein wenig aus' }),
+        technical: L({ en: 'Anastomosis: each stream adds a gated share of the other', de: 'Austausch-Tor: jeder Strom addiert einen dosierten Anteil des anderen' }),
+        researcher: L({ en: 'A += g_a * B ; B += g_b * A with g = sigmoid(Wg x + b), per token', de: 'A += g_a * B ; B += g_b * A mit g = sigmoid(Wg x + b), je Token' }),
       },
       formula: 'g = σ(W_g [h_A; h_B] + b); A\' = A + g_a * B, B\' = B + g_b * A',
       view: { kind: 'readout', items: [{ name: 'g_a', value: lv(gA, 0.5) }, { name: 'g_b', value: lv(gB, 0.5) }] },

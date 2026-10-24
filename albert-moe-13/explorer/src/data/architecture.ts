@@ -9,6 +9,8 @@ export interface ModelInfo {
   num_layers: number;
   num_streams: number;
   num_experts: number;
+  /** Experts the router picks per token and stream (moe.rs:197-381, written by tools/build_architecture.py). */
+  top_k: number;
   hidden: number;
   ffn_inner: number;
   num_heads: number;
@@ -47,7 +49,7 @@ export interface Architecture {
 }
 
 const MODEL_NUMBERS: (keyof ModelInfo)[] = [
-  'num_layers', 'num_streams', 'num_experts', 'hidden', 'ffn_inner',
+  'num_layers', 'num_streams', 'num_experts', 'top_k', 'hidden', 'ffn_inner',
   'num_heads', 'head_dim', 'vocab', 'params', 'tau_top',
 ];
 

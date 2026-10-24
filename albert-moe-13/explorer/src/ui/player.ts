@@ -1,7 +1,7 @@
 import type { CameraRig } from '../camera/controls';
 import { CAVEATS } from '../content/caveats';
 import type { Architecture } from '../data/architecture';
-import { type Labeled, type LabeledValue, fmt, structure } from '../data/labeled';
+import { type Labeled, type LabeledValue, decText, fmt, pctStr, structure } from '../data/labeled';
 import { type Trace, decodeToken, loadTrace } from '../data/trace';
 import type { Animator } from '../flow/animate';
 import {
@@ -11,9 +11,10 @@ import {
 import { embedId, lmHeadId, lnFId } from '../scene/ids';
 import type { TowerScene } from '../scene/tower';
 import { ICONS, typeIcon } from './icons';
-import { getLang, getMode, onPrefsChange, t } from './prefs';
+import { getLang, getMode, layerLabel, lt, onPrefsChange, setMode, t } from './prefs';
 import { ROLE_VAR, type Role } from './roles';
-import type { StringKey } from './strings';
+import { MODES, type Mode, type StringKey } from './strings';
+import { segmented } from './topbar';
 
 export type CameraMode = 'follow' | 'free' | 'overview';
 export const SPEEDS = [0.5, 1, 2, 4] as const;
@@ -111,8 +112,8 @@ export function createPlayer(ops: readonly Op[], animate: (op: Op, index: number
 
 /** Op name in the current language and mode (Simple: everyday words; Advanced: technical). */
 export function opLabel(kind: OpKind, arch?: Pick<Architecture, 'model'>): string {
-  // top-3 routing: moe.rs:197-381 (the same constant the panel's router caption cites).
-  return t(`op.${kind}` as StringKey, { topk: 3, experts: arch?.model.num_experts ?? 12 });
+  // The counts come from architecture.json (model.top_k, model.num_experts); without it the op names carry none.
+  return t(`op.${kind}` as StringKey, arch ? { topk: arch.model.top_k, experts: arch.model.num_experts } : undefined);
 }
 
 /** Colour role of an op (null = neutral). */
@@ -129,7 +130,7 @@ export function opRole(op: Pick<Op, 'kind' | 'stream'>): Role | null {
 /** Chip text: "Router (top-3 of 12 experts) · layer 12 · stream A" (Simple: everyday words). */
 export function opChipText(op: Op, arch?: Pick<Architecture, 'model'>): string {
   const parts = [opLabel(op.kind, arch)];
-  if (op.layer !== undefined) parts.push(t('where.layer', { n: op.layer }));
+  if (op.layer !== undefined) parts.push(t('where.layer', { n: layerLabel(op.layer) }));
   if (op.stream) parts.push(t('where.stream', { s: op.stream }));
   return parts.join(' · ');
 }
@@ -163,15 +164,63 @@ export const isPunct = (word: string): boolean => !/[\p{L}\p{N}]/u.test(word);
  * run follows.
  */
 export function stepSentence(op: Op, index: number, total: number, arch: Pick<Architecture, 'model'>, word: string): string {
-  const parts = [t('now.step', { i: index + 1, n: total })];
-  if (op.layer !== undefined) parts.push(t('now.layer', { n: op.layer, of: arch.model.num_layers }));
-  if (op.stream) parts.push(t('where.stream', { s: op.stream }));
+  const tmp = document.createElement('span');
+  tmp.innerHTML = stepSentenceHtml(op, index, total, arch, word);
+  return tmp.textContent ?? '';
+}
+
+const escHtml = (s: string): string =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/** `t(key)` as HTML: text escaped, each number of `nums` rendered through fmt(structure(n)) (its kind badge). */
+function richT(key: StringKey, nums: Record<string, number>, text: Record<string, string> = {}): string {
+  const marks: Record<string, string> = {};
+  for (const k of Object.keys(nums)) marks[k] = `\u0001${k}\u0002`;
+  return escHtml(t(key, { ...text, ...marks })).replace(/\u0001(\w+)\u0002/g, (_, k: string) => {
+    const el = fmt(structure(nums[k] as number));
+    el.dataset.v = k;
+    return el.outerHTML;
+  });
+}
+
+/**
+ * The step sentence as rich HTML: every count (step, layer, top-k, experts) is a structure value with its
+ * badge, read from the timeline and architecture.json, never typed into the text.
+ */
+export function stepSentenceHtml(op: Op, index: number, total: number, arch: Pick<Architecture, 'model'>, word: string): string {
+  const parts = [richT('now.step', { i: index + 1, n: total })];
+  if (op.layer !== undefined) parts.push(richT('now.layer', { n: layerLabel(op.layer), of: arch.model.num_layers }));
+  if (op.stream) parts.push(escHtml(t('where.stream', { s: op.stream })));
   const simple = getMode() === 'simple';
   const w = simple ? wordOf(word) : JSON.stringify(word);
-  // top-3 routing: moe.rs:197-381 (the same constant opLabel and the panel's router caption cite).
-  parts.push(t(`now.${op.kind}` as StringKey, { topk: 3, experts: arch.model.num_experts, w }));
+  parts.push(richT(`now.${op.kind}` as StringKey, { topk: arch.model.top_k, experts: arch.model.num_experts }, { w }));
   return parts.join(' · ');
 }
+
+/**
+ * Word chips of a sentence: a chip spans the pieces up to the next piece with a leading space ("H" + "und"
+ * is one chip "Hund"); a punctuation piece is a chip of its own. Every token is in exactly one chip.
+ */
+export function wordGroups(decoded: string[]): { from: number; to: number }[] {
+  const out: { from: number; to: number }[] = [];
+  decoded.forEach((d, k) => {
+    const punct = isPunct(wordOf(d));
+    const prev = out[out.length - 1];
+    const prevPunct = k > 0 && isPunct(wordOf(decoded[k - 1] ?? ''));
+    if (!prev || /^\s/.test(d) || punct || prevPunct) out.push({ from: k, to: k });
+    else prev.to = k;
+  });
+  return out;
+}
+
+/** The default word to follow: the last token that is not punctuation ("earth" in "… the earth."). */
+export function defaultPosition(decoded: string[]): number {
+  for (let k = decoded.length - 1; k >= 0; k--) if (!isPunct(wordOf(decoded[k] ?? ''))) return k;
+  return Math.max(0, decoded.length - 1);
+}
+
+/** Language of a traced prompt (fixed set: "de" is German, "kjv" and "ternary" are English). */
+export const promptLang = (promptId: string): 'de' | 'en' => (promptId === 'de' ? 'de' : 'en');
 
 /** Icon of an op: the icon of the component it runs in. */
 const OP_ICON_TYPE: Record<OpKind, string> = {
@@ -184,7 +233,7 @@ const OP_ICON_TYPE: Record<OpKind, string> = {
  * provenance). Advanced shows the technical rows and caveat codes; Simple shows the same measured
  * values in everyday words, without token ids, raw logits text or caveat codes.
  */
-export function opDetails(op: Op): HTMLElement {
+export function opDetails(op: Op, arch?: Pick<Architecture, 'model'>): HTMLElement {
   const box = document.createElement('div');
   box.className = 'player-details';
   const f = (v: LabeledValue, format?: (x: LabeledValue) => string): HTMLElement => {
@@ -192,7 +241,7 @@ export function opDetails(op: Op): HTMLElement {
     return fmt(l, format ? { format } : {});
   };
   const fs = (v: LabeledValue): HTMLElement => fmt(structure(v));
-  const pct = (x: LabeledValue): string => `${(Number(x) * 100).toFixed(1)} %`;
+  const pct = (x: LabeledValue): string => pctStr(Number(x));
   const d = op.data.value;
   const simple = getMode() === 'simple';
   if (simple) {
@@ -203,7 +252,7 @@ export function opDetails(op: Op): HTMLElement {
       case 'resid': box.append(row(t('det.length'), f((d as ResidData).norm))); break;
       case 'router': {
         const r = d as RouterData;
-        box.append(row(t('det.chosen'), ...r.top3.map((e, k) => f(`E${e}`, () => `E${e} (${((r.weights[k] as number) * 100).toFixed(1)} %)`))));
+        box.append(row(t('det.chosen'), ...r.top3.map((e, k) => f(`E${e}`, () => `E${e} (${pctStr(r.weights[k] as number)})`))));
         break;
       }
       case 'experts': {
@@ -229,36 +278,36 @@ export function opDetails(op: Op): HTMLElement {
   switch (op.kind) {
     case 'embed': {
       const e = d as EmbedData;
-      box.append(row('token', f(JSON.stringify(e.token)), ' id ', f(e.tokenId)));
+      box.append(row(t('adv.token'), f(JSON.stringify(e.token)), ` ${t('adv.id')} `, f(e.tokenId, () => String(e.tokenId))));
       break;
     }
     case 'attn': {
       const a = d as AttnData;
       box.append(
-        row('heads', fs(a.heads.length)),
-        row('max attention weight per head', ...a.heads.map((h) => f(Math.max(...h.row), () => `h${h.head} ${Math.max(...h.row).toFixed(2)}`))),
+        row(t('adv.heads'), fs(a.heads.length)),
+        row(t('adv.maxAttn'), ...a.heads.map((h) => f(Math.max(...h.row), () => `h${h.head} ${decText(Math.max(...h.row), 2)}`))),
       );
       break;
     }
     case 'resid': {
       const r = d as ResidData;
-      box.append(row(r.phase === 'post_attn' ? 'after attention, norm' : 'after experts, norm', f(r.norm)));
+      box.append(row(t(r.phase === 'post_attn' ? 'adv.normAttn' : 'adv.normExperts'), f(r.norm)));
       break;
     }
     case 'router': {
       const r = d as RouterData;
       box.append(
-        row('top 3 experts (softmax weight after the A3 clamp, before output scales)',
-          ...r.top3.map((e, k) => f(`E${e}`, () => `E${e} (${((r.weights[k] as number) * 100).toFixed(1)} %)`))),
-        row('output scale (traffic light)', f(r.outputScales.length > 0 ? Math.min(...r.outputScales) : 0),
-          r.outputScales.every((s) => s === r.outputScales[0]) ? '(all experts equal)' : '(min over experts)'),
+        row(t('adv.topk', { k: r.top3.length }),
+          ...r.top3.map((e, k) => f(`E${e}`, () => `E${e} (${pctStr(r.weights[k] as number)})`))),
+        row(t('adv.scale'), f(r.outputScales.length > 0 ? Math.min(...r.outputScales) : 0),
+          t(r.outputScales.every((s) => s === r.outputScales[0]) ? 'adv.scaleEqual' : 'adv.scaleMin')),
       );
-      if (r.a3Clamped) box.append(row('A3', 'safety clamp changed a logit for this token'));
+      if (r.a3Clamped) box.append(row('A3', t('adv.a3')));
       break;
     }
     case 'experts': {
       const x = d as ExpertsData;
-      box.append(row('lit', fs(x.lit.length), ' of ', fs(x.lit.length + x.dark.length), ' experts: ', ...x.lit.map((e) => f(`E${e}`))));
+      box.append(row(t('adv.lit'), fs(x.lit.length), ` ${t('adv.of')} `, fs(x.lit.length + x.dark.length), ` ${t('adv.experts')} `, ...x.lit.map((e) => f(`E${e}`))));
       break;
     }
     case 'gate': {
@@ -266,7 +315,7 @@ export function opDetails(op: Op): HTMLElement {
       box.append(row('g_a', f(g.gA)), row('g_b', f(g.gB)));
       break;
     }
-    case 'merge': box.append(row('merged norm', f((d as MergeData).mergedNorm))); break;
+    case 'merge': box.append(row(t('adv.merged'), f((d as MergeData).mergedNorm))); break;
     case 'lm_head': {
       const h = d as LmHeadData;
       if (!h.available) {
@@ -279,7 +328,7 @@ export function opDetails(op: Op): HTMLElement {
       for (const k of h.topK) box.append(row(JSON.stringify(k.token), f(k.prob, pct)));
       break;
     }
-    default: box.append(row(opLabel(op.kind), (d as { note: string }).note));
+    default: box.append(row(opLabel(op.kind, arch), (d as { note: string }).note));
   }
   if (op.caveats.length > 0) {
     const c = document.createElement('div');
@@ -289,7 +338,7 @@ export function opDetails(op: Op): HTMLElement {
       s.className = 'player-caveat chip-caveat';
       s.dataset.caveat = id;
       s.textContent = id;
-      s.title = `${CAVEATS[id].title}`;
+      s.title = lt(CAVEATS[id].title);
       c.append(s, ' ');
     }
     box.append(c);
@@ -392,7 +441,7 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   const tokenSel = select('player-token');
   const prompt = field('field-prompt', promptSel);
   const token = field('field-token', tokenSel);
-  // Play is the one primary control: icon plus a plain label ("Watch albert think").
+  // Play is the one primary control: icon plus a short label ("Start" / "Play"), so the word chips keep their room.
   const play = document.createElement('button');
   play.type = 'button';
   play.className = 'hud-btn play-btn';
@@ -412,20 +461,18 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   const headline = document.createElement('p');
   headline.className = 'player-headline';
   // "Choose another sentence": a popover with the three sentences in full (the selects live in Tools).
+  // An icon button with a tooltip; its name lives in aria-label.
   const sentence = document.createElement('button');
   sentence.type = 'button';
-  sentence.className = 'hud-btn hud-btn--ghost sentence-chip';
-
+  sentence.className = 'hud-icon sentence-chip';
   sentence.setAttribute('aria-haspopup', 'dialog');
   sentence.setAttribute('aria-expanded', 'false');
   sentence.innerHTML = ICONS.token;
-  const sentenceText = document.createElement('span');
-  sentenceText.className = 'sentence-text';
-  sentence.append(sentenceText);
   const pop = document.createElement('div');
   pop.className = 'sentence-pop';
   pop.dataset.control = 'sentence';
   pop.setAttribute('role', 'dialog');
+  pop.tabIndex = -1;
   pop.hidden = true;
   const popList = document.createElement('div');
   popList.className = 'sentence-list';
@@ -474,10 +521,17 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   chipIcon.setAttribute('aria-hidden', 'true');
   const chipText = document.createElement('span');
   chipText.className = 'step-text';
-  chip.append(chipIcon, chipText);
-  const opListeners = new Set<(op: Op, index: number, total: number) => void>();
-  const details = document.createElement('div');
+  // Simple: the step's few values on the same line (ellipsis, full text as tooltip); the line never wraps.
+  const details = document.createElement('span');
   details.className = 'player-detail-box';
+  chip.append(chipIcon, chipText, details);
+  const opListeners = new Set<(op: Op, index: number, total: number) => void>();
+  // Advanced: every detail row (router weights, output scale, caveat codes) lives in the Tools drawer.
+  const fullDetails = document.createElement('div');
+  fullDetails.className = 'player-detail-full';
+  // Einfach | Erweitert sits at the right end of the control row (same prefs state as everywhere).
+  const modeSeg = segmented<Mode>('mode-toggle', MODES, getMode, setMode);
+  modeSeg.wrap.dataset.control = 'prefs';
 
   const transport = document.createElement('div');
   transport.className = 'hud-group transport';
@@ -500,21 +554,20 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   const kindJoin = document.createElement('span');
   kindJoin.className = 'hud-join';
   kindJoin.append(kindSel, kindGo);
-  adv.append(pick, progress, speedSel, camSel, jump, kindJoin);
+  adv.append(pick, progress, speedSel, camSel, jump, kindJoin, fullDetails);
   let toolsOpen = false;
   const sentenceWrap = document.createElement('div');
   sentenceWrap.className = 'sentence-wrap';
   sentenceWrap.dataset.control = 'sentence';
   sentenceWrap.append(sentence);
+  // Caption line: the headline before the first Play, then the step sentence (one line, fixed height).
   const top = document.createElement('div');
-  top.className = 'player-top';
-  top.append(headline, sentenceWrap, tools);
+  top.className = 'player-caption';
+  top.append(headline, chip);
+  // Control row: transport | word chips (one scrolling line) | sentence picker | Einfach|Erweitert | Tools.
   const controls = document.createElement('div');
   controls.className = 'player-controls';
-  controls.append(transport, words);
-  const now = document.createElement('div');
-  now.className = 'player-now';
-  now.append(chip, details);
+  controls.append(transport, words, sentenceWrap, modeSeg.wrap, tools);
 
   const followCamera = (op: Op, force: boolean): void => {
     const mode = player?.cameraMode();
@@ -548,8 +601,6 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   /** Sentence list of the popover and the word strip (current language and mode). */
   const paintSentence = (): void => {
     const tr = traces.get(promptSel.value);
-    sentenceText.textContent = t('player.otherSentence');
-    sentence.title = t('player.sentenceTip');
     pop.setAttribute('aria-label', t('player.sentenceTip'));
     popList.replaceChildren(...[...traces].map(([id, x]) => {
       const b = document.createElement('button');
@@ -558,30 +609,57 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
       b.dataset.prompt = id;
       b.textContent = x.provenance.prompt;
       b.title = x.provenance.prompt;
+      b.lang = promptLang(x.provenance.prompt_id);
       b.setAttribute('aria-pressed', String(id === promptSel.value));
       return b;
     }));
     words.setAttribute('aria-label', t('player.wordsLabel'));
+    // The traced sentence is never translated: its chips carry the sentence's own language.
+    words.lang = promptLang(tr?.provenance.prompt_id ?? '');
     const simple = getMode() === 'simple';
-    words.replaceChildren(...(tr?.provenance.tokens ?? []).map((piece, k) => {
-      const dec = decodeToken(piece);
-      const w = wordOf(dec);
+    const pos = Number(tokenSel.value);
+    const decoded = (tr?.provenance.tokens ?? []).map(decodeToken);
+    words.replaceChildren(...wordGroups(decoded).map((g, n) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'word-chip';
+      const pieces = decoded.slice(g.from, g.to + 1);
+      const w = wordOf(pieces.join(''));
       if (isPunct(w)) b.classList.add('word-chip--punct');
-      // A piece that continues the previous word (no leading space, e.g. "H" + "und") sits flush to it.
-      else if (k > 0 && !/^\s/.test(dec)) b.classList.add('word-chip--joined');
-      b.dataset.pos = String(k);
-      b.textContent = w;
-      const on = String(k) === tokenSel.value;
+      if (pieces.length > 1) b.classList.add('word-chip--pieces');
+      // Clicking a chip follows its last piece (the position the word is complete at).
+      b.dataset.pos = String(g.to);
+      b.dataset.from = String(g.from);
+      b.dataset.to = String(g.to);
+      for (const [k, piece] of pieces.entries()) {
+        const sp = document.createElement('span');
+        sp.className = 'word-piece';
+        sp.textContent = k === 0 ? piece.replace(/^\s+/, '') || wordOf(piece) : piece;
+        b.append(sp);
+      }
+      const on = pos >= g.from && pos <= g.to;
       b.classList.toggle('current', on);
       b.setAttribute('aria-pressed', String(on));
-      const tip = t('player.wordTip', { i: k + 1, w: simple ? w : JSON.stringify(dec) });
-      b.title = on ? `${tip} ${t('player.wordCurrent')}` : tip;
+      const tip = t('player.wordTip', { i: n + 1, w: simple ? w : JSON.stringify(pieces.join('')) });
+      const parts = pieces.length > 1 ? ` (${pieces.map((x) => JSON.stringify(x)).join(' · ')})` : '';
+      b.title = `${tip}${parts}${on ? ` ${t('player.wordCurrent')}` : ''}`;
       return b;
     }));
+    revealCurrent();
   };
+  /**
+   * Keeps the followed word in view inside the one-line strip (the strip scrolls, nothing else does).
+   * Runs after a repaint and whenever the strip changes width (the dock narrows when the panel opens).
+   */
+  const revealCurrent = (): void => {
+    const c = words.querySelector<HTMLElement>('.word-chip.current');
+    if (!c || words.clientWidth <= 0) return;
+    const left = c.getBoundingClientRect().left - words.getBoundingClientRect().left + words.scrollLeft;
+    const pad = 16;
+    if (left - pad < words.scrollLeft) words.scrollLeft = Math.max(0, left - pad);
+    else if (left + c.offsetWidth + pad > words.scrollLeft + words.clientWidth) words.scrollLeft = left + c.offsetWidth + pad - words.clientWidth;
+  };
+  if (typeof ResizeObserver === 'function') new ResizeObserver(revealCurrent).observe(words);
   // The popover lives on <body> while open: the dock's chamfered frame clips anything that leaves it.
   const setPop = (open: boolean): void => {
     pop.hidden = !open;
@@ -593,6 +671,8 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     const r = sentence.getBoundingClientRect();
     pop.style.right = `${Math.max(8, window.innerWidth - r.right)}px`;
     pop.style.bottom = `${window.innerHeight - r.top + 10}px`;
+    // Focus moves into the popover, so keyboard users land on the sentence list (Esc closes it).
+    (pop.querySelector<HTMLElement>('[aria-pressed="true"]') ?? pop.querySelector<HTMLElement>('button') ?? pop).focus();
   };
   const setTools = (open: boolean): void => {
     toolsOpen = open;
@@ -617,9 +697,19 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     chipIcon.innerHTML = hint ? ICONS.play : typeIcon(OP_ICON_TYPE[op.kind]);
     const tr = traces.get(promptSel.value);
     const word = decodeToken(tr?.provenance.tokens[Number(tokenSel.value)] ?? '');
-    chipText.textContent = hint ? t('player.hint', { n: arch.model.num_layers }) : stepSentence(op, index, player.ops.length, arch, word);
-    chip.title = hint ? t('player.headlineTip', { n: arch.model.num_layers }) : `${t('player.stepTip')}: ${opChipText(op, arch)}`;
-    details.replaceChildren(hint ? document.createElement('div') : opDetails(op));
+    // One caption line: the headline until the first Play, then the step sentence (same height).
+    headline.hidden = !hint;
+    chip.hidden = hint;
+    chipText.innerHTML = hint ? '' : stepSentenceHtml(op, index, player.ops.length, arch, word);
+    const simple = getMode() === 'simple';
+    const d = hint ? document.createElement('div') : opDetails(op, arch);
+    details.replaceChildren(...(simple ? [d] : []));
+    // The measured values follow the sentence only when they fit whole: the caption never ends in "…"
+    // (they stay in the tooltip of the line either way).
+    details.hidden = false;
+    if (details.clientWidth > 0 && details.scrollWidth > details.clientWidth + 1) details.hidden = true;
+    fullDetails.replaceChildren(...(simple || hint ? [] : [opDetails(op, arch)]));
+    chip.title = hint ? '' : `${t('player.stepTip')}: ${chipText.textContent ?? ''}${d.textContent ? ` · ${d.textContent}` : ''}`;
     opListeners.forEach((l) => l(op, index, player!.ops.length));
   };
 
@@ -652,7 +742,7 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     tokenSel.replaceChildren();
     if (!tr) return;
     tr.provenance.tokens.forEach((piece, k) => tokenSel.append(new Option(tokenText(piece, k), String(k))));
-    tokenSel.value = String(tr.provenance.tokens.length - 1);
+    tokenSel.value = String(defaultPosition(tr.provenance.tokens.map(decodeToken)));
   };
   const fillPrompts = (): void => {
     const keep = promptSel.value;
@@ -667,7 +757,15 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     el.setAttribute('aria-label', t('player.group'));
     el.dataset.mode = getMode();
     headline.textContent = t('player.headline');
-    headline.title = t('player.headlineTip', { n: arch.model.num_layers });
+    headline.title = `${t('player.headlineTip', { n: arch.model.num_layers })} ${t('player.hint', { n: arch.model.num_layers })}`;
+    modeSeg.label.textContent = t('mode.label');
+    modeSeg.group.setAttribute('aria-label', t('mode.label'));
+    modeSeg.wrap.title = t('mode.toggleTip');
+    for (const b of modeSeg.buttons) {
+      b.textContent = t(`mode.${b.dataset.value}` as StringKey);
+      b.title = t(`mode.${b.dataset.value}Tip` as StringKey);
+    }
+    modeSeg.sync();
     msg.textContent = loaded === 'none' ? t('player.noTrace') : t('player.loading');
     prev.setAttribute('aria-label', t('player.prev'));
     prev.title = `${t('player.prev')} (${t('key.left')})`;
@@ -692,10 +790,13 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     kindSel.setAttribute('aria-label', t('player.kind'));
     kindSel.title = t('player.kind');
     for (const o of kindSel.options) o.text = opLabel(o.value as OpKind, arch);
+    sentence.setAttribute('aria-label', t('player.otherSentence'));
+    sentence.title = t('player.sentenceTip');
     kindGo.textContent = t('player.nextKind');
     kindGo.title = t('player.nextKindTip');
     tools.hidden = simple;
     toolsText.textContent = t('player.tools');
+    tools.setAttribute('aria-label', t('player.tools'));
     tools.title = t('player.toolsTip');
     setTools(toolsOpen);
     if (simple) setPop(false);
@@ -733,9 +834,16 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
       tokenSel.dispatchEvent(new Event('change'));
     }
   });
-  pop.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { e.stopPropagation(); setPop(false); sentence.focus(); }
-  });
+  // Esc closes the open popover wherever focus is (capture phase, before the explode view and the
+  // camera see the key), so the same keypress never flies the camera.
+  const onEsc = (e: KeyboardEvent): void => {
+    if (e.key !== 'Escape' || pop.hidden) return;
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    setPop(false);
+    sentence.focus();
+  };
+  if (typeof document !== 'undefined') document.addEventListener('keydown', onEsc, true);
   const onDocDown = (e: PointerEvent): void => {
     if (!pop.hidden && !sentenceWrap.contains(e.target as Node) && !pop.contains(e.target as Node)) setPop(false);
   };
@@ -780,7 +888,7 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     }
     loaded = 'ready';
     fillPrompts();
-    el.replaceChildren(top, controls, adv, now);
+    el.replaceChildren(top, controls, adv);
     fillTokens(promptSel.value);
     build(promptSel.value, Number(tokenSel.value));
     paintSentence();
@@ -801,7 +909,10 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
       offPrefs();
       offChange?.();
       keyDoc?.removeEventListener('keydown', onKey);
-      if (typeof document !== 'undefined') document.removeEventListener('pointerdown', onDocDown);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('pointerdown', onDocDown);
+        document.removeEventListener('keydown', onEsc, true);
+      }
       pop.remove();
       el.remove();
     },

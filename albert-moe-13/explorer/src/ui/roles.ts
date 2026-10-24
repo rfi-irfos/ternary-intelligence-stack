@@ -1,7 +1,7 @@
 import { type ComponentId, parseId } from '../scene/ids';
 import { PALETTE } from '../scene/palette';
 import type { StringKey } from './strings';
-import { t } from './prefs';
+import { layerLabel, t } from './prefs';
 
 /** The six colour roles of the legend (spec §5). Ternary has three colours but is one role. */
 export type Role = 'streamA' | 'streamB' | 'expert' | 'router' | 'gate' | 'ternary';
@@ -72,7 +72,7 @@ export function matchesRole(id: ComponentId, role: Role): boolean {
 export function hoverText(id: ComponentId): string {
   const p = parseId(id);
   const name = componentName(id);
-  return p && 'layer' in p && p.type !== 'slab' ? `${name} · ${t('comp.inLayer', { l: p.layer })}` : name;
+  return p && 'layer' in p && p.type !== 'slab' ? `${name} · ${t('comp.inLayer', { l: layerLabel(p.layer) })}` : name;
 }
 
 /** Short name of a component (no layer), in the current language and mode. */
@@ -80,7 +80,7 @@ export function componentName(id: ComponentId): string {
   const p = parseId(id);
   if (!p) return id;
   const v: Record<string, string | number> = {};
-  if ('layer' in p) v.l = p.layer;
+  if ('layer' in p) v.l = layerLabel(p.layer);
   if ('stream' in p && p.stream) v.s = p.stream;
   if ('expert' in p && p.expert !== undefined) v.e = p.expert;
   let key: StringKey;

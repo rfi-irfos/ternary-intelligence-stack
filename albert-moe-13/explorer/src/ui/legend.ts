@@ -27,17 +27,19 @@ const SHAPE: Record<Role, string> = {
 };
 
 /**
- * Legend of the six colour roles; every entry pairs the colour with its scene shape.
- * Simple: a quiet, always-visible key (no buttons; pointing at an entry previews the highlight).
- * Advanced: collapsible, and the entries are buttons: hover previews, click pins (click again clears).
+ * Legend of the six colour roles; every entry pairs the colour with its scene shape, plus the key of the
+ * layer timeline. In both modes it is a small tray chip ("Legend" / "Legende") that opens the list; the
+ * app opens it on the first visit only, beside the coach marks.
+ * Simple: the entries are a passive key (pointing at one previews the highlight; nothing pins).
+ * Advanced: the entries are buttons: hover previews, click pins (click again clears).
  */
 export function createLegend(deps: LegendDeps): Legend {
   const el = document.createElement('section');
   el.className = 'legend';
-  el.dataset.control = 'legend';
+  el.dataset.control = 'guide';
   const toggle = document.createElement('button');
   toggle.type = 'button';
-  toggle.className = 'hud-btn hud-btn--ghost legend-toggle';
+  toggle.className = 'hud-btn tray-item legend-toggle';
   toggle.setAttribute('aria-expanded', 'false');
   const title = document.createElement('h2');
   title.className = 'legend-title';
@@ -77,6 +79,10 @@ export function createLegend(deps: LegendDeps): Legend {
       li.append(b);
       list.append(li);
     }
+    const rail = document.createElement('li');
+    rail.className = 'legend-rail';
+    rail.innerHTML = '<span class="legend-rail-swatch" aria-hidden="true"></span><span class="legend-rail-text"></span>';
+    list.append(rail);
     if (!simple) {
       const hint = document.createElement('li');
       hint.className = 'legend-hint';
@@ -86,10 +92,9 @@ export function createLegend(deps: LegendDeps): Legend {
 
   const setOpen = (o: boolean): void => {
     open = o;
-    const simple = getMode() === 'simple';
-    list.hidden = !simple && !open;
+    list.hidden = !open;
     toggle.setAttribute('aria-expanded', String(open));
-    el.classList.toggle('open', simple || open);
+    el.classList.toggle('open', open);
   };
   toggle.addEventListener('click', () => setOpen(!open));
 
@@ -102,9 +107,11 @@ export function createLegend(deps: LegendDeps): Legend {
       build(simple);
       builtFor = getMode();
     }
-    toggle.hidden = simple;
-    title.hidden = !simple;
+    title.hidden = true;
     title.textContent = t('legend.title');
+    list.setAttribute('aria-label', t('legend.title'));
+    const railText = list.querySelector('.legend-rail-text');
+    if (railText) railText.textContent = t('rail.legend');
     toggle.innerHTML = `${ICONS.legend}<span>${t('legend.title')}</span>`;
     toggle.title = t('legend.tip');
     const hint = list.querySelector('.legend-hint');

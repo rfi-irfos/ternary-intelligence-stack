@@ -26,12 +26,17 @@ export function createHoverTip(): HoverTip {
   const text = document.createElement('span');
   el.append(dot, text);
   let cur: ComponentId | null = null;
+  // Size of the tip, measured once per text change (paint), never per pointer move.
+  let w = 160;
+  let h = 28;
   const paint = (): void => {
     if (!cur) return;
     const role = roleOf(cur);
     el.style.setProperty('--role', role ? ROLE_VAR[role] : 'var(--c-neutral)');
     el.dataset.role = role ?? 'neutral';
     text.textContent = hoverText(cur);
+    w = el.offsetWidth || 160;
+    h = el.offsetHeight || 28;
   };
   return {
     element: el,
@@ -41,8 +46,6 @@ export function createHoverTip(): HoverTip {
       paint();
     },
     move(x, y) {
-      const w = el.offsetWidth || 160;
-      const h = el.offsetHeight || 28;
       const vw = typeof window === 'undefined' ? 1e9 : window.innerWidth;
       const vh = typeof window === 'undefined' ? 1e9 : window.innerHeight;
       const left = x + OFFSET + w > vw ? x - OFFSET - w : x + OFFSET;

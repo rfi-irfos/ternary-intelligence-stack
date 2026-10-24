@@ -1,19 +1,19 @@
 import { ICONS } from './icons';
-import { getLang, getMode, onPrefsChange, setLang, setMode, t } from './prefs';
-import { type Lang, LANGS, type Mode, MODES, type StringKey } from './strings';
+import { getLang, onPrefsChange, setLang, t } from './prefs';
+import { type Lang, LANGS, TOUR_IDS } from './strings';
 import { closeTourMenu, isTourMenuOpen, openTourMenu } from './tourMenu';
 
 export interface TopBar {
   element: HTMLElement;
   /** Home: closes every level and shows the whole model (the app wires the click). */
   home: HTMLButtonElement;
-  /** Content of the settings popover (quality), behind the gear; the gear shows in Advanced only. */
+  /** Content of the settings popover (quality), behind the gear (both modes). */
   settings: HTMLElement;
   toursButton: HTMLButtonElement;
   dispose(): void;
 }
 
-function segmented<T extends string>(cls: string, values: readonly T[], get: () => T, set: (v: T) => void) {
+export function segmented<T extends string>(cls: string, values: readonly T[], get: () => T, set: (v: T) => void) {
   const wrap = document.createElement('div');
   wrap.className = `hud-segmented ${cls}`;
   const label = document.createElement('span');
@@ -52,10 +52,11 @@ function segmented<T extends string>(cls: string, values: readonly T[], get: () 
 }
 
 /**
- * Top bar, anchored like a game HUD. Left: the title and the home button. Right: the guided-tours call
- * to action, then one small cluster with DE | EN, Simple | Advanced and (Advanced only) the settings
- * gear. Each top-level control carries `data-control`, so the HUD can be counted (Simple: at most 5).
- * Switching language or mode re-renders the HUD in place: no reload, no camera move.
+ * OS-style system bar: one slim full-width row of translucent glass with a hairline under it. Left: the
+ * wordmark and the home (overview) icon, named by its tooltip. Right: compass + "Tour", the DE | EN pill
+ * and the settings gear (quality). Einfach | Erweitert lives in the dock (src/ui/player.ts). Each
+ * top-level control carries `data-control`, so the HUD can be counted (Simple: at most 5). Switching
+ * language re-renders the bar in place: no reload, no camera move.
  */
 export function createTopBar(title: HTMLElement | null): TopBar {
   const el = document.createElement('header');
@@ -65,17 +66,15 @@ export function createTopBar(title: HTMLElement | null): TopBar {
   if (title) left.append(title);
   const home = document.createElement('button');
   home.type = 'button';
-  home.className = 'hud-btn hud-btn--ghost home-btn';
+  home.className = 'hud-icon tray-item home-btn';
   home.dataset.control = 'home';
   home.innerHTML = ICONS.overview;
-  const homeText = document.createElement('span');
-  home.append(homeText);
   left.append(home);
 
   const tours = document.createElement('button');
   tours.type = 'button';
-  tours.className = 'hud-btn tours-btn';
-  tours.dataset.control = 'tours';
+  tours.className = 'hud-btn tray-item tours-btn';
+  tours.dataset.control = 'guide';
   tours.setAttribute('aria-haspopup', 'dialog');
   tours.setAttribute('aria-expanded', 'false');
   const toursText = document.createElement('span');
@@ -87,17 +86,17 @@ export function createTopBar(title: HTMLElement | null): TopBar {
     tours.setAttribute('aria-expanded', String(isTourMenuOpen()));
   });
 
-  const mode = segmented<Mode>('mode-toggle', MODES, getMode, setMode);
   const lang = segmented<Lang>('lang-toggle', LANGS, getLang, setLang);
   const gear = document.createElement('button');
   gear.type = 'button';
-  gear.className = 'hud-icon hud-icon--small settings-btn';
+  gear.className = 'hud-icon tray-item settings-btn';
   gear.innerHTML = ICONS.gear;
   gear.setAttribute('aria-haspopup', 'dialog');
   gear.setAttribute('aria-expanded', 'false');
   const pop = document.createElement('div');
   pop.className = 'settings-pop';
   pop.setAttribute('role', 'dialog');
+  pop.tabIndex = -1;
   pop.hidden = true;
   const settings = document.createElement('div');
   settings.className = 'top-settings';
@@ -105,6 +104,7 @@ export function createTopBar(title: HTMLElement | null): TopBar {
   const setPop = (open: boolean): void => {
     pop.hidden = !open;
     gear.setAttribute('aria-expanded', String(open));
+    if (open) (pop.querySelector<HTMLElement>('select, button') ?? pop).focus();
   };
   gear.addEventListener('click', () => setPop(pop.hidden));
   pop.addEventListener('keydown', (e) => {
@@ -117,24 +117,17 @@ export function createTopBar(title: HTMLElement | null): TopBar {
   const prefs = document.createElement('div');
   prefs.className = 'top-prefs';
   prefs.dataset.control = 'prefs';
-  prefs.append(lang.wrap, mode.wrap, gear, pop);
+  prefs.append(lang.wrap, gear, pop);
   const right = document.createElement('div');
   right.className = 'top-right';
   right.append(tours, prefs);
   el.append(left, right);
 
   const paint = (): void => {
-    homeText.textContent = t('nav.overview');
     home.title = t('nav.overviewTip');
     home.setAttribute('aria-label', t('nav.overview'));
     toursText.textContent = t('app.tours');
-    tours.title = t('app.toursTip');
-    mode.label.textContent = t('mode.label');
-    mode.group.setAttribute('aria-label', t('mode.label'));
-    for (const b of mode.buttons) {
-      b.textContent = t(`mode.${b.dataset.value}` as StringKey);
-      b.title = t(`mode.${b.dataset.value}Tip` as StringKey);
-    }
+    tours.title = t('app.toursTip', { n: TOUR_IDS.length });
     lang.label.textContent = t('lang.label');
     lang.group.setAttribute('aria-label', t('lang.label'));
     for (const b of lang.buttons) {
@@ -145,11 +138,7 @@ export function createTopBar(title: HTMLElement | null): TopBar {
     gear.setAttribute('aria-label', t('settings.label'));
     gear.title = t('settings.tip');
     pop.setAttribute('aria-label', t('settings.label'));
-    mode.sync();
     lang.sync();
-    const simple = getMode() === 'simple';
-    gear.hidden = simple;
-    if (simple) setPop(false);
   };
   paint();
   const off = onPrefsChange(paint);

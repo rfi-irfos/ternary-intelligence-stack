@@ -3,7 +3,7 @@ import type { CameraRig } from '../camera/controls';
 import { findMatrix, findVector, type WeightsLoader, weightKey } from '../data/weights';
 import { CAVEATS } from '../content/caveats';
 import { COMPONENTS, type ComponentType, type ResolvedContent, componentTypeOf, contentFor, sourceUrl } from '../content/components';
-import { CITED_NOTE, fmt, fmtText, labelBlock, richHtml, structure } from '../data/labeled';
+import { badge, citedNote, fmt, fmtText, labelBlock, richHtml, structure, pctStr } from '../data/labeled';
 import {
   type ComponentId, type ParsedId, type Stream,
   attnId, bankId, embedId, expertId, lmHeadId, lnFId, ln1Id, ln2Id, parseId, routerId, slabId,
@@ -12,7 +12,7 @@ import type { TowerScene } from '../scene/tower';
 import { PALETTE, cssHex } from '../scene/palette';
 import { DEPTHS, getDepth, onDepthChange, setDepth } from './depth';
 import { ICONS, typeIcon } from './icons';
-import { getMode, onPrefsChange, t } from './prefs';
+import { getLang, getMode, layerLabel, lt, onPrefsChange, t } from './prefs';
 import { ROLE_VAR, componentName, roleOf } from './roles';
 import type { StringKey } from './strings';
 
@@ -36,6 +36,9 @@ export interface Panel {
   readonly element: HTMLElement;
   openPanel(id: ComponentId): Promise<void>;
   close(): void;
+  /** Collapse to a slim edge tab (icon + name) or expand again. The camera never moves. */
+  setCollapsed(on: boolean): void;
+  collapsed(): boolean;
   current(): ComponentId | null;
   dispose(): void;
 }
@@ -106,10 +109,46 @@ export function tensorRows(id: ComponentId, a: Architecture): TensorRow[] {
   return rows;
 }
 
+/** Longest short tensor name the table shows before it truncates from the left. */
+export const SHORT_NAME_MAX = 24;
+
+/**
+ * Short names for the tensor table. Each name is the shortest dotted suffix that is unique within the
+ * table (at least two segments when it ends in .weight/.bias, so the suffix always stays). A name longer
+ * than SHORT_NAME_MAX is truncated from the left ("…" + its tail); the full path is the tooltip.
+ */
+export function shortNames(full: string[]): string[] {
+  const segs = full.map((f) => f.split('.'));
+  const minLen = (s: string[]): number => (s.length >= 2 && /^(weight|bias)$/.test(s[s.length - 1]!) ? 2 : 1);
+  const len = segs.map(minLen);
+  for (let guard = 0; guard < 16; guard++) {
+    const names = segs.map((s, i) => s.slice(-len[i]!).join('.'));
+    let clash = false;
+    names.forEach((n, i) => {
+      if (names.some((m, j) => j !== i && m === n && full[j] !== full[i]) && len[i]! < segs[i]!.length) {
+        len[i]!++;
+        clash = true;
+      }
+    });
+    if (!clash) break;
+  }
+  return segs.map((s, i) => {
+    const n = s.slice(-len[i]!).join('.');
+    return n.length > SHORT_NAME_MAX ? `…${n.slice(n.length - (SHORT_NAME_MAX - 1))}` : n;
+  });
+}
+
 export interface Link { label: string; id: ComponentId }
 
-/** Components next to this one in the data flow; each link flies the camera there. */
+/**
+ * Components next to this one in the data flow; each link flies the camera there. The label is the
+ * component's name in the current language and mode (the same name the link chip shows).
+ */
 export function connectionsOf(id: ComponentId, a: Architecture): Link[] {
+  return rawConnections(id, a).map((l) => ({ label: componentName(l.id), id: l.id }));
+}
+
+function rawConnections(id: ComponentId, a: Architecture): Link[] {
   const p = parseId(id);
   if (!p) return [];
   const last = a.model.num_layers - 1;
@@ -156,7 +195,7 @@ export function connectionsOf(id: ComponentId, a: Architecture): Link[] {
 }
 
 function location(p: ParsedId, a: Architecture): string {
-  const layer = 'layer' in p ? t('loc.layer', { l: p.layer, n: a.model.num_layers }) : '';
+  const layer = 'layer' in p ? t('loc.layer', { l: layerLabel(p.layer), n: a.model.num_layers }) : '';
   const stream = 'stream' in p && p.stream ? ` · ${t('loc.stream', { s: p.stream })}` : '';
   const expert = 'expert' in p && p.expert !== undefined ? ` · ${t('loc.expert', { e: p.expert })}` : '';
   if (layer) return layer + stream + expert;
@@ -168,34 +207,36 @@ function visual(type: ComponentType, a: Architecture, id: ComponentId, rc: Resol
   const p = parseId(id);
   const ternary = type === 'matrix' ? p?.type === 'matrix' && p.name !== 'gate'
     : type === 'attn' || type === 'expert' || type === 'lm_head';
+  const schematic = esc(t('svg.schematic'));
   if (type === 'router') {
     const n = a.model.num_experts;
+    const k = a.model.top_k;
     const bars = Array.from({ length: n }, (_, i) =>
-      `<rect x="${6 + i * 14}" y="${i < 3 ? 6 : 24}" width="10" height="${i < 3 ? 30 : 12}" fill="${i < 3 ? cssHex(PALETTE.router) : '#2a2e36'}"/>`).join('');
-    return `<svg viewBox="0 0 ${12 + n * 14} 44" role="img" aria-label="router outputs, a few lit"><title>schematic: a few router outputs lit</title>${bars}</svg>`;
+      `<rect x="${6 + i * 14}" y="${i < k ? 6 : 24}" width="10" height="${i < k ? 30 : 12}" fill="${i < k ? cssHex(PALETTE.router) : '#2a2e36'}"/>`).join('');
+    return `<svg viewBox="0 0 ${12 + n * 14} 44" role="img" aria-label="${esc(t('svg.router'))}"><title>${schematic}: ${esc(t('svg.router'))}</title>${bars}</svg>`;
   }
   if (type === 'anastomosis') {
-    return '<svg viewBox="0 0 160 44" role="img" aria-label="two streams exchange"><title>schematic</title>' +
+    return `<svg viewBox="0 0 160 44" role="img" aria-label="${esc(t('svg.streams'))}"><title>${schematic}</title>` +
       `<circle cx="30" cy="22" r="14" fill="${cssHex(PALETTE.streamA)}"/><circle cx="130" cy="22" r="14" fill="${cssHex(PALETTE.streamB)}"/>` +
       `<path d="M46 14 L114 14 M114 30 L46 30" stroke="${cssHex(PALETTE.gate)}" stroke-width="2" fill="none"/>` +
       '<text x="80" y="10" fill="#fff" font-size="10" text-anchor="middle">g₀</text>' +
       '<text x="80" y="42" fill="#fff" font-size="10" text-anchor="middle">g₁</text></svg>';
   }
   if (ternary) {
-    return '<svg viewBox="0 0 170 44" role="img" aria-label="ternary weights are minus one, zero or plus one"><title>schematic</title>' +
+    return `<svg viewBox="0 0 170 44" role="img" aria-label="${esc(t('svg.ternary'))}"><title>${schematic}</title>` +
       `<rect x="6" y="8" width="28" height="28" fill="${cssHex(PALETTE.ternaryMinus)}"/>` + '<text x="20" y="27" text-anchor="middle" font-size="14" fill="#000">−1</text>' +
       `<rect x="40" y="8" width="28" height="28" fill="${cssHex(PALETTE.ternaryZero)}" stroke="#555"/>` + '<text x="54" y="27" text-anchor="middle" font-size="14" fill="#fff">0</text>' +
       `<rect x="74" y="8" width="28" height="28" fill="${cssHex(PALETTE.ternaryPlus)}"/>` + '<text x="88" y="27" text-anchor="middle" font-size="14" fill="#000">+1</text>' +
       '<text x="108" y="27" font-size="14" fill="#fff">× γ</text></svg>';
   }
   // Words only: counts of the real tensors are shown (as structure) in the text around the schematic.
-  return `<svg viewBox="0 0 260 44" role="img" aria-label="in, operation, out"><title>schematic</title>` +
-    `<text x="4" y="18" font-size="10" fill="#cfd8e8">in</text>` +
+  return `<svg viewBox="0 0 260 44" role="img" aria-label="${esc(t('svg.io'))}"><title>${schematic}</title>` +
+    `<text x="4" y="18" font-size="10" fill="#cfd8e8">${esc(t('svg.in'))}</text>` +
     `<path d="M4 26 H256" stroke="#fff" stroke-width="1.5"/>` +
-    `<text x="4" y="40" font-size="10" fill="#cfd8e8">out</text></svg>`;
+    `<text x="4" y="40" font-size="10" fill="#cfd8e8">${esc(t('svg.out'))}</text></svg>`;
 }
 
-const pctText = (v: unknown): string => (typeof v === 'number' ? `${(v * 100).toFixed(1)} %` : '—');
+const pctText = (v: unknown): string => (typeof v === 'number' ? pctStr(v) : '—');
 const numText = (v: unknown): string => (typeof v === 'number' ? fmtText(structure(v)) : '—');
 
 /** A checkpoint value (structure) as HTML; null (not defined for this matrix) shows a dash. */
@@ -212,6 +253,7 @@ export function createPanel(deps: PanelDeps): Panel {
   el.hidden = true;
   let currentId: ComponentId | null = null;
   let token = 0;
+  let isCollapsed = false;
 
   const flyTarget = (id: ComponentId): ComponentId => {
     let cand = id;
@@ -225,21 +267,21 @@ export function createPanel(deps: PanelDeps): Panel {
 
   /** The real counts behind the router schematic, outside the illustrative figure. */
   function routerCaption(): string {
-    const top = fmt(structure(3)); // top-3 selection, moe.rs:197-381
+    const top = fmt(structure(arch.model.top_k)); // architecture.json model.top_k (moe.rs:197-381)
     top.dataset.v = 'top_k';
     const n = fmt(structure(arch.model.num_experts));
     n.dataset.v = 'experts';
-    return `<p class="schematic-note">Top ${top.outerHTML} of ${n.outerHTML} experts lit per stream.</p>`;
+    return `<p class="schematic-note">${t('panel.routerCaption', { k: top.outerHTML, n: n.outerHTML })}</p>`;
   }
 
   /** One stat tile ("readout"): a small label over a large tabular value that carries its kind. */
   const tile = (label: StringKey, value: HTMLElement, sub = ''): string =>
-    `<div class="stat-tile"><span class="stat-label">${esc(t(label))}</span><span class="stat-value">${value.outerHTML}</span>` +
-    `${sub ? `<span class="stat-sub">${sub}</span>` : ''}</div>`;
+    `<div class="stat-tile"><span class="stat-label">${esc(t(label))}</span><span class="stat-value">${value.outerHTML}` +
+    `${sub ? `<span class="stat-sub">${sub}</span>` : ''}</span></div>`;
 
   function tiles(p: ParsedId, rows: TensorRow[]): string {
     const out: string[] = [];
-    if ('layer' in p) out.push(tile('tile.layer', fmt(structure(p.layer)), richHtml(t('tile.of', { n: arch.model.num_layers }))));
+    if ('layer' in p) out.push(tile('tile.layer', fmt(structure(layerLabel(p.layer))), richHtml(t('tile.of', { n: arch.model.num_layers }))));
     if (rows.length > 0) {
       // Per-expert rows ({e} still in the name) exist once per expert.
       const total = rows.reduce((sum, r) => sum + r.params * (r.name.includes('{e}') ? arch.model.num_experts : 1), 0);
@@ -255,15 +297,13 @@ export function createPanel(deps: PanelDeps): Panel {
   }
 
   /** Short tensor name for the table (the full path is the tooltip and a truncated sub-line). */
-  const shortName = (full: string): string => {
-    const seg = full.split('.');
-    return seg.length >= 2 && /^(weight|bias)$/.test(seg[seg.length - 1]!) ? seg.slice(-2).join('.') : seg[seg.length - 1]!;
-  };
 
   function tensorTable(rows: TensorRow[]): string {
     if (rows.length === 0) return `<p>${esc(t('panel.noTensors'))}</p>`;
+    const names = shortNames(rows.map((x) => x.name));
+    const short = new Map(rows.map((r, i) => [r.name, names[i]!]));
     const row = (r: TensorRow, group: boolean): string => {
-      const name = fmt(structure(shortName(r.name)));
+      const name = fmt(structure(short.get(r.name) ?? r.name));
       name.classList.add('t-namebox');
       name.title = r.name;
       const path = document.createElement('span');
@@ -304,11 +344,12 @@ export function createPanel(deps: PanelDeps): Panel {
 
   function html(id: ComponentId, type: ComponentType, p: ParsedId): string {
     const c = COMPONENTS[type];
-    const rc = contentFor(type, arch);
+    const rc = contentFor(type, arch, getLang());
     const simple = getMode() === 'simple';
     // Caveat numbers are findings of the cited investigation; only architecture facts keep the default tooltip.
     const facts = new Set([String(arch.model.num_layers), String(arch.model.fusion_layers.length)]);
-    const cited = (s: string): string => richHtml(s, { note: CITED_NOTE, plain: facts });
+    const note = citedNote();
+    const cited = (s: string): string => richHtml(s, { note, plain: facts });
     const depth = getDepth();
     const rows = tensorRows(id, arch);
     const tau = 'layer' in p ? arch.layers[p.layer]?.tau : undefined;
@@ -325,13 +366,16 @@ export function createPanel(deps: PanelDeps): Panel {
       ? `<p>${esc(t('panel.noCaveats'))}</p>`
       : `<ul class="caveat-list">${c.caveats.map((cid) => {
         const cv = CAVEATS[cid];
+        // A table read from a log is measured: the badge names the log it was read from.
+        const kind = cv.logPath ? 'measured' : 'structure';
+        const tip = cv.logPath ?? note;
         const table = cv.table
-          ? `<div class="cv-table-wrap" data-kind="structure" title="${esc(CITED_NOTE)}"><table class="cv-table"><thead><tr>${cv.table.head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>` +
-            `<tbody>${cv.table.rows.map((r) => `<tr>${r.map((x) => `<td>${esc(x)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '';
-        const label = cv.label ? `<p class="cv-label"><span class="tag tag--measured">${esc(cv.label)}</span></p>` : '';
-        return `<li><details data-caveat="${cid}"><summary><span class="code-chip">${cid}</span><span class="cv-title">${cited(cv.title)}</span>${ICONS.chevron}</summary>` +
-          `<div class="cv-body"><p>${cited(cv.body)}</p>${table}${label}` +
-          (depth === 'intuition' ? '' : `<p class="evidence">Evidence: ${cited(cv.evidence)}</p>`) + '</div></details></li>';
+          ? `<div class="cv-table-wrap lv-block lv-block--${kind}" data-kind="${kind}" title="${esc(tip)}"><table class="cv-table"><thead><tr>${cv.table.head.map((h) => `<th>${esc(lt(h))}</th>`).join('')}</tr></thead>` +
+            `<tbody>${cv.table.rows.map((r) => `<tr>${r.map((x) => `<td>${esc(x)}</td>`).join('')}</tr>`).join('')}</tbody></table>${badge(kind, undefined, tip).outerHTML}</div>` : '';
+        const label = cv.label ? `<p class="cv-label"><span class="tag tag--measured">${esc(lt(cv.label))}</span></p>` : '';
+        return `<li><details data-caveat="${cid}"><summary><span class="code-chip">${cid}</span><span class="cv-title">${cited(lt(cv.title))}</span>${ICONS.chevron}</summary>` +
+          `<div class="cv-body"><p>${cited(lt(cv.body))}</p>${table}${label}` +
+          (depth === 'intuition' ? '' : `<p class="evidence">${esc(t('panel.evidence'))} ${cited(lt(cv.evidence))}</p>`) + '</div></details></li>';
       }).join('')}</ul>`;
     const sources = c.source.map((s) =>
       `<li><a href="${esc(sourceUrl(s.file, s.lines))}" target="_blank" rel="noopener noreferrer">${ICONS.doc}<span>${richHtml(`${s.file}:${s.lines}`)}</span></a></li>`).join('');
@@ -347,10 +391,11 @@ export function createPanel(deps: PanelDeps): Panel {
         `<div class="sec-body"${open ? '' : ' hidden'}>${body}</div></section>`;
     };
     return `
-      <div class="panel-head">
+      <div class="panel-head" data-mode="${simple ? 'simple' : 'advanced'}">
         <header>
           <span class="role-chip" data-role="${role ?? 'neutral'}" style="--role: ${role ? ROLE_VAR[role] : 'var(--c-neutral)'}">${typeIcon(type)}<span>${esc(role ? t(`role.${role}` as StringKey) : t('role.none'))}</span></span>
-          <h2>${richHtml(rc.title)}</h2>
+          <h2 title="${esc(t(`sum.${type}` as StringKey))}">${richHtml(rc.title)}</h2>
+          <button type="button" class="panel-collapse hud-icon hud-icon--small" data-action="collapse" aria-label="${esc(t('panel.collapse'))}" title="${esc(t('panel.collapse'))}">${ICONS.chevron}</button>
           <button type="button" class="panel-close hud-icon hud-icon--small" aria-label="${esc(t('panel.close'))}" title="${esc(t('panel.close'))}">${ICONS.close}</button>
         </header>
         <p class="panel-summary">${esc(t(`sum.${type}` as StringKey))}</p>
@@ -394,15 +439,15 @@ export function createPanel(deps: PanelDeps): Panel {
         box.innerHTML = m.ternary
           ? `<p>γ ${sv(m.gamma, 'gamma')} · τ ${sv(m.tau, 'tau')}</p>` +
             `<p>−${richHtml('1')}: ${sv(m.frac_neg, 'frac_neg', pctText)} · ${richHtml('0')}: ${sv(m.frac_zero, 'frac_zero', pctText)} · ` +
-            `+${richHtml('1')}: ${sv(m.frac_pos, 'frac_pos', pctText)}</p><p>tile ${tile} (checkpoint values)</p>`
-          : `<p>F32, shown as a diverging colour scale. tile ${tile} (checkpoint values)</p>`;
+            `+${richHtml('1')}: ${sv(m.frac_pos, 'frac_pos', pctText)}</p><p>${t('w.ternaryTile', { tile })}</p>`
+          : `<p>${t('w.f32', { tile })}</p>`;
       } else if (key.vector) {
         const v = findVector(w, key.vector);
         if (!v) throw new Error('vector missing');
-        box.innerHTML = `<p>mean ${sv(v.mean, 'mean')} · std ${sv(v.std, 'std')} · min ${sv(v.min, 'min')} · max ${sv(v.max, 'max')} (checkpoint values)</p>`;
+        box.innerHTML = `<p>${t('w.vector', { mean: sv(v.mean, 'mean'), std: sv(v.std, 'std'), min: sv(v.min, 'min'), max: sv(v.max, 'max') })}</p>`;
       }
     } catch (err) {
-      if (mine === token) box.innerHTML = richHtml(`Weights unavailable: ${String(err)}`);
+      if (mine === token) box.innerHTML = richHtml(t('w.unavailable', { e: String(err) }));
     }
     void id;
   }
@@ -419,10 +464,30 @@ export function createPanel(deps: PanelDeps): Panel {
     const role = roleOf(id);
     el.style.setProperty('--role-panel', role ? ROLE_VAR[role] : 'var(--c-accent)');
     el.innerHTML = html(id, type, p);
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.className = 'panel-edge-tab tray-item';
+    tab.dataset.action = 'expand';
+    tab.title = t('panel.expand');
+    tab.setAttribute('aria-label', `${t('panel.expand')}: ${componentName(id)}`);
+    tab.innerHTML = `${typeIcon(type)}<span>${richHtml(componentName(id))}</span>`;
+    el.append(tab);
+    el.classList.toggle('collapsed', isCollapsed);
     return fillWeights(id, p, token);
   }
 
-  const open = (id: ComponentId): Promise<void> => render(id);
+  const setCollapsed = (on: boolean): void => {
+    isCollapsed = on;
+    el.classList.toggle('collapsed', on);
+    if (on) el.querySelector<HTMLElement>('.panel-edge-tab')?.focus();
+    el.dispatchEvent(new CustomEvent('albert:panel-collapse', { bubbles: true, detail: { collapsed: on } }));
+  };
+
+  /** A new component opened by the visitor shows the full card again. */
+  const open = (id: ComponentId): Promise<void> => {
+    if (isCollapsed) setCollapsed(false);
+    return render(id);
+  };
 
   el.addEventListener('click', (e) => {
     const t = e.target as HTMLElement;
@@ -465,6 +530,14 @@ export function createPanel(deps: PanelDeps): Panel {
       el.querySelector('.panel-body')?.scrollTo?.({ top: 0 });
       return;
     }
+    if (t.closest('[data-action="collapse"]')) {
+      setCollapsed(true);
+      return;
+    }
+    if (t.closest('[data-action="expand"]')) {
+      setCollapsed(false);
+      return;
+    }
     if (t.closest('[data-action="step-inside"]') && currentId) {
       deps.onStepInside?.(currentId);
       return;
@@ -493,9 +566,13 @@ export function createPanel(deps: PanelDeps): Panel {
   const panel: Panel = {
     element: el,
     openPanel: open,
+    setCollapsed,
+    collapsed: () => isCollapsed,
     close() {
       token++;
       currentId = null;
+      isCollapsed = false;
+      el.classList.remove('collapsed');
       el.hidden = true;
       el.innerHTML = '';
     },

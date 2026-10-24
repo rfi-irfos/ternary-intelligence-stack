@@ -5,9 +5,11 @@ export interface QualityMenu {
   element: HTMLElement;
   /** Shows the probe's pick next to "auto". */
   setAuto(q: Quality | null): void;
+  /** Removes the prefs listener and the element. */
+  dispose(): void;
 }
 
-const LABEL: Record<Quality, string> = { high: 'High', medium: 'Medium', low: 'Low' };
+const LABEL = (q: Quality): string => t(`quality.${q}`);
 
 /**
  * Settings menu for the quality preset: "Auto" (probe decides) or a fixed preset. A fixed choice
@@ -27,9 +29,10 @@ export function createQualityMenu(onChange: (q: Quality | null) => void, store?:
   const paint = (): void => {
     name.textContent = t('quality.label');
     sel.setAttribute('aria-label', t('quality.label'));
-    auto.text = autoPick ? `${t('quality.auto')} (${LABEL[autoPick]})` : t('quality.auto');
+    auto.text = autoPick ? `${t('quality.auto')} (${LABEL(autoPick)})` : t('quality.auto');
+    for (const o of sel.options) if (o.value) o.text = LABEL(o.value as Quality);
   };
-  sel.append(auto, ...QUALITIES.map((q) => new Option(LABEL[q], q)));
+  sel.append(auto, ...QUALITIES.map((q) => new Option(q, q)));
   sel.value = (store === undefined ? loadOverride() : loadOverride(store)) ?? '';
   sel.addEventListener('change', () => {
     const q = (sel.value || null) as Quality | null;
@@ -39,12 +42,16 @@ export function createQualityMenu(onChange: (q: Quality | null) => void, store?:
   });
   wrap.append(sel);
   paint();
-  onPrefsChange(paint);
+  const off = onPrefsChange(paint);
   return {
     element: wrap,
     setAuto(q) {
       autoPick = q;
       paint();
+    },
+    dispose() {
+      off();
+      wrap.remove();
     },
   };
 }

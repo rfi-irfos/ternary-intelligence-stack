@@ -127,7 +127,8 @@ describe('panel labelling', () => {
     expect(panel.element.querySelector('[data-v="frac_neg"]')?.textContent).toBe('40.0 %');
     const row = panel.element.querySelector('tr[data-tensor]')!;
     expect([...row.querySelectorAll('td')].filter((td) => /\d/.test(td.textContent ?? '') && !td.querySelector('[data-kind]'))).toEqual([]);
-    expect(panel.element.querySelector('.where [data-kind]')?.textContent).toBe('12');
+    // Simple counts layers from 1 (blocks.12 is layer 13); Advanced keeps the code index.
+    expect(panel.element.querySelector('.where [data-kind]')?.textContent).toBe('13');
   });
 });
 

@@ -9,7 +9,7 @@ import { buildTower } from '../src/scene/tower';
 import { createExplode } from '../src/scene/explode';
 import { pickAction } from '../src/ui/pickAction';
 import { isExplodable } from '../src/scene/hierarchy';
-import { connectionsOf, createPanel, tensorRows } from '../src/ui/panel';
+import { SHORT_NAME_MAX, connectionsOf, createPanel, shortNames, tensorRows } from '../src/ui/panel';
 import { setDepth } from '../src/ui/depth';
 import { setMode, t } from '../src/ui/prefs';
 import { CAVEATS } from '../src/content/caveats';
@@ -209,7 +209,8 @@ describe('codex panel layout', () => {
     expect(tiles.length).toBeGreaterThanOrEqual(2);
     expect(tiles.length).toBeLessThanOrEqual(4);
     for (const x of tiles) expect(x.querySelector('.stat-value [data-kind]'), x.textContent ?? '').not.toBeNull();
-    expect(tiles[0]?.textContent).toContain('12');
+    // Simple counts layers from 1 (layerLabel): blocks.12 is "layer 13 of 46".
+    expect(tiles[0]?.textContent).toContain('13');
     expect(tiles[0]?.textContent).toContain('46');
     expect(head.querySelector('.panel-tabs')).toBeNull();
     expect(head.querySelector('.depth-switch')).toBeNull();
@@ -274,11 +275,56 @@ describe('codex panel layout', () => {
     for (const d of rows) {
       expect(d.open).toBe(false);
       expect(d.querySelector('summary .code-chip')?.textContent).toBe(d.dataset.caveat);
-      expect(d.querySelector('summary .cv-title')?.textContent).toBe(CAVEATS[d.dataset.caveat as 'A6'].title);
+      expect(d.querySelector('summary .cv-title')?.textContent).toBe(CAVEATS[d.dataset.caveat as 'A6'].title.en);
     }
     const a6 = rows[0]!;
-    expect(a6.querySelector('.cv-table')?.querySelectorAll('tbody tr')).toHaveLength(4);
+    const cells = [...a6.querySelectorAll('.cv-table tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
+    expect(cells).toEqual([
+      ['42 → 43', '2026-09-19T14:00Z', 'ep8938', '3372'],
+      ['43 → 44', '2026-09-19T15:05Z', 'ep8942', '3450'],
+      ['44 → 45', '2026-09-19T18:55Z', 'ep8958', '3528'],
+      ['45 → 46', '2026-09-20T01:10Z', 'ep8987', '3606'],
+    ]);
+    // The table was read from the watch log: a measured block whose badge names the log.
+    const wrap = a6.querySelector<HTMLElement>('.cv-table-wrap')!;
+    expect(wrap.dataset.kind).toBe('measured');
+    expect(wrap.classList.contains('lv-block--measured')).toBe(true);
+    expect(wrap.title).toBe('~/.albert/albert_watch_log.md');
     expect(a6.querySelector('.tag--measured')?.textContent).toContain('albert_watch_log.md');
+  });
+
+  it('short tensor names are unambiguous: truncated from the left, the .weight / .bias suffix kept', () => {
+    const full = [
+      'blocks.12.A.attn.q.weight', 'blocks.12.B.attn.q.weight', 'blocks.12.A.ln1.weight', 'blocks.12.A.ln1.bias',
+      'blocks.12.experts.7.c_fc.weight', 'blocks.12.experts.7.seed_bias',
+    ];
+    const short = shortNames(full);
+    expect(new Set(short).size).toBe(full.length);
+    for (const [k, s] of short.entries()) {
+      expect(s.length, s).toBeLessThanOrEqual(SHORT_NAME_MAX);
+      const tail = s.replace(/^…/, '');
+      expect(full[k]!.endsWith(tail), `${s} is a suffix of ${full[k]}`).toBe(true);
+      if (/\.(weight|bias)$/.test(full[k]!)) expect(s).toMatch(/\.(weight|bias)$/);
+    }
+    expect(short[0]).not.toBe(short[1]);
+    expect(short[4]).toBe('c_fc.weight');
+    const long = shortNames(['blocks.12.experts.7.a_very_long_projection_name.weight']);
+    expect(long[0]!.length).toBeLessThanOrEqual(SHORT_NAME_MAX);
+    expect(long[0]).toMatch(/^….*\.weight$/);
+  });
+
+  it('collapses to a tray tab with icon and name and expands again; the camera never moves', async () => {
+    const { panel, flyTo } = make();
+    await panel.openPanel('L20.bank');
+    panel.element.querySelector<HTMLElement>('[data-action="collapse"]')!.click();
+    expect(panel.collapsed()).toBe(true);
+    expect(panel.element.classList.contains('collapsed')).toBe(true);
+    const tab = panel.element.querySelector<HTMLElement>('.panel-edge-tab')!;
+    expect(tab.querySelector('svg')).not.toBeNull();
+    expect(tab.textContent?.trim().length).toBeGreaterThan(0);
+    tab.click();
+    expect(panel.collapsed()).toBe(false);
+    expect(flyTo).not.toHaveBeenCalled();
   });
 
   it('"Step inside" sits on the card of anything in a layer and hands the id to the app', async () => {

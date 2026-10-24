@@ -10,6 +10,7 @@
     "num_layers": 46,
     "num_streams": 2,
     "num_experts": 12,
+    "top_k": 3,
     "hidden": 256,
     "ffn_inner": 1024,
     "num_heads": 4,
