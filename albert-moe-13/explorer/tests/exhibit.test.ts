@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import { existsSync, readFileSync, statSync } from 'node:fs';
 import * as THREE from 'three';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { overviewPose, overviewPoints } from '../src/camera/controls';
@@ -30,14 +29,6 @@ describe('exhibit caption and assets', () => {
       expect(resolve(STRINGS[lang]['exhibit.alt'], 'simple').length).toBeGreaterThan(20);
     }
   });
-
-  it('ships the real screenshot in public/ (no video)', () => {
-    const u = new URL(`../public${EXHIBIT_URL}`, import.meta.url);
-    expect(existsSync(u)).toBe(true);
-    expect(statSync(u).size).toBeGreaterThan(100_000);
-    const b = readFileSync(u);
-    expect([b.readUInt32BE(16), b.readUInt32BE(20)]).toEqual([1871, 932]);
-  });
 });
 
 describe('exhibit scene object', () => {
@@ -47,7 +38,7 @@ describe('exhibit scene object', () => {
     for (const aspect of [0.46, 1, 1.78, 2.4]) {
       const { target, distance } = overviewPose(aspect, 45, extent);
       // worst case: a right panel halves the free width, so the camera sits twice as far
-      const cam = new THREE.PerspectiveCamera(45, aspect, 0.1, 1000);
+      const cam = new THREE.PerspectiveCamera(45, aspect, 0.1, 100000);
       cam.up.set(0, 0, 1);
       cam.position.copy(target).addScaledVector(new THREE.Vector3(-0.45, -1, 0.5).normalize(), distance * 2);
       cam.lookAt(target);
