@@ -117,6 +117,8 @@
   --dock-ctl: 36px;
   --dock-row: 48px;
   --dock-h: 74px;
+  /* tour card: sits above the dock, same width; the body scrolls inside this height */
+  --tour-h: 216px;
 
   /* motion */
   --t-fast: 150ms;

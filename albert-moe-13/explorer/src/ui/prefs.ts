@@ -111,3 +111,29 @@ export function reloadPrefsForTest(nav?: { language?: string }): void {
   mode = initialMode();
   setHtmlLang();
 }
+
+/** Saved place per guided tour: `{ [tourId]: stepIndex }` (0-based), written at every step. */
+export const TOUR_KEY = 'albert.tours';
+
+function readTours(): Record<string, number> {
+  try {
+    const raw = storage()?.getItem(TOUR_KEY);
+    const v: unknown = raw ? JSON.parse(raw) : null;
+    if (typeof v !== 'object' || v === null || Array.isArray(v)) return {};
+    return Object.fromEntries(Object.entries(v).filter(([, n]) => Number.isInteger(n) && (n as number) >= 0)) as Record<string, number>;
+  } catch {
+    return {};
+  }
+}
+
+/** The saved step of a tour (0 = none saved: start at the beginning). */
+export const tourProgress = (id: string): number => readTours()[id] ?? 0;
+
+/** Saves the step a tour is on; step 0 clears the entry (a finished or restarted tour). */
+export function saveTourProgress(id: string, step: number): void {
+  const all = readTours();
+  if (step > 0) all[id] = step;
+  else delete all[id];
+  save(TOUR_KEY, JSON.stringify(all));
+  notify();
+}

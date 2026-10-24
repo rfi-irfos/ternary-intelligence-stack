@@ -94,3 +94,25 @@ export function findMatrix(w: LayerWeights, name: string): MatrixData | undefine
 export function findVector(w: LayerWeights, name: string): VectorData | undefined {
   return w.vectors.find((v) => v.name === name);
 }
+
+/** A real 4x4 corner of a ternary weight matrix, with the matrix scale gamma. */
+export interface TernarySlice {
+  /** Row-major 4x4, entries -1, 0 or +1: the top-left corner of the checkpoint matrix (the tile in `L{n}.json`). */
+  w: number[][];
+  gamma: number | null;
+  shape: number[];
+  name: string;
+}
+
+/**
+ * The top-left 4x4 corner of a ternary matrix, read from the 32x32 tile of `L{n}.json` (structure data, the
+ * checkpoint's own signs). Null for an F32 matrix, a missing matrix or a tile smaller than 4x4.
+ */
+export function ternarySlice(w: LayerWeights, name: string, n = 4): TernarySlice | null {
+  const m = findMatrix(w, name);
+  if (!m || !m.ternary) return null;
+  const rows = m.tile.slice(0, n);
+  if (rows.length < n || rows.some((r) => typeof r !== 'string' || r.length < n)) return null;
+  const val = (c: string): number => (c === '+' ? 1 : c === '-' ? -1 : 0);
+  return { w: rows.map((r) => [...(r as string).slice(0, n)].map(val)), gamma: m.gamma, shape: m.shape, name };
+}

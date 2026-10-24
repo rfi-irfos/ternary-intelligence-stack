@@ -17,7 +17,7 @@ button, select, input { font: inherit; color: inherit; }
 .icon { display: block; flex: none; width: 20px; height: 20px; }
 
 /* ---- the glass surface ------------------------------------------------------------------ */
-.os-sidebar, .layer-panel, .dock, .tour-menu, .legend-card, .sentence-pop, .coach, .hover-tip, .timeline, .lobby-about {
+.os-sidebar, .layer-panel, .dock, .tour-menu, .tour-card, .legend-card, .sentence-pop, .coach, .hover-tip, .timeline, .lobby-about {
   box-sizing: border-box;
   border: 1px solid var(--c-card-line);
   border-radius: var(--r-panel);
@@ -27,7 +27,7 @@ button, select, input { font: inherit; color: inherit; }
   -webkit-backdrop-filter: blur(14px) saturate(1.15);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .os-sidebar, .layer-panel, .dock, .tour-menu, .legend-card, .sentence-pop, .coach, .hover-tip, .timeline, .top-bar, .lobby-about {
+  .os-sidebar, .layer-panel, .dock, .tour-menu, .tour-card, .legend-card, .sentence-pop, .coach, .hover-tip, .timeline, .top-bar, .lobby-about {
     --c-glass-panel: var(--c-card-solid);
   }
 }
@@ -463,6 +463,51 @@ tr[data-group="experts"] td.t-name { padding-left: 14px; box-shadow: inset 2px 0
 .tour-soon { font-size: var(--fs-small); color: var(--c-text-muted); }
 .tour-soon:empty { display: none; }
 
+/* ---- tour card: centred above the dock, same horizontal extent as the dock ------------------- */
+.tour-card { position: fixed; z-index: 5; left: 50%; transform: translateX(-50%);
+  bottom: calc(var(--timeline-h) + 2 * var(--space-2) + var(--dock-h) + var(--space-2));
+  width: min(var(--dock-w), calc(100vw - 2 * var(--edge-pad))); height: var(--tour-h); max-height: var(--tour-h);
+  display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--dock-pad);
+  transition: width var(--t-slow) var(--ease); animation: os-in var(--t-fast) var(--ease); }
+body.side-open .tour-card, body.layer-open .tour-card { width: min(var(--dock-w), calc(100vw - 2 * (var(--side-w) + 2 * var(--edge-pad)))); }
+.tour-card header { flex: none; display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+.tour-card-title { margin: 0; font: 700 var(--fs-large)/1.2 var(--font-display); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tour-card-count { flex: none; font: 500 var(--fs-small)/1.2 var(--font-ui); font-feature-settings: "tnum"; color: var(--c-text); }
+.tour-card-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; font: 400 var(--fs-base)/1.45 var(--font-ui); color: var(--c-text); }
+.tour-card-body p { margin: 0 0 var(--space-2); }
+.tour-note { font-size: var(--fs-small); color: var(--c-text); }
+.tour-prompt { font-weight: 600; }
+.tour-card footer { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+.tour-exit { margin-right: auto; }
+.tour-btn { min-height: 32px; padding: 0 var(--space-4); border: 1px solid var(--c-card-line); border-radius: var(--r-control); background: var(--c-wash); color: var(--c-text); font: 600 var(--fs-base)/1 var(--font-ui); cursor: pointer; }
+.tour-btn:hover:not(:disabled) { background: var(--c-wash-strong); }
+.tour-btn:disabled { opacity: 0.45; cursor: default; }
+.tour-btn-primary { border-color: var(--c-accent); color: var(--c-accent); }
+.tour-pick-grid { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-2) 0; }
+.tour-pick { min-width: 32px; min-height: 32px; padding: 0 var(--space-3); border: 1px solid var(--c-card-line); border-radius: var(--r-control); background: transparent; color: var(--c-text); font: 600 var(--fs-base)/1 var(--font-ui); font-feature-settings: "tnum"; cursor: pointer; }
+.tour-pick[aria-pressed="true"] { border-color: var(--c-accent); color: var(--c-accent); box-shadow: inset 0 0 0 1px var(--c-accent); }
+.tour-pick:disabled { cursor: default; }
+.tour-pred-row { margin: var(--space-1) 0; }
+.tour-hit { color: var(--c-accent); font-weight: 700; }
+.tour-chosen-item { display: inline-block; margin-right: var(--space-2); }
+.tour-figure { margin: var(--space-2) 0; }
+.tour-fig-cap { font-size: var(--fs-small); color: var(--c-text); margin-top: 2px; }
+.tour-fig-title { font-weight: 600; margin-bottom: var(--space-2); }
+.tour-mm { display: flex; gap: var(--space-2); align-items: center; font-feature-settings: "tnum"; }
+.tour-mm-w { display: grid; grid-template-columns: repeat(4, 30px); }
+.tour-mm-v { display: grid; grid-template-columns: 44px; }
+.tour-mm-cell { display: block; text-align: center; padding: 2px 0; font-size: var(--fs-small); color: #fff; }
+.tour-frac-row { display: grid; grid-template-columns: minmax(80px, 140px) 1fr minmax(0, auto); gap: var(--space-2); align-items: center; margin: 2px 0; font-size: var(--fs-small); }
+.tour-frac-bar { display: flex; height: 10px; border-radius: 2px; overflow: hidden; background: var(--c-wash); }
+.tour-frac-neg { background: var(--c-ternary-minus); }
+.tour-frac-zero { background: var(--c-text-muted); }
+.tour-frac-pos { background: var(--c-ternary-plus); }
+.tour-frac-nums { font-feature-settings: "tnum"; white-space: nowrap; }
+.tour-topk { margin: 0; padding-left: 1.4em; }
+.tour-restart { position: absolute; right: var(--space-2); top: var(--space-2); min-height: 32px; padding: 0 var(--space-3); border: 1px solid var(--c-card-line); border-radius: var(--r-control); background: transparent; color: var(--c-text); font: 500 var(--fs-small)/1 var(--font-ui); cursor: pointer; }
+.tour-restart[hidden] { display: none; }
+.tour-list li { position: relative; }
+
 /* ---- coach marks ----------------------------------------------------------------------- */
 .coach { position: fixed; z-index: 40; width: 300px; padding: var(--space-4) var(--space-4) var(--space-3); transform: translate(-50%, 0);
   box-shadow: 0 0 0 1px rgba(243, 240, 232, 0.25), 0 10px 40px rgba(0, 0, 0, 0.6); animation: os-in var(--t-fast) var(--ease); }
@@ -515,8 +560,8 @@ tr[data-group="experts"] td.t-name { padding-left: 14px; box-shadow: inset 2px 0
 .lobby-about h3 { margin: 0; font: 700 18px/1.2 var(--font-display); }
 .lobby-about p { margin: 0 0 var(--space-3); line-height: 1.5; }
 /* The HUD stays laid out under the lobby and the intro (insets are measured from it), only unseen. */
-body.in-lobby :is(.top-bar, .dock, .timeline, .os-sidebar, .sidebar-edge, .legend-card, .layer-panel, .hover-tip, .tour-menu, .coach, .sentence-pop),
-body.cinema :is(.top-bar, .dock, .timeline, .os-sidebar, .sidebar-edge, .legend-card, .layer-panel, .hover-tip, .coach, .sentence-pop) { visibility: hidden; }
+body.in-lobby :is(.top-bar, .dock, .timeline, .os-sidebar, .sidebar-edge, .legend-card, .layer-panel, .hover-tip, .tour-menu, .tour-card, .coach, .sentence-pop),
+body.cinema :is(.top-bar, .dock, .tour-card, .timeline, .os-sidebar, .sidebar-edge, .legend-card, .layer-panel, .hover-tip, .coach, .sentence-pop) { visibility: hidden; }
 
 /* ---- intro: one caption line over the dolly; the layer takes every click (a skip) ---------- */
 .intro { position: fixed; inset: 0; z-index: 55; display: flex; flex-direction: column; justify-content: flex-end; align-items: center;
@@ -551,7 +596,7 @@ body.cinema :is(.top-bar, .dock, .timeline, .os-sidebar, .sidebar-edge, .legend-
   .top-left, .top-right, .top-prefs { gap: 0; }
   #app-name { font-size: 15px; }
   .os-sidebar { left: var(--edge-pad); width: auto !important; }
-  body.side-open .dock { visibility: hidden; }
+  body.side-open .dock, body.side-open .tour-card { visibility: hidden; }
   .legend-card { width: 168px; }
 }
 

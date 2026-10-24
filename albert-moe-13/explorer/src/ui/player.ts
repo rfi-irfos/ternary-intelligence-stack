@@ -468,6 +468,8 @@ export interface PlayerBar {
   player(): Player | null;
   /** Prompt id and token position the player is on (null until a trace is loaded). */
   selection(): { promptId: string; position: number } | null;
+  /** The recorded run and word on screen, for the guided tours' prediction answers (null until a trace is loaded). */
+  measured(): { trace: Trace; position: number } | null;
   /** Called on every op change: the op, its index and the timeline length (the rail shows the progress). */
   onOp(cb: (op: Op, index: number, total: number) => void): () => void;
   /**
@@ -1276,6 +1278,10 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     },
     player: () => player,
     selection: () => (traces.size > 0 ? { promptId: promptSel.value, position: Number(tokenSel.value) } : null),
+    measured() {
+      const trace = traces.get(promptSel.value);
+      return trace ? { trace, position: Number(tokenSel.value) || 0 } : null;
+    },
     onOp(cb) { opListeners.add(cb); return () => opListeners.delete(cb); },
     setHint(key) {
       levelHint = key;

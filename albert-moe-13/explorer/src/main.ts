@@ -41,7 +41,9 @@ import { type DriftState, createLobby, createLobbyFlow, driftTick, soundToggle }
 import { createExhibit } from './scene/exhibit';
 import { createExhibitEntry } from './ui/exhibitEntry';
 import { closeLightbox } from './ui/lightbox';
-import { closeTourMenu, isTourMenuOpen, openTourMenu } from './ui/tourMenu';
+import { closeTourMenu, isTourMenuOpen, openTourMenu, setTourPick } from './ui/tourMenu';
+import { createTourRunner } from './tours/engine';
+import { tourProgress } from './ui/prefs';
 
 /** Waits (at most `ms`) for the display face, so the canvas labels of the scene draw in it; runs beside the data loads. */
 async function fontsReady(ms = 1500): Promise<void> {
@@ -60,7 +62,8 @@ async function main(): Promise<void> {
   // The side panel is created before the camera rig: its Esc listener then runs first and a press that
   // closes the panel never also flies the camera. It gives way while a level, a tour menu or a dialog owns Esc.
   let escBusy = (): boolean => false;
-  const sidebar = createSidebar({ yieldEsc: () => escBusy() || isTourMenuOpen() });
+  let tourActive = (): boolean => false;
+  const sidebar = createSidebar({ yieldEsc: () => escBusy() || isTourMenuOpen() || tourActive() });
   const top = createTopBar(heading);
   document.body.append(top.element, sidebar.element, sidebar.edgeTab);
   // Fonts, architecture and modules load in parallel; the font wait only caps itself, it never delays the data.
@@ -243,6 +246,7 @@ async function main(): Promise<void> {
     // Home closes every open level at once (Esc closes one), leaves layer mode and closes the panel.
     closeAll: async () => {
       closeTourMenu();
+      tours.exit();
       await layerMode.exit();
       await view.reassembleAll({ restoreCamera: false });
       panel.close();
@@ -276,6 +280,24 @@ async function main(): Promise<void> {
     const role = legend.pinned();
     if (role) highlighter.show((id) => matchesRole(id, role));
   };
+  // Guided tours: the card sits above the dock; the camera moves only after a click on Start, Next or Back.
+  // Leaving a tour clears its highlight and hands a pinned legend role back.
+  const tours = createTourRunner({
+    arch, tower, rig, loadWeights,
+    highlight: (pred) => {
+      if (pred) highlighter.show(pred);
+      else {
+        const role = legend.pinned();
+        highlighter.show(role ? (id) => matchesRole(id, role) : null);
+      }
+    },
+    measured: () => bar.measured(),
+  });
+  tourActive = () => tours.active() !== null;
+  setTourPick((id, restart) => {
+    closeTourMenu();
+    tours.runTour(id, restart ? 0 : tourProgress(id), { returnFocus: top.toursButton });
+  });
 
   // The HUD insets the camera frames around (top bar, dock and timeline, side panel, legend card). The rig
   // reads them at fly time from this provider, so a panel that opened in the same click already counts; a
@@ -350,6 +372,8 @@ async function main(): Promise<void> {
     blocked: () => guard.blocked(),
     pickAt: (x, y) => rayAt(x, y)?.id ?? null,
     onPick: (id) => {
+      // A prediction in a tour takes the click on a cabinet as its answer (no panel opens).
+      if (tours.handlePick(id)) return;
       note(id);
       pickAction(id, {
         explodable: (x) => isExplodable(x, arch),

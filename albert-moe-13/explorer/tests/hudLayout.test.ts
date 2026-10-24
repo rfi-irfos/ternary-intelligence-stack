@@ -28,7 +28,7 @@ const rule = (sel: string): string => {
 };
 
 interface Rect { x: number; y: number; w: number; h: number }
-interface State { sidebar: boolean; legend: boolean; sideW?: number }
+interface State { sidebar: boolean; legend: boolean; sideW?: number; tour?: boolean }
 
 const T = {
   topH: px('--top-h'),
@@ -38,6 +38,7 @@ const T = {
   edge: px('--space-4'), // --edge-pad: var(--space-4)
   dockW: px('--dock-w'),
   dockH: px('--dock-h'),
+  tourH: px('--tour-h'),
   dockPad: px('--dock-pad'),
   captionH: px('--caption-h'),
   dockGap: px('--dock-gap'),
@@ -71,6 +72,8 @@ function hudRects(w: number, h: number, st: State): Record<string, Rect> {
   const dw = Math.min(T.dockW, free);
   // One row of three zones in every state: the dock is always --dock-h tall.
   out.dock = { x: w / 2 - dw / 2, y: lineY - T.dockH, w: dw, h: T.dockH };
+  // .tour-card: centred above the dock, the dock's own width and x, --tour-h tall, one --space-2 above the dock.
+  if (st.tour) out.tour = { x: out.dock.x, y: out.dock.y - T.space2 - T.tourH, w: out.dock.w, h: T.tourH };
   if (st.sidebar) out.sidebar = { x: w - T.edge - side, y: sideTop, w: side, h: lineY - sideTop };
   if (st.legend) out.legend = { x: T.edge, y: sideTop, w: legendWidth(w), h: T.legendH };
   return out;
@@ -119,6 +122,7 @@ function dockZones(dock: Rect): { left: Rect; centre: Rect; right: Rect; caption
 }
 
 const CLOSED: State = { sidebar: false, legend: false };
+const TOUR: State = { sidebar: false, legend: false, tour: true };
 const OPEN: State = { sidebar: true, legend: false };
 const EVERYTHING: State = { sidebar: true, legend: true };
 
@@ -286,7 +290,7 @@ describe('HUD layout rules use the tokens', () => {
     const css = read('../src/style/ui.css');
     const phone = css.slice(css.indexOf('@media (max-width: 700px)'));
     expect(phone).toContain('.os-sidebar { left: var(--edge-pad); width: auto !important; }');
-    expect(phone).toContain('body.side-open .dock { visibility: hidden; }');
+    expect(phone).toContain('body.side-open .dock, body.side-open .tour-card { visibility: hidden; }');
     expect(phone).toContain('.home-btn span, .legend-toggle span');
   });
 });
@@ -329,7 +333,8 @@ describe('HUD coverage and non-overlap (Simeon: the centre stays free)', () => {
 
     it(`${w}×${h}: no two HUD elements overlap (legend, side panel, dock, timeline, top bar)`, () => {
       for (const st of [CLOSED, OPEN, { sidebar: true, legend: false, sideW: sideMax(w) }, { sidebar: true, legend: true, sideW: sideMax(w) },
-        { sidebar: false, legend: true }, EVERYTHING]) {
+        { sidebar: false, legend: true }, EVERYTHING, TOUR, { sidebar: true, legend: false, tour: true },
+        { sidebar: true, legend: true, sideW: sideMax(w), tour: true }, { sidebar: false, legend: true, tour: true }]) {
         const entries = Object.entries(hudRects(w, h, st));
         for (const [i, [ka, a]] of entries.entries()) {
           for (const [kb, b] of entries.slice(i + 1)) expect(overlap(a, b), `${ka} x ${kb} at ${w}x${h} ${JSON.stringify(st)}`).toBe(0);
@@ -354,6 +359,54 @@ describe('HUD coverage and non-overlap (Simeon: the centre stays free)', () => {
       expect(overlap(wide.dock!, wide.sidebar!)).toBe(0);
     });
   }
+
+  it(`${'tour card'}: centred above the dock with the dock's own extent; its rules use the tokens`, () => {
+    expect(T.tourH).toBe(216);
+    const r = rule('.tour-card');
+    expect(r).toContain('left: 50%');
+    expect(r).toContain('transform: translateX(-50%)');
+    expect(r).toContain('bottom: calc(var(--timeline-h) + 2 * var(--space-2) + var(--dock-h) + var(--space-2))');
+    expect(r).toContain('width: min(var(--dock-w), calc(100vw - 2 * var(--edge-pad)))');
+    expect(r).toContain('height: var(--tour-h)');
+    expect(rule('body.side-open .tour-card, body.layer-open .tour-card')).toContain('width: min(var(--dock-w), calc(100vw - 2 * (var(--side-w) + 2 * var(--edge-pad))))');
+    expect(rule('.tour-card-body')).toContain('overflow-y: auto');
+    expect(uiCss).toContain('body.side-open .dock, body.side-open .tour-card { visibility: hidden; }');
+    for (const [w, h] of [[1280, 720], [1366, 768], [1920, 1080]] as const) {
+      for (const st of [TOUR, { sidebar: true, legend: false, tour: true }, { sidebar: true, legend: false, sideW: sideMax(w), tour: true }]) {
+        const rs = hudRects(w, h, st);
+        expect(rs.tour!.x, `${w}`).toBe(rs.dock!.x);
+        expect(rs.tour!.w).toBe(rs.dock!.w);
+        expect(rs.tour!.x + rs.tour!.w / 2).toBe(w / 2);
+        expect(rs.tour!.y + rs.tour!.h + T.space2).toBe(rs.dock!.y);
+        // clear of the top bar by a wide margin
+        expect(rs.tour!.y).toBeGreaterThan(T.topH + T.space3);
+        if (st.sidebar) expect(overlap(rs.tour!, rs.sidebar!)).toBe(0);
+      }
+    }
+  });
+
+  for (const [w, h] of [[1280, 720], [1366, 768], [1920, 1080]] as const) {
+    it(`${w}×${h}: coverage while a tour runs stays within its budget`, () => {
+      const c = coverage(w, h, TOUR);
+      const withSide = coverage(w, h, { sidebar: true, legend: false, tour: true });
+      console.info(`[coverage model] ${w}x${h} tour card: closed ${c.toFixed(4)} (without top bar ${coverageScene(w, h, TOUR).toFixed(4)}), with side panel ${withSide.toFixed(4)}`);
+      // New budgets: a tour adds one card above the dock. 0.36 with the bar and 0.31 without it, side panel closed;
+      // 0.50 with the side panel open as well (the card narrows with the dock, so it never grows wider than the dock).
+      expect(c).toBeLessThanOrEqual(0.36);
+      expect(coverageScene(w, h, TOUR)).toBeLessThanOrEqual(0.31);
+      expect(withSide).toBeLessThanOrEqual(0.5);
+      expect(c).toBeGreaterThan(coverage(w, h, CLOSED));
+    });
+  }
+
+  it('phone 390×844: with a tour the card, dock, legend card and timeline do not overlap', () => {
+    const w = 390;
+    const h = 844;
+    const rects = hudRects(w, h, { sidebar: false, legend: true, tour: true });
+    expect(rects.tour!.w).toBe(w - 2 * T.edge);
+    const entries = Object.entries(rects);
+    for (const [i, [ka, a]] of entries.entries()) for (const [kb, b] of entries.slice(i + 1)) expect(overlap(a, b), `${ka} x ${kb}`).toBe(0);
+  });
 
   it('phone 390×844: bar, legend card, dock and timeline do not overlap while the side panel is closed', () => {
     const w = 390;
