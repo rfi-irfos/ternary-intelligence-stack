@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { PALETTE, cssHex } from '../src/scene/palette';
-import { ACCENT, FONT, UI } from '../src/style/theme';
+import { ACCENT, FONT, PILL, UI } from '../src/style/theme';
 import { HEADING_FONT } from '../src/content/brand';
 
 // Read from disk: vitest stubs CSS imports (even ?raw) to an empty string.
@@ -35,6 +35,20 @@ describe('design tokens', () => {
       expect(vars.get(`--c-${kebab(k)}`), k).toBe(cssHex(v));
     }
     expect(PALETTE.accent).toBe(ACCENT);
+  });
+
+  it('the in-scene pill label colours (canvas textures) equal the --c-pill-* tokens', () => {
+    expect(vars.get('--c-pill-fill')).toBe(cssHex(PILL.fill));
+    expect(vars.get('--c-pill-line')).toBe(cssHex(PILL.line));
+  });
+
+  it('the mockup card tokens and the sidebar / dock sizes exist', () => {
+    for (const k of ['--c-glass-panel', '--c-card-line', '--c-card-solid', '--c-wash', '--c-wash-strong', '--bg-top', '--bg-bottom']) {
+      expect(vars.has(k), k).toBe(true);
+    }
+    expect(vars.get('--c-glass-panel')).toBe('rgba(12, 20, 44, 0.82)');
+    expect(vars.get('--side-w')).toMatch(/^clamp\(280px, /);
+    expect(Number.parseFloat(vars.get('--timeline-h') ?? '0')).toBeGreaterThanOrEqual(32);
   });
 
   it('text colours pass WCAG AA (4.5:1) on the panel surface and on black', () => {

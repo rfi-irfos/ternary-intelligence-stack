@@ -10,6 +10,10 @@ export interface TopBar {
   /** Content of the settings popover (quality), behind the gear (both modes). */
   settings: HTMLElement;
   toursButton: HTMLButtonElement;
+  /** Opens or closes the side panel (the app wires the click; aria-expanded follows setSidebarOpen). */
+  sidebarButton: HTMLButtonElement;
+  setSidebarOpen(open: boolean): void;
+  gear: HTMLButtonElement;
   dispose(): void;
 }
 
@@ -58,7 +62,7 @@ export function segmented<T extends string>(cls: string, values: readonly T[], g
  * top-level control carries `data-control`, so the HUD can be counted (Simple: at most 5). Switching
  * language re-renders the bar in place: no reload, no camera move.
  */
-export function createTopBar(title: HTMLElement | null): TopBar {
+export function createTopBar(title: HTMLElement | null, opts: { onGear?: () => void } = {}): TopBar {
   const el = document.createElement('header');
   el.className = 'top-bar';
   const left = document.createElement('div');
@@ -66,9 +70,11 @@ export function createTopBar(title: HTMLElement | null): TopBar {
   if (title) left.append(title);
   const home = document.createElement('button');
   home.type = 'button';
-  home.className = 'hud-icon tray-item home-btn';
+  home.className = 'hud-btn tray-item home-btn';
   home.dataset.control = 'home';
+  const homeText = document.createElement('span');
   home.innerHTML = ICONS.home;
+  home.append(homeText);
   left.append(home);
 
   const tours = document.createElement('button');
@@ -78,7 +84,7 @@ export function createTopBar(title: HTMLElement | null): TopBar {
   tours.setAttribute('aria-haspopup', 'dialog');
   tours.setAttribute('aria-expanded', 'false');
   const toursText = document.createElement('span');
-  tours.innerHTML = ICONS.tour;
+  tours.innerHTML = ICONS.target;
   tours.append(toursText);
   tours.addEventListener('click', () => {
     if (isTourMenuOpen()) closeTourMenu();
@@ -106,7 +112,7 @@ export function createTopBar(title: HTMLElement | null): TopBar {
     gear.setAttribute('aria-expanded', String(open));
     if (open) (pop.querySelector<HTMLElement>('select, button') ?? pop).focus();
   };
-  gear.addEventListener('click', () => setPop(pop.hidden));
+  gear.addEventListener('click', () => (opts.onGear ? opts.onGear() : setPop(pop.hidden)));
   pop.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { e.stopPropagation(); setPop(false); gear.focus(); }
   });
@@ -117,15 +123,25 @@ export function createTopBar(title: HTMLElement | null): TopBar {
   const prefs = document.createElement('div');
   prefs.className = 'top-prefs';
   prefs.dataset.control = 'prefs';
+  const sidebar = document.createElement('button');
+  sidebar.type = 'button';
+  sidebar.className = 'hud-btn tray-item sidebar-btn';
+  sidebar.dataset.control = 'sidebar';
+  sidebar.setAttribute('aria-expanded', 'false');
+  const sidebarText = document.createElement('span');
+  sidebar.innerHTML = ICONS.sidebar;
+  sidebar.append(sidebarText);
   prefs.append(lang.wrap, gear, pop);
   const right = document.createElement('div');
   right.className = 'top-right';
-  right.append(tours, prefs);
+  right.append(tours, prefs, sidebar);
   el.append(left, right);
 
   const paint = (): void => {
     home.title = t('nav.homeTip');
-    home.setAttribute('aria-label', t('nav.home'));
+    homeText.textContent = t('nav.homeText');
+    sidebarText.textContent = t('side.toggle');
+    sidebar.title = t('side.toggleTip');
     toursText.textContent = t('app.tours');
     tours.title = t('app.toursTip', { n: TOUR_IDS.length });
     lang.label.textContent = t('lang.label');
@@ -143,7 +159,8 @@ export function createTopBar(title: HTMLElement | null): TopBar {
   paint();
   const off = onPrefsChange(paint);
   return {
-    element: el, home, settings, toursButton: tours,
+    element: el, home, settings, toursButton: tours, sidebarButton: sidebar, gear,
+    setSidebarOpen: (o) => sidebar.setAttribute('aria-expanded', String(o)),
     dispose: () => { off(); document.removeEventListener('pointerdown', onDocDown); el.remove(); },
   };
 }

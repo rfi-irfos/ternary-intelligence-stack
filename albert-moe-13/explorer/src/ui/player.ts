@@ -85,6 +85,14 @@ export interface Player {
   jumpToLayer(layer: number): boolean;
   /** Next op of `kind` after the current one, wrapping to the start. Returns false when none exists. */
   jumpToNext(kind: OpKind): boolean;
+  /** Length of the whole run in seconds at speed 1 (current pace): m:ss on the timeline. */
+  duration(): number;
+  /** Seconds at speed 1 until op `index` starts. */
+  timeOf(index: number): number;
+  /** Seconds at speed 1 the run has played (start of the current op plus the time inside it). */
+  elapsed(): number;
+  /** The op that is on screen at `seconds` (clamped). */
+  indexAtTime(seconds: number): number;
   /** dt in seconds; advances while playing. */
   tick(dt: number): void;
   onChange(cb: (index: number, op: Op) => void): () => void;
@@ -106,6 +114,17 @@ export function createPlayer(ops: readonly Op[], animate: (op: Op, index: number
     return quick[k] ?? OP_SECONDS;
   };
   const listeners = new Set<(index: number, op: Op) => void>();
+  /** Start time of every op (and the end) at speed 1, per pace; rebuilt when the pace changes. */
+  let starts: number[] | null = null;
+  let startsPace: Pace | null = null;
+  const marks = (): number[] => {
+    if (starts && startsPace === pace) return starts;
+    const out = [0];
+    for (let k = 0; k < ops.length; k++) out.push((out[k] as number) + dur(k));
+    starts = out;
+    startsPace = pace;
+    return out;
+  };
 
   const go = (to: number): void => {
     i = Math.max(0, Math.min(ops.length - 1, Math.trunc(to)));
@@ -146,6 +165,19 @@ export function createPlayer(ops: readonly Op[], animate: (op: Op, index: number
       }
       return false;
     },
+    duration: () => marks()[ops.length] as number,
+    timeOf: (k) => marks()[Math.max(0, Math.min(ops.length, Math.trunc(k)))] as number,
+    elapsed: () => (marks()[i] as number) + Math.min(acc, dur(i)),
+    indexAtTime(sec) {
+      const m = marks();
+      let lo = 0;
+      let hi = ops.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if ((m[mid] as number) <= sec + 1e-9) lo = mid; else hi = mid - 1;
+      }
+      return Math.max(0, Math.min(ops.length - 1, lo));
+    },
     tick(dt) {
       if (!isPlaying) return;
       acc += Math.min(dt, pace === 'quick' ? MAX_FRAME_QUICK : MAX_FRAME_FULL) * spd;
@@ -176,6 +208,9 @@ export function opRole(op: Pick<Op, 'kind' | 'stream'>): Role | null {
     case 'router': return 'router';
     case 'experts': return 'expert';
     case 'gate': return 'gate';
+    case 'embed': return 'input';
+    case 'merge': case 'ln_f': return 'merge';
+    case 'lm_head': return 'output';
     default: return null;
   }
 }
@@ -376,6 +411,33 @@ export function opDetails(op: Op, arch?: Pick<Architecture, 'model'>): HTMLEleme
   return box;
 }
 
+/** Layer number moved by `delta` and clamped to 0..count-1: the stepper of the dock never leaves the model. */
+export function stepLayer(current: number, delta: number, count: number): number {
+  return Math.max(0, Math.min(Math.max(0, count - 1), current + delta));
+}
+
+/** m:ss of a length in seconds (rounded to the nearest second): 75 -> "1:15". */
+export function formatClock(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/** What the run timeline needs: all values come from the real player, nothing is typed in. */
+export interface RunTiming {
+  /** Length of the run in seconds at 1x (current pace). */
+  duration(): number;
+  /** Seconds played so far. */
+  elapsed(): number;
+  /** Start of every swap gate (anastomosis op) in seconds; empty when the run has none. */
+  gates(): number[];
+  /** Start of the first op of every layer, in seconds. */
+  layers(): number[];
+  /** Jumps the run to the op on screen at `seconds` (the visitor's own navigation). */
+  seek(seconds: number): void;
+  /** Steps by whole ops (arrow keys on the timeline). */
+  step(delta: number): void;
+}
+
 export interface PlayerBarDeps {
   arch: Architecture;
   tower: TowerScene;
@@ -386,10 +448,21 @@ export interface PlayerBarDeps {
   ids?: string[];
   /** Document for the Space / arrow shortcuts (default: the global document; null = none). */
   keys?: Document | null;
+  /** The layer stepper of the dock moved to `layer` (the app selects it and looks at it). */
+  onLayerStep?: (layer: number) => void;
 }
 
 export interface PlayerBar {
+  /** The mini dock: caption line, transport (back, play, next, speed) and the layer stepper. */
   element: HTMLElement;
+  /** Content of the side panel's Sitzung section: sentence picker, word chips and, in Advanced, the expert tools. */
+  session: HTMLElement;
+  /** Einfach | Erweitert, for the side panel's Darstellung section. */
+  display: HTMLElement;
+  /** Timing of the current run, null before a trace is loaded. */
+  timing(): RunTiming | null;
+  /** The layer the stepper shows (a selection from elsewhere moves it; the camera does not move). */
+  setLayer(layer: number): void;
   /** Ready once the traces are loaded (or failed). */
   ready: Promise<void>;
   tick(dt: number): void;
@@ -460,7 +533,7 @@ const isTyping = (t: EventTarget | null): boolean => {
   const e = t as HTMLElement | null;
   if (!e || !e.tagName) return false;
   return e.tagName === 'INPUT' || e.tagName === 'TEXTAREA' || e.tagName === 'SELECT' || e.tagName === 'BUTTON'
-    || e.isContentEditable || !!e.closest?.('.slab-rail, .tour-menu, [role=dialog]');
+    || e.isContentEditable || !!e.closest?.('.run-timeline, .tour-menu, [role=dialog]');
 };
 
 export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
@@ -504,7 +577,7 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   // Play is the one primary control: icon plus a short label ("Start" / "Play"), so the word chips keep their room.
   const play = document.createElement('button');
   play.type = 'button';
-  play.className = 'hud-btn play-btn';
+  play.className = 'play-btn';
   play.dataset.action = 'play';
   const playIcon = document.createElement('span');
   playIcon.className = 'play-icon';
@@ -513,9 +586,22 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   play.append(playIcon, playText);
   const prev = iconBtn('prev', ICONS.prev);
   const next = iconBtn('next', ICONS.next);
-  prev.classList.add('hud-icon--small', 'step-btn');
-  next.classList.add('hud-icon--small', 'step-btn');
-  /** Simple shows the step arrows only once a run was started and is paused. */
+  prev.classList.add('step-btn');
+  next.classList.add('step-btn');
+  // Layer stepper "‹ 22 / 46 ›": the previous / next layer, clamped; the label reads the model's layer count.
+  const stepper = document.createElement('div');
+  stepper.className = 'layer-stepper';
+  stepper.dataset.control = 'layer';
+  stepper.setAttribute('role', 'group');
+  const layerPrev = iconBtn('layer-prev', ICONS.chevron);
+  const layerNext = iconBtn('layer-next', ICONS.chevron);
+  layerPrev.classList.add('hud-icon--small', 'layer-prev');
+  layerNext.classList.add('hud-icon--small', 'layer-next');
+  const layerCount = document.createElement('span');
+  layerCount.className = 'layer-count num';
+  let layerShown = 0;
+  stepper.append(layerPrev, layerCount, layerNext);
+  /** True once a run was started: the caption then shows the step sentence instead of the first hint. */
   let started = false;
   // One plain headline says what the bar does.
   const headline = document.createElement('p');
@@ -524,10 +610,13 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   // An icon button with a tooltip; its name lives in aria-label.
   const sentence = document.createElement('button');
   sentence.type = 'button';
-  sentence.className = 'hud-icon sentence-chip';
+  sentence.className = 'hud-btn sentence-chip';
   sentence.setAttribute('aria-haspopup', 'dialog');
   sentence.setAttribute('aria-expanded', 'false');
+  const sentenceText = document.createElement('span');
   sentence.innerHTML = ICONS.token;
+  sentence.append(sentenceText);
+  sentence.insertAdjacentHTML('beforeend', ICONS.chevronDown);
   const pop = document.createElement('div');
   pop.className = 'sentence-pop';
   pop.dataset.control = 'sentence';
@@ -542,14 +631,6 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   words.className = 'word-strip';
   words.dataset.control = 'sentence';
   words.setAttribute('role', 'group');
-  const tools = document.createElement('button');
-  tools.type = 'button';
-  tools.className = 'hud-btn hud-btn--ghost tools-btn';
-  tools.dataset.control = 'tools';
-  tools.setAttribute('aria-expanded', 'false');
-  const toolsText = document.createElement('span');
-  tools.innerHTML = ICONS.sliders;
-  tools.append(toolsText);
   const scrub = document.createElement('input');
   scrub.type = 'range';
   scrub.className = 'hud-range';
@@ -614,17 +695,18 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   const transport = document.createElement('div');
   transport.className = 'hud-group transport';
   transport.append(prev, play, next, speedBtn);
+  // The lobby's Watch and the dock use the same transport; the stepper sits right of it.
   const pick = document.createElement('div');
   pick.className = 'hud-group pickers';
   pick.append(prompt.el, token.el);
   const progress = document.createElement('div');
   progress.className = 'hud-group progress';
   progress.append(scrub, counter);
-  // Advanced: every expert tool sits in this one drawer, opened from the Tools button.
+  // Advanced: every expert tool sits in this one group in the Sitzung section.
   const adv = document.createElement('div');
   adv.className = 'hud-group advanced-controls tools-drawer';
-  adv.dataset.control = 'tools';
   adv.dataset.adv = 'true';
+  adv.dataset.control = 'tools';
   const jump = document.createElement('span');
   jump.className = 'hud-join';
   jump.append(layerIn, layerGo);
@@ -632,7 +714,6 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   kindJoin.className = 'hud-join';
   kindJoin.append(kindSel, kindGo);
   adv.append(pick, progress, camSel, jump, kindJoin, fullDetails);
-  let toolsOpen = false;
   const sentenceWrap = document.createElement('div');
   sentenceWrap.className = 'sentence-wrap';
   sentenceWrap.dataset.control = 'sentence';
@@ -655,10 +736,16 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   };
 
   top.append(headline, quickTag, chip, hintLine, announce);
-  // Control row: transport | word chips (one scrolling line) | sentence picker | Einfach|Erweitert | Tools.
+  // Mini dock: the control row is the transport and the layer stepper; the sentence, the word chips and the
+  // expert tools live in the side panel (session), Einfach | Erweitert in its Darstellung section (display).
   const controls = document.createElement('div');
   controls.className = 'player-controls';
-  controls.append(transport, words, sentenceWrap, modeSeg.wrap, tools);
+  controls.append(transport, stepper);
+  const session = document.createElement('div');
+  session.className = 'session-pane';
+  const display = document.createElement('div');
+  display.className = 'display-pane';
+  display.append(modeSeg.wrap);
 
   const followCamera = (op: Op, force: boolean): void => {
     const mode = player?.cameraMode();
@@ -712,9 +799,6 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     } else if (!playing && foldTipShown && levelHint) foldTipDone = true;
     play.setAttribute('aria-pressed', String(playing));
     play.classList.toggle('playing', playing);
-    const steps = getMode() === 'advanced' || (started && !playing);
-    prev.hidden = !steps;
-    next.hidden = !steps;
   };
 
   /** Sentence list of the popover and the word strip (current language and mode). */
@@ -789,15 +873,33 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     if (typeof document === 'undefined') return;
     document.body.append(pop);
     const r = sentence.getBoundingClientRect();
-    pop.style.right = `${Math.max(8, window.innerWidth - r.right)}px`;
-    pop.style.bottom = `${window.innerHeight - r.top + 10}px`;
+    // Opens below the picker, inside the viewport.
+    const w = Math.min(460, window.innerWidth * 0.8);
+    pop.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - w - 8))}px`;
+    pop.style.top = `${r.bottom + 6}px`;
     // Focus moves into the popover, so keyboard users land on the sentence list (Esc closes it).
     (pop.querySelector<HTMLElement>('[aria-pressed="true"]') ?? pop.querySelector<HTMLElement>('button') ?? pop).focus();
   };
-  const setTools = (open: boolean): void => {
-    toolsOpen = open;
-    tools.setAttribute('aria-expanded', String(open));
-    adv.hidden = getMode() === 'simple' || !open;
+  /** The expert tools (pickers, scrubber, camera, jumps, all detail rows) show in Advanced, in the Sitzung section. */
+  const setTools = (): void => { adv.hidden = getMode() === 'simple'; };
+  const paintLayer = (): void => {
+    const n = arch.model.num_layers;
+    layerCount.textContent = `${layerLabel(layerShown)} / ${layerLabel(n - 1)}`;
+    layerCount.title = t('dock.layerCount', { n: layerLabel(layerShown), of: layerLabel(n - 1) });
+    layerPrev.disabled = layerShown <= 0;
+    layerNext.disabled = layerShown >= n - 1;
+    stepper.setAttribute('aria-label', t('dock.layerGroup'));
+    layerPrev.setAttribute('aria-label', t('dock.layerPrev'));
+    layerPrev.title = t('dock.layerPrev');
+    layerNext.setAttribute('aria-label', t('dock.layerNext'));
+    layerNext.title = t('dock.layerNext');
+  };
+  const moveLayer = (delta: number): void => {
+    const to = stepLayer(layerShown, delta, arch.model.num_layers);
+    if (to === layerShown) return;
+    layerShown = to;
+    paintLayer();
+    deps.onLayerStep?.(to);
   };
 
   /** Text of the current op (no camera, no animation): used on every op and after a language/mode switch. */
@@ -959,14 +1061,12 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     kindSel.title = t('player.kind');
     for (const o of kindSel.options) o.text = opLabel(o.value as OpKind, arch);
     sentence.setAttribute('aria-label', t('player.otherSentence'));
+    sentenceText.textContent = t('player.otherSentence');
     sentence.title = t('player.sentenceTip');
     kindGo.textContent = t('player.nextKind');
     kindGo.title = t('player.nextKindTip');
-    tools.hidden = simple;
-    toolsText.textContent = t('player.tools');
-    tools.setAttribute('aria-label', t('player.tools'));
-    tools.title = t('player.toolsTip');
-    setTools(toolsOpen);
+    setTools();
+    paintLayer();
     if (simple) setPop(false);
     if (traces.size > 0) {
       const tok = tokenSel.value;
@@ -982,7 +1082,8 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   promptSel.addEventListener('change', () => { fillTokens(promptSel.value); build(promptSel.value, Number(tokenSel.value)); paintSentence(); });
   tokenSel.addEventListener('change', () => { build(promptSel.value, Number(tokenSel.value)); paintSentence(); });
   sentence.addEventListener('click', () => setPop(pop.hidden));
-  tools.addEventListener('click', () => setTools(!toolsOpen));
+  layerPrev.addEventListener('click', () => moveLayer(-1));
+  layerNext.addEventListener('click', () => moveLayer(1));
   // Choosing a sentence or a word only rebuilds the timeline; the camera stays where it is.
   pop.addEventListener('click', (e) => {
     const target = e.target as HTMLElement;
@@ -1086,14 +1187,43 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     }
     loaded = 'ready';
     fillPrompts();
-    el.replaceChildren(top, controls, adv);
+    el.replaceChildren(top, controls);
+    session.replaceChildren(sentenceWrap, words, adv);
     fillTokens(promptSel.value);
     build(promptSel.value, Number(tokenSel.value));
     paintSentence();
   })();
 
+  const timing: RunTiming = {
+    duration: () => player?.duration() ?? 0,
+    elapsed: () => player?.elapsed() ?? 0,
+    gates: () => (player ? player.ops.flatMap((o, k) => (o.kind === 'gate' ? [player!.timeOf(k)] : [])) : []),
+    layers: () => {
+      if (!player) return [];
+      const seen = new Set<number>();
+      const out: number[] = [];
+      player.ops.forEach((o, k) => {
+        if (o.layer !== undefined && !seen.has(o.layer)) { seen.add(o.layer); out.push(player!.timeOf(k)); }
+      });
+      return out;
+    },
+    seek(sec) {
+      if (!player) return;
+      leaveQuickRun();
+      act(() => player?.scrub(player.indexAtTime(sec)));
+    },
+    step: (d) => stepBy(d),
+  };
+
   return {
     element: el,
+    session,
+    display,
+    timing: () => (player ? timing : null),
+    setLayer(l) {
+      layerShown = Math.max(0, Math.min(arch.model.num_layers - 1, Math.trunc(l)));
+      paintLayer();
+    },
     ready,
     tick: (dt) => {
       const was = player?.playing() ?? false;
@@ -1146,6 +1276,8 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
         document.removeEventListener('keydown', onEsc, true);
       }
       pop.remove();
+      session.remove();
+      display.remove();
       el.remove();
     },
   };

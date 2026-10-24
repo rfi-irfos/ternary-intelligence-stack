@@ -3,34 +3,49 @@ import { PALETTE } from '../scene/palette';
 import type { StringKey } from './strings';
 import { layerLabel, t } from './prefs';
 
-/** The six colour roles of the legend (spec §5). Ternary has three colours but is one role. */
-export type Role = 'streamA' | 'streamB' | 'expert' | 'router' | 'gate' | 'ternary';
-export const ROLES: Role[] = ['streamA', 'streamB', 'expert', 'router', 'gate', 'ternary'];
+/**
+ * Colour roles. The legend shows the seven of Simeon's mockup (ROLES, in the mockup's order); the stream
+ * lanes and the ternary cells keep their scene colours and their role for tooltips, panel chips and the
+ * step line, but they have no legend row. Ternary has three colours but is one role.
+ */
+export type Role =
+  | 'input' | 'router' | 'expert' | 'expertIdle' | 'merge' | 'output' | 'gate'
+  | 'streamA' | 'streamB' | 'ternary';
+/** The legend rows, in order: Eingabe, MoE Router, Experten (aktiv), Experten (inaktiv), Zusammenführung, Ausgabe, Austausch-Tor. */
+export const ROLES: Role[] = ['input', 'router', 'expert', 'expertIdle', 'merge', 'output', 'gate'];
 
 /** CSS custom property of a role (src/style/tokens.css). */
 export const ROLE_VAR: Record<Role, string> = {
+  input: 'var(--c-input)',
+  router: 'var(--c-router)',
+  expert: 'var(--c-expert)',
+  expertIdle: 'var(--c-expert-idle)',
+  merge: 'var(--c-merge)',
+  output: 'var(--c-output)',
+  gate: 'var(--c-gate)',
   streamA: 'var(--c-stream-a)',
   streamB: 'var(--c-stream-b)',
-  expert: 'var(--c-expert)',
-  router: 'var(--c-router)',
-  gate: 'var(--c-gate)',
   ternary: 'var(--c-ternary-plus)',
 };
 
 export const ROLE_COLOR: Record<Role, number> = {
+  input: PALETTE.input,
+  router: PALETTE.router,
+  expert: PALETTE.expert,
+  expertIdle: PALETTE.expertIdle,
+  merge: PALETTE.merge,
+  output: PALETTE.output,
+  gate: PALETTE.gate,
   streamA: PALETTE.streamA,
   streamB: PALETTE.streamB,
-  expert: PALETTE.expert,
-  router: PALETTE.router,
-  gate: PALETTE.gate,
   ternary: PALETTE.ternaryPlus,
 };
 
 /**
  * Colour role of a scene component, by the same rules the scene uses to tint it: per-stream parts
  * (norms, attention, its heads and Q/K/V/O) take their stream, the router and its gate matrix are
- * violet, the bank and everything inside an expert green, the anastomosis gate red. Null for the
- * neutral parts (slab glass, embed, ln_f, lm_head).
+ * violet, the bank and everything inside an expert teal, the anastomosis gate red; the embedding is the
+ * input, the final norm the merge and the LM head the output. Null for the neutral parts (slab glass).
  */
 export function roleOf(id: ComponentId): Role | null {
   const p = parseId(id);
@@ -45,6 +60,9 @@ export function roleOf(id: ComponentId): Role | null {
       return p.stream === 'B' ? 'streamB' : 'streamA';
     case 'bank': case 'expert': case 'seed_bias': case 'gelu': return 'expert';
     case 'gate': return 'gate';
+    case 'embed': return 'input';
+    case 'ln_f': return 'merge';
+    case 'lm_head': return 'output';
     default: return null;
   }
 }
@@ -65,7 +83,11 @@ export function isTernaryBearing(id: ComponentId): boolean {
 
 /** Does `id` belong to `role` for highlighting? */
 export function matchesRole(id: ComponentId, role: Role): boolean {
-  return role === 'ternary' ? isTernaryBearing(id) : roleOf(id) === role;
+  if (role === 'ternary') return isTernaryBearing(id);
+  // Active and inactive experts are the same parts: which of them is lit depends on the token (the flow
+  // lights the picked ones), so both rows point at every expert.
+  if (role === 'expertIdle') return roleOf(id) === 'expert';
+  return roleOf(id) === role;
 }
 
 /** Name shown in the hover tooltip, in the current language and mode. */

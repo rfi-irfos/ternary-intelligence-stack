@@ -17,7 +17,6 @@ import { ROLES, hoverText, matchesRole, roleOf, sceneName } from '../src/ui/role
 import { createHoverTip } from '../src/ui/tooltip';
 import { closeTourMenu, isTourMenuOpen, openTourMenu } from '../src/ui/tourMenu';
 import { createSelection } from '../src/ui/selection';
-import { createSlabRail } from '../src/ui/slabRail';
 import { createPlayerBar, defaultPosition, opLabel, stepSentence, wordGroups } from '../src/ui/player';
 import { decodeToken } from '../src/data/trace';
 import { attachPicking } from '../src/ui/picking';
@@ -131,7 +130,7 @@ describe('Simple | Advanced', () => {
     expect(getMode()).toBe('simple');
     const top = createTopBar(null);
     document.body.appendChild(top.element);
-    // Einfach | Erweitert lives in the dock, not in the top bar; the gear shows in both modes.
+    // Einfach | Erweitert lives in the sidebar (Darstellung), not in the top bar; the gear shows in both modes.
     expect(top.element.querySelector('.mode-toggle')).toBeNull();
     const gear = top.element.querySelector<HTMLElement>('.settings-btn')!;
     expect(gear.hidden).toBe(false);
@@ -141,7 +140,7 @@ describe('Simple | Advanced', () => {
     });
     document.body.appendChild(b.element);
     await b.ready;
-    b.element.querySelector<HTMLButtonElement>('.mode-toggle button[data-value="advanced"]')!.click();
+    b.display.querySelector<HTMLButtonElement>('.mode-toggle button[data-value="advanced"]')!.click();
     expect(getMode()).toBe('advanced');
     expect(localStorage.getItem(MODE_KEY)).toBe('advanced');
     expect(getDepth()).toBe('technical');
@@ -159,29 +158,24 @@ describe('Simple | Advanced', () => {
   it('Simple hides camera, next-of-kind and ids; Advanced shows them; the speed pill shows in both', async () => {
     const b = bar();
     await b.ready;
-    const adv = b.element.querySelector<HTMLElement>('.advanced-controls')!;
+    const adv = b.session.querySelector<HTMLElement>('.advanced-controls')!;
     // One speed control: the pill after Next (the Tools drawer no longer has a speed select).
     expect(b.element.querySelector('.player-speed')).toBeNull();
     const pill = b.element.querySelector<HTMLElement>('.speed-pill')!;
     expect(adv.contains(pill)).toBe(false);
     expect(pill.closest('[hidden]')).toBeNull();
-    expect(adv.contains(b.element.querySelector('.player-camera'))).toBe(true);
-    expect(adv.contains(b.element.querySelector('.player-kind'))).toBe(true);
-    const [prompt, token] = b.element.querySelectorAll<HTMLSelectElement>('select');
-    const tools = b.element.querySelector<HTMLButtonElement>('[data-control="tools"]')!;
+    expect(adv.contains(b.session.querySelector('.player-camera'))).toBe(true);
+    expect(adv.contains(b.session.querySelector('.player-kind'))).toBe(true);
+    const [prompt, token] = b.session.querySelectorAll<HTMLSelectElement>('select');
     expect(adv.hidden).toBe(true);
-    expect(tools.hidden).toBe(true);
     expect(token!.options[1]!.textContent).toBe('the');
     expect(prompt!.options[0]!.textContent).not.toMatch(/^kjv:/);
     setMode('advanced');
-    // Advanced: the expert tools come back, grouped in one drawer behind the Tools button.
-    expect(tools.hidden).toBe(false);
-    expect(adv.hidden).toBe(true);
-    tools.click();
-    expect(tools.getAttribute('aria-expanded')).toBe('true');
+    // Advanced: the expert tools come back, grouped in the Sitzung section (no Tools button any more).
+    expect(b.element.querySelector('[data-control="tools"]')).toBeNull();
     expect(adv.hidden).toBe(false);
     expect(adv.contains(token!)).toBe(true);
-    expect(adv.contains(b.element.querySelector('input[type=range]'))).toBe(true);
+    expect(adv.contains(b.session.querySelector('input[type=range]'))).toBe(true);
     expect(token!.options[1]!.textContent).toBe('1: " the"');
     expect(prompt!.options[0]!.textContent).toMatch(/^kjv: /);
   });
@@ -276,7 +270,7 @@ describe('player bar explains itself', () => {
     // The default word is the last one that is not punctuation ("earth" in "… the earth.").
     expect(b.selection()!.position).toBe(defaultPosition(decoded));
     expect(decoded[b.selection()!.position]!.trim()).toBe('earth');
-    const chips = [...b.element.querySelectorAll<HTMLButtonElement>('.word-strip .word-chip')];
+    const chips = [...b.session.querySelectorAll<HTMLButtonElement>('.word-strip .word-chip')];
     // English: every token starts a word here, so one chip per token.
     expect(chips).toHaveLength(tr.provenance.tokens.length);
     const current = chips.filter((c) => c.classList.contains('current'));
@@ -288,22 +282,22 @@ describe('player bar explains itself', () => {
     // Clicking a word follows it; the marker moves, the camera does not.
     chips[3]!.click();
     expect(b.selection()!.position).toBe(3);
-    const now = [...b.element.querySelectorAll<HTMLElement>('.word-chip.current')];
+    const now = [...b.session.querySelectorAll<HTMLElement>('.word-chip.current')];
     expect(now.map((c) => c.dataset.pos)).toEqual(['3']);
   });
 
   it('German subword pieces are grouped into word chips; a chip follows its last piece', async () => {
     const b = bar();
     await b.ready;
-    b.element.querySelector<HTMLButtonElement>('.sentence-chip')!.click();
+    b.session.querySelector<HTMLButtonElement>('.sentence-chip')!.click();
     document.querySelector<HTMLElement>('.sentence-pop [data-prompt="de"]')!.click();
     await b.ready;
     await new Promise((r) => setTimeout(r, 0));
     const tr = trace('de');
     const n = tr.provenance.tokens.length;
     // The traced sentence keeps its own language (kjv and ternary are lang="en", also in the German UI).
-    expect(b.element.querySelector<HTMLElement>('.word-strip')!.lang).toBe('de');
-    const chips = [...b.element.querySelectorAll<HTMLButtonElement>('.word-strip .word-chip')];
+    expect(b.session.querySelector<HTMLElement>('.word-strip')!.lang).toBe('de');
+    const chips = [...b.session.querySelectorAll<HTMLButtonElement>('.word-strip .word-chip')];
     expect(chips.length).toBeGreaterThan(0);
     expect(chips.length).toBeLessThan(n);
     // Every token belongs to exactly one chip.
@@ -323,7 +317,7 @@ describe('player bar explains itself', () => {
   it('a punctuation token is a visible chip of its own', async () => {
     const b = bar();
     await b.ready;
-    const chips = [...b.element.querySelectorAll<HTMLButtonElement>('.word-strip .word-chip')];
+    const chips = [...b.session.querySelectorAll<HTMLButtonElement>('.word-strip .word-chip')];
     const dot = chips.at(-1)!;
     expect(dot.textContent).toBe('.');
     expect(dot.classList.contains('word-chip--punct')).toBe(true);
@@ -386,8 +380,8 @@ describe('player bar explains itself', () => {
     setLang('de');
     const b = bar();
     await b.ready;
-    const chip = b.element.querySelector<HTMLButtonElement>('.sentence-chip')!;
-    expect(chip.getAttribute('aria-label')).toBe('Anderen Satz wählen');
+    const chip = b.session.querySelector<HTMLButtonElement>('.sentence-chip')!;
+    expect(chip.getAttribute('aria-label')).toBe('Satz auswählen');
     expect(chip.querySelector('svg')).not.toBeNull();
     expect(chip.title.length).toBeGreaterThan(0);
     chip.click();
@@ -406,10 +400,10 @@ describe('legend', () => {
     expect(toggle.textContent).toContain('Legend');
     expect(legend.element.querySelector('.legend-list')?.closest('[hidden]')).not.toBeNull();
     toggle.click();
+    expect(legend.isOpen()).toBe(true);
     expect(legend.element.querySelector('.legend-list')?.closest('[hidden]')).toBeNull();
     expect(legend.element.querySelectorAll('button.legend-item')).toHaveLength(0);
-    // The timeline key is part of the legend.
-    expect(legend.element.querySelector('.legend-rail')?.textContent).toContain(t('rail.legend'));
+    expect(legend.element.querySelectorAll('.legend-item')).toHaveLength(7);
     const items = [...legend.element.querySelectorAll<HTMLElement>('.legend-item')];
     expect(items.map((x) => x.dataset.role)).toEqual(ROLES);
     items[2]!.dispatchEvent(new Event('pointerenter'));
@@ -423,22 +417,28 @@ describe('legend', () => {
     legend.dispose();
   });
 
-  it('Advanced: lists the six roles with a shape each; hover previews, click pins and unpins', () => {
+  it('Advanced: lists the seven roles with a shape each; hover previews, click pins and unpins', () => {
     setMode('advanced');
     const onHighlight = vi.fn();
     const legend = createLegend({ onHighlight });
     document.body.appendChild(legend.element);
     const toggle = legend.element.querySelector<HTMLButtonElement>('.legend-toggle')!;
     const list = legend.element.querySelector<HTMLElement>('.legend-list')!;
-    expect(list.hidden).toBe(true);
+    expect(list.closest('[hidden]')).not.toBeNull();
     toggle.click();
-    expect(list.hidden).toBe(false);
+    expect(list.closest('[hidden]')).toBeNull();
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    // The fold chevron hides the rows and keeps the header.
+    const fold = legend.element.querySelector<HTMLButtonElement>('.legend-fold')!;
+    fold.click();
+    expect(list.hidden).toBe(true);
+    fold.click();
+    expect(list.hidden).toBe(false);
     const items = [...legend.element.querySelectorAll<HTMLButtonElement>('button.legend-item')];
     expect(items.map((x) => x.dataset.role)).toEqual(ROLES);
-    expect(ROLES).toHaveLength(6);
-    for (const x of items) expect(x.querySelector('svg.legend-shape')).not.toBeNull();
-    const router = items[3]!;
+    expect(ROLES).toHaveLength(7);
+    for (const x of items) expect(x.querySelector('.legend-swatch')).not.toBeNull();
+    const router = items[1]!;
     router.click();
     expect(onHighlight).toHaveBeenLastCalledWith('router');
     expect(legend.pinned()).toBe('router');
@@ -545,60 +545,6 @@ describe('hover tooltip', () => {
   });
 });
 
-describe('slab rail', () => {
-  it('follows the selection without moving the camera', () => {
-    const camera = new THREE.PerspectiveCamera(45, 1.5, 0.1, 1000);
-    const rig = createControls(camera, document.createElement('canvas'), tower.rowExtent);
-    cleanup.push(() => rig.dispose());
-    const fly = vi.spyOn(rig, 'flyTo');
-    const selection = createSelection();
-    const rail = createSlabRail(tower, rig, vi.fn(), selection);
-    document.body.appendChild(rail.element);
-    const current = () => [...rail.element.querySelectorAll<HTMLElement>('.current')].map((x) => Number(x.dataset.layer));
-    expect(current()).toEqual([]);
-    selection.set('L20.A.attn');
-    expect(current()).toEqual([20]);
-    expect(rail.selected()).toBe(20);
-    selection.set('L7.expert.2');
-    expect(current()).toEqual([7]);
-    expect(rail.element.querySelector('[data-layer="7"]')?.getAttribute('aria-current')).toBe('true');
-    // A selection without a layer keeps the last one.
-    selection.set('embed');
-    expect(current()).toEqual([7]);
-    expect(fly).not.toHaveBeenCalled();
-    rail.dispose();
-  });
-
-  it('is a timeline labelled at both ends, keyed in its tooltip, and shows the run with a marker and a fill', () => {
-    setLang('de');
-    const camera = new THREE.PerspectiveCamera(45, 1.5, 0.1, 1000);
-    const rig = createControls(camera, document.createElement('canvas'), tower.rowExtent);
-    cleanup.push(() => rig.dispose());
-    const rail = createSlabRail(tower, rig, vi.fn());
-    document.body.appendChild(rail.element);
-    expect(rail.element.classList.contains('timeline')).toBe(true);
-    expect(rail.element.querySelector('.rail-end--first')?.textContent).toBe('Ebene 1');
-    expect(rail.element.querySelector('.rail-end--last')?.textContent).toBe('Ebene 46');
-    expect(rail.element.title).toContain('rot = Austausch-Tor zwischen den Strömen');
-    expect(rail.element.querySelector('.rail-legend')).toBeNull();
-    rail.flow(12, 0.25);
-    expect([...rail.element.querySelectorAll<HTMLElement>('.flow')].map((x) => x.dataset.layer)).toEqual(['12']);
-    expect(rail.element.querySelector<HTMLElement>('.rail-progress > span')!.style.transform).toBe('scaleX(0.25)');
-    rail.flow(null, 1);
-    expect(rail.element.querySelectorAll('.flow')).toHaveLength(0);
-    rail.dispose();
-  });
-
-  it('fusion layers carry the fusion class', () => {
-    const camera = new THREE.PerspectiveCamera(45, 1.5, 0.1, 1000);
-    const rig = createControls(camera, document.createElement('canvas'), tower.rowExtent);
-    cleanup.push(() => rig.dispose());
-    const rail = createSlabRail(tower, rig, vi.fn());
-    const fusion = [...rail.element.querySelectorAll<HTMLElement>('.fusion')].map((x) => Number(x.dataset.layer));
-    expect(fusion).toEqual(a.model.fusion_layers);
-  });
-});
-
 it('LANGS and MODES are the two each', () => {
   expect(LANGS).toEqual(['de', 'en']);
   expect(MODES).toEqual(['simple', 'advanced']);
@@ -614,8 +560,8 @@ describe('reduced HUD', () => {
     return { all, orphans, groups };
   }
 
-  it('Simple dock: at most six controls, each with its own key (prev, play, next, speed, sentence, mode)', async () => {
-    // The top bar is OS chrome (home, tours, legend, gear) and is not counted; it still has no orphans.
+  it('mini dock: five controls (prev, play, next, speed, layer), each with its own key; sentence and mode live in the sidebar', async () => {
+    // The top bar is OS chrome (home, tours, legend, sidebar, gear) and is not counted; it has no orphans.
     const top = createTopBar(null);
     const b = bar();
     document.body.append(top.element);
@@ -624,13 +570,16 @@ describe('reduced HUD', () => {
     const c = controls([b.element]);
     expect(c.orphans).toEqual([]);
     expect(c.all.filter((x) => x.tagName === 'SELECT' || x.tagName === 'INPUT')).toEqual([]);
-    // Before the first run: Play, the speed pill, the sentence and the mode toggle.
-    expect([...c.groups].sort()).toEqual(['mode', 'play', 'sentence', 'speed']);
+    expect([...c.groups].sort()).toEqual(['layer', 'next', 'play', 'prev', 'speed']);
+    // Sentence picker and word chips are in the Sitzung pane, Einfach | Erweitert in the Darstellung pane.
+    const s2 = controls([b.session]);
+    expect(s2.orphans).toEqual([]);
+    expect(s2.groups.has('sentence')).toBe(true);
+    expect([...controls([b.display]).groups]).toEqual(['mode']);
     b.element.querySelector<HTMLButtonElement>('[data-action="play"]')!.click();
     b.element.querySelector<HTMLButtonElement>('[data-action="play"]')!.click();
     const paused = controls([b.element]);
-    expect([...paused.groups].sort()).toEqual(['mode', 'next', 'play', 'prev', 'sentence', 'speed']);
-    expect(paused.groups.size).toBeLessThanOrEqual(6);
+    expect([...paused.groups].sort()).toEqual(['layer', 'next', 'play', 'prev', 'speed']);
     // Each transport key holds exactly one button (no grouping of several controls under one key).
     for (const k of ['prev', 'play', 'next', 'speed']) {
       expect(paused.all.filter((x) => x.closest<HTMLElement>('[data-control]')!.dataset.control === k), k).toHaveLength(1);
@@ -655,7 +604,7 @@ describe('reduced HUD', () => {
     expect(pill.title).toBe('Tempo');
     expect(pill.getAttribute('aria-label')).toBe('Tempo: 2×');
     // The choice survives a new sentence (the run is rebuilt with the same speed).
-    b.element.querySelector<HTMLButtonElement>('.sentence-chip')!.click();
+    b.session.querySelector<HTMLButtonElement>('.sentence-chip')!.click();
     document.querySelector<HTMLElement>('.sentence-pop [data-prompt="de"]')!.click();
     await b.ready;
     await new Promise((r) => setTimeout(r, 0));
@@ -667,8 +616,7 @@ describe('reduced HUD', () => {
     setMode('advanced');
     const b = bar();
     await b.ready;
-    b.element.querySelector<HTMLButtonElement>('[data-control="tools"]')!.click();
-    const [prompt, token] = b.element.querySelectorAll<HTMLSelectElement>('select');
+    const [prompt, token] = b.session.querySelectorAll<HTMLSelectElement>('select');
     const p = b.player()!;
     p.scrub(9);
     const before = { prompt: prompt!.value, pos: b.selection()!.position, i: p.index() };
@@ -705,7 +653,7 @@ describe('reduced HUD', () => {
     expect(prompt!.value).toBe('de');
     expect(b.selection()!.promptId).toBe('de');
     // Every Tools select gives the focus back after a change.
-    for (const sel of b.element.querySelectorAll<HTMLSelectElement>('.advanced-controls select')) {
+    for (const sel of b.session.querySelectorAll<HTMLSelectElement>('.advanced-controls select')) {
       sel.focus();
       sel.dispatchEvent(new Event('change', { bubbles: true }));
       expect(document.activeElement, sel.className).not.toBe(sel);
@@ -784,15 +732,17 @@ describe('reduced HUD', () => {
     expect(hint.hidden).toBe(true);
   });
 
-  it('Advanced adds the gear and the tools drawer, still grouped', async () => {
+  it('Advanced adds the expert tools in the Sitzung pane, still grouped; the dock stays the same five controls', async () => {
     setMode('advanced');
     const top = createTopBar(null);
     const b = bar();
     document.body.append(top.element);
     await b.ready;
-    const c = controls([top.element, b.element]);
+    const c = controls([top.element, b.element, b.session, b.display]);
     expect(c.orphans).toEqual([]);
-    expect(c.groups.has('tools')).toBe(true);
+    expect([...controls([b.element]).groups].sort()).toEqual(['layer', 'next', 'play', 'prev', 'speed']);
+    expect(b.session.querySelector('button[data-control="tools"]')).toBeNull(); // no Tools button any more
+    expect(b.session.querySelector<HTMLElement>('.advanced-controls')!.hidden).toBe(false);
     expect(top.element.querySelector<HTMLElement>('.settings-btn')!.hidden).toBe(false);
     top.dispose();
   });
@@ -805,8 +755,8 @@ describe('reduced HUD', () => {
     });
     document.body.appendChild(b.element);
     await b.ready;
-    const chip = b.element.querySelector<HTMLButtonElement>('.sentence-chip')!;
-    expect(chip.getAttribute('aria-label')).toBe('Choose another sentence');
+    const chip = b.session.querySelector<HTMLButtonElement>('.sentence-chip')!;
+    expect(chip.getAttribute('aria-label')).toBe('Choose sentence');
     chip.click();
     const pop = document.querySelector<HTMLElement>('.sentence-pop')!;
     expect(pop.hidden).toBe(false);
@@ -814,13 +764,13 @@ describe('reduced HUD', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(pop.contains(document.activeElement)).toBe(true);
     expect(pop.querySelectorAll('[data-prompt]')).toHaveLength(3);
-    b.element.querySelector<HTMLElement>('.word-strip [data-pos="1"]')!.click();
+    b.session.querySelector<HTMLElement>('.word-strip [data-pos="1"]')!.click();
     expect(b.selection()?.position).toBe(1);
     pop.querySelector<HTMLElement>('[data-prompt="de"]')!.click();
     expect(b.selection()?.promptId).toBe('de');
     expect(pop.hidden).toBe(true);
     expect(pop.isConnected).toBe(false);
-    expect(b.element.querySelector('.word-chip')?.textContent).toBe(trace('de').provenance.prompt.split(/\s+/)[0]);
+    expect(b.session.querySelector('.word-chip')?.textContent).toBe(trace('de').provenance.prompt.split(/\s+/)[0]);
     expect(flyTo).not.toHaveBeenCalled();
   });
 
@@ -853,7 +803,7 @@ describe('reduced HUD', () => {
     const flyTo = vi.spyOn(rig, 'flyTo');
     const b = bar();
     await b.ready;
-    b.element.querySelector<HTMLButtonElement>('.sentence-chip')!.click();
+    b.session.querySelector<HTMLButtonElement>('.sentence-chip')!.click();
     const pop = document.querySelector<HTMLElement>('.sentence-pop')!;
     expect(pop.hidden).toBe(false);
     (document.activeElement as HTMLElement | null)?.blur();

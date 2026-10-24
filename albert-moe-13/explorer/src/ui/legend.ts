@@ -9,47 +9,62 @@ export interface LegendDeps {
 }
 
 export interface Legend {
+  /** The chip for the top bar (toggles the card). */
+  toggle: HTMLButtonElement;
+  /** The wrapper to put in the top bar: the chip, and the floating card under the bar. */
   element: HTMLElement;
+  /** The floating card (header with fold chevron, then the seven rows). */
+  card: HTMLElement;
   /** The pinned role (clicked), or null. */
   pinned(): Role | null;
+  /** Shows or hides the card (the chip's state). */
   setOpen(open: boolean): void;
+  isOpen(): boolean;
+  /** Folds the rows away (header stays) or back. */
+  setExpanded(expanded: boolean): void;
   dispose(): void;
 }
 
-/** Shape of each role, as drawn in the scene (colour is never the only signal). */
-const SHAPE: Record<Role, string> = {
-  streamA: '<path d="M1 14h22" stroke="var(--c-stream-a)" stroke-width="3" stroke-linecap="round"/><text x="12" y="10" text-anchor="middle" font-size="9" font-weight="600" fill="var(--c-stream-a)">A</text>',
-  streamB: '<path d="M1 14h22" stroke="var(--c-stream-b)" stroke-width="3" stroke-linecap="round"/><text x="12" y="10" text-anchor="middle" font-size="9" font-weight="600" fill="var(--c-stream-b)">B</text>',
-  expert: '<rect x="6" y="4" width="12" height="12" fill="var(--c-expert)" fill-opacity="0.35" stroke="var(--c-expert)" stroke-width="1.5"/>',
-  router: '<path d="M12 2.5l7 7.5-7 7.5-7-7.5z" fill="var(--c-router)" fill-opacity="0.35" stroke="var(--c-router)" stroke-width="1.5"/>',
-  gate: '<path d="M3 16C6 3 18 3 21 16" fill="none" stroke="var(--c-gate)" stroke-width="3" stroke-linecap="round"/>',
-  ternary: '<rect x="1" y="5" width="7" height="10" fill="var(--c-ternary-minus)"/><rect x="8.5" y="5" width="7" height="10" fill="var(--c-ternary-zero)" stroke="var(--c-hairline)"/><rect x="16" y="5" width="7" height="10" fill="var(--c-ternary-plus)"/>',
-};
-
 /**
- * Legend of the six colour roles; every entry pairs the colour with its scene shape, plus the key of the
- * layer timeline. In both modes it is a small tray chip ("Legend" / "Legende") that opens the list; the
- * app opens it on the first visit only, beside the coach marks.
- * Simple: the entries are a passive key (pointing at one previews the highlight; nothing pins).
- * Advanced: the entries are buttons: hover previews, click pins (click again clears).
+ * Legend of Simeon's mockup: a chip "Legende" in the top bar toggles a small floating card under the bar,
+ * top left. The card has a header with a fold chevron (up while the rows show) and seven rows, each a
+ * 12 px rounded swatch and a label, in the mockup's order. The swatches read the scene's role colours
+ * (tokens.css --c-*), so legend and scene cannot drift apart.
+ * Simple: the rows are a passive key (pointing at one previews the highlight; nothing pins).
+ * Advanced: the rows are buttons: hover previews, click pins (click again clears).
+ * The app opens the card on the first visit only, beside the coach marks.
  */
 export function createLegend(deps: LegendDeps): Legend {
-  const el = document.createElement('section');
+  const el = document.createElement('div');
   el.className = 'legend';
   el.dataset.control = 'guide';
   const toggle = document.createElement('button');
   toggle.type = 'button';
   toggle.className = 'hud-btn tray-item legend-toggle';
   toggle.setAttribute('aria-expanded', 'false');
+  const card = document.createElement('section');
+  card.className = 'legend-card';
+  card.hidden = true;
+  const head = document.createElement('div');
+  head.className = 'legend-head';
   const title = document.createElement('h2');
   title.className = 'legend-title';
+  const fold = document.createElement('button');
+  fold.type = 'button';
+  fold.className = 'hud-icon hud-icon--small legend-fold';
+  fold.innerHTML = ICONS.chevronUp;
   const list = document.createElement('ul');
   list.className = 'legend-list';
   list.id = 'legend-list';
-  toggle.setAttribute('aria-controls', list.id);
+  fold.setAttribute('aria-controls', list.id);
+  toggle.setAttribute('aria-controls', card.id || 'legend-card');
+  card.id = 'legend-card';
+  head.append(title, fold);
+  card.append(head, list);
   let pinned: Role | null = null;
   let hovered: Role | null = null;
   let open = false;
+  let expanded = true;
   let builtFor: string | null = null;
   const items = new Map<Role, HTMLElement>();
   const emit = (): void => deps.onHighlight(hovered ?? pinned);
@@ -63,7 +78,7 @@ export function createLegend(deps: LegendDeps): Legend {
       b.className = 'legend-item';
       b.dataset.role = r;
       b.style.setProperty('--role', ROLE_VAR[r]);
-      b.innerHTML = `<svg class="legend-shape" viewBox="0 0 24 20" width="24" height="20" aria-hidden="true">${SHAPE[r]}</svg><span class="legend-name"></span>`;
+      b.innerHTML = '<span class="legend-swatch" aria-hidden="true"></span><span class="legend-name"></span>';
       if (!simple) {
         (b as HTMLButtonElement).type = 'button';
         b.setAttribute('aria-pressed', String(pinned === r));
@@ -79,24 +94,20 @@ export function createLegend(deps: LegendDeps): Legend {
       li.append(b);
       list.append(li);
     }
-    const rail = document.createElement('li');
-    rail.className = 'legend-rail';
-    rail.innerHTML = '<span class="legend-rail-swatch" aria-hidden="true"></span><span class="legend-rail-text"></span>';
-    list.append(rail);
-    if (!simple) {
-      const hint = document.createElement('li');
-      hint.className = 'legend-hint';
-      list.append(hint);
-    }
   };
 
-  const setOpen = (o: boolean): void => {
-    open = o;
-    list.hidden = !open;
+  const sync = (): void => {
+    card.hidden = !open;
+    list.hidden = !expanded;
     toggle.setAttribute('aria-expanded', String(open));
+    fold.setAttribute('aria-expanded', String(expanded));
+    fold.classList.toggle('folded', !expanded);
     el.classList.toggle('open', open);
   };
+  const setOpen = (o: boolean): void => { open = o; sync(); };
+  const setExpanded = (x: boolean): void => { expanded = x; sync(); };
   toggle.addEventListener('click', () => setOpen(!open));
+  fold.addEventListener('click', () => setExpanded(!expanded));
 
   const paint = (): void => {
     const simple = getMode() === 'simple';
@@ -107,20 +118,21 @@ export function createLegend(deps: LegendDeps): Legend {
       build(simple);
       builtFor = getMode();
     }
-    title.hidden = true;
     title.textContent = t('legend.title');
+    card.setAttribute('aria-label', t('legend.title'));
     list.setAttribute('aria-label', t('legend.title'));
-    const railText = list.querySelector('.legend-rail-text');
-    if (railText) railText.textContent = t('rail.legend');
-    toggle.innerHTML = `${ICONS.legend}<span>${t('legend.title')}</span>`;
+    toggle.innerHTML = `${ICONS.info}<span>${t('legend.title')}</span>`;
     toggle.title = t('legend.tip');
-    const hint = list.querySelector('.legend-hint');
-    if (hint) hint.textContent = t('legend.hint');
+    fold.setAttribute('aria-label', t('legend.collapse'));
+    fold.title = t('legend.collapse');
     for (const [r, b] of items) (b.querySelector('.legend-name') as HTMLElement).textContent = t(`role.${r}` as StringKey);
-    setOpen(open);
+    sync();
   };
   paint();
   const off = onPrefsChange(paint);
-  el.append(title, toggle, list);
-  return { element: el, pinned: () => pinned, setOpen, dispose: () => { off(); el.remove(); } };
+  el.append(toggle, card);
+  return {
+    toggle, element: el, card, pinned: () => pinned, setOpen, isOpen: () => open, setExpanded,
+    dispose: () => { off(); el.remove(); },
+  };
 }

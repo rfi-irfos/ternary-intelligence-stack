@@ -40,6 +40,12 @@ export const ICONS = {
   watch: svg('<circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8.3 6.8v6.4l5-3.2z" fill="currentColor"/>'),
   soundOn: svg('<path d="M3 7.5h3l4-3.5v12l-4-3.5H3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M13 7.2a4 4 0 0 1 0 5.6M15.2 5a7 7 0 0 1 0 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'),
   soundOff: svg('<path d="M3 7.5h3l4-3.5v12l-4-3.5H3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M13 7.5l5 5M18 7.5l-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'),
+  chevronUp: svg('<path d="M5 12.5l5-5 5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'),
+  chevronDown: svg('<path d="M5 7.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'),
+  /** Side panel at the right edge (open/close button). */
+  sidebar: svg('<rect x="2.5" y="3.5" width="15" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12.5 3.5v13" stroke="currentColor" stroke-width="1.5"/>'),
+  /** Target: the Tour button of the mockup. */
+  target: svg('<circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="10" r="3.8" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="10" r="1" fill="currentColor"/>'),
   chevron: svg('<path d="M7 5l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'),
 } as const;
 

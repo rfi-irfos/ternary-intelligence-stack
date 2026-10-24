@@ -171,7 +171,7 @@ describe('palette in the scene', () => {
   });
 
   it('parts carry their role colour: experts green, routers violet, gate red, per-stream attention', () => {
-    expect(instanceHex('experts')).toBe(PALETTE.expert);
+    expect(instanceHex('experts')).toBe(PALETTE.expertIdle);
     expect(instanceHex('router')).toBe(PALETTE.router);
     expect(instanceHex('gates')).toBe(PALETTE.gate);
     const ids = mesh('attn').userData.ids as string[];

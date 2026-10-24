@@ -115,7 +115,7 @@ describe('lobby', () => {
     const { bar, settle } = app();
     await bar.ready;
     // An earlier choice of the visitor (another sentence) ...
-    bar.element.querySelector<HTMLButtonElement>('.sentence-chip')!.click();
+    bar.session.querySelector<HTMLButtonElement>('.sentence-chip')!.click();
     document.querySelector<HTMLElement>('.sentence-pop [data-prompt="de"]')!.click();
     expect(bar.selection()!.promptId).toBe('de');
     // ... then Watch it think, an explicit choice: the first sentence plays.
@@ -178,9 +178,12 @@ describe('lobby', () => {
     expect(closeAll).toHaveBeenCalledTimes(1);
     expect(bar.player()!.playing()).toBe(false);
     expect(bar.element.querySelector<HTMLButtonElement>('[data-action="play"]')!.getAttribute('aria-pressed')).toBe('false');
-    expect(top.home.getAttribute('aria-label')).toBe('Main menu');
+    // The home button shows its name as text (zur Lobby) and keeps the longer name as its tooltip.
+    expect(top.home.textContent).toBe('To lobby');
+    expect(top.home.title).toBe('Close everything and go back to the main menu (Esc closes one level)');
     setLang('de');
-    expect(top.home.getAttribute('aria-label')).toBe('Hauptmenü');
+    expect(top.home.textContent).toBe('Zur Lobby');
+    expect(top.home.title).toBe('Alles schließen und zurück zum Hauptmenü (Esc schließt eine Ebene)');
   });
 
   it('The toggles in the lobby and in the HUD share state', async () => {
@@ -189,7 +192,7 @@ describe('lobby', () => {
     const lobbyLang = (v: string) => lobby.element.querySelector<HTMLButtonElement>(`.lang-toggle button[data-value="${v}"]`)!;
     const hudLang = (v: string) => top.element.querySelector<HTMLButtonElement>(`.lang-toggle button[data-value="${v}"]`)!;
     const lobbyMode = (v: string) => lobby.element.querySelector<HTMLButtonElement>(`.mode-toggle button[data-value="${v}"]`)!;
-    const hudMode = (v: string) => bar.element.querySelector<HTMLButtonElement>(`.mode-toggle button[data-value="${v}"]`)!;
+    const hudMode = (v: string) => bar.display.querySelector<HTMLButtonElement>(`.mode-toggle button[data-value="${v}"]`)!;
     lobbyLang('de').click();
     expect(getLang()).toBe('de');
     expect(hudLang('de').getAttribute('aria-checked')).toBe('true');

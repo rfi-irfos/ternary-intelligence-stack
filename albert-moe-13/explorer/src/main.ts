@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import './style/tokens.css';
 import './style/ui.css';
 import { createControls } from './camera/controls';
-import { createSlabRail } from './ui/slabRail';
 import { loadArchitecture } from './data/architecture';
 import { buildTower } from './scene/tower';
 import { loadModules } from './scene/modules';
@@ -24,6 +23,8 @@ import { LAYER_CSS, createLayerMode, layerOfId } from './layer/views';
 import { createPlayerBar } from './ui/player';
 import { attachPicking, createHover, createPickGuard, createRaycastPicker } from './ui/picking';
 import { createTopBar } from './ui/topbar';
+import { createSidebar } from './ui/sidebar';
+import { createRunTimeline } from './ui/runTimeline';
 import { createLegend } from './ui/legend';
 import { createHighlighter } from './ui/highlight';
 import { matchesRole, sceneName } from './ui/roles';
@@ -35,7 +36,7 @@ import { coachSeen, createCoachMarks } from './ui/coach';
 import { sound, unlockOnGesture } from './audio/sound';
 import { playIntro, shouldPlayIntro, skipIntro } from './intro/cinematic';
 import { type DriftState, createLobby, createLobbyFlow, driftTick, soundToggle } from './ui/lobby';
-import { closeTourMenu, openTourMenu } from './ui/tourMenu';
+import { closeTourMenu, isTourMenuOpen, openTourMenu } from './ui/tourMenu';
 
 /** Waits (at most `ms`) for the display face, so the canvas labels of the scene draw in it; runs beside the data loads. */
 async function fontsReady(ms = 1500): Promise<void> {
@@ -51,8 +52,15 @@ async function main(): Promise<void> {
   document.title = APP_NAME;
   const heading = document.getElementById('app-name');
   if (heading) heading.textContent = APP_NAME;
-  const top = createTopBar(heading);
-  document.body.appendChild(top.element);
+  // The side panel is created before the camera rig: its Esc listener then runs first and a press that
+  // closes the panel never also flies the camera. It gives way while a level, a tour menu or a dialog owns Esc.
+  let escBusy = (): boolean => false;
+  const sidebar = createSidebar({ yieldEsc: () => escBusy() || isTourMenuOpen() });
+  const top = createTopBar(heading, { onGear: () => sidebar.open(['display']) });
+  document.body.append(top.element, sidebar.element, sidebar.edgeTab);
+  top.sidebarButton.addEventListener('click', () => sidebar.toggle());
+  const syncSidebarButton = (): void => top.setSidebarOpen(sidebar.isOpen());
+  sidebar.onChange(syncSidebarButton);
   // Fonts, architecture and modules load in parallel; the font wait only caps itself, it never delays the data.
   const [arch, modules] = await Promise.all([loadArchitecture(), loadModules(), fontsReady()]);
   const tower = buildTower(arch, modules);
@@ -83,7 +91,7 @@ async function main(): Promise<void> {
   document.head.appendChild(style);
   const selection = createSelection();
   const loadWeights = createWeightsLoader();
-  // The component the user last selected (rail, scene click or panel): the rail follows it and
+  // The component the user last selected (stepper, scene click or panel): the stepper follows it and
   // Enter layer starts at its layer.
   const note = (id: string | null): void => {
     if (id) selection.set(id);
@@ -101,36 +109,63 @@ async function main(): Promise<void> {
       void layerMode.enter(layerOfId(id) ?? undefined, stream);
     },
   });
-  document.body.appendChild(panel.element);
+  // The panel's three parts live in the side panel: Modell, Inspektion and Analyse.
+  panel.mount({ model: sidebar.body('model'), inspect: sidebar.body('inspect'), analysis: sidebar.body('analysis') });
+  // Selecting something opens the side panel at Modell / Inspektion; a panel it opened itself closes again
+  // when the selection folds back (one that the visitor opened stays).
+  let autoOpened = false;
+  sidebar.onChange(() => { if (!sidebar.isOpen()) autoOpened = false; });
+  const showPanel = (id: string): Promise<void> => {
+    if (!sidebar.isOpen()) autoOpened = true;
+    if (!layerMode.element.hidden) return Promise.resolve();
+    sidebar.open(['model', 'inspect']);
+    return panel.openPanel(id);
+  };
+  const closePanel = (): void => {
+    panel.close();
+    if (autoOpened) sidebar.close();
+    autoOpened = false;
+  };
   view = createExplode({
     tower, arch, rig, loadWeights, name: sceneName, watch: onPrefsChange,
     onChange: (id) => {
       note(id);
       reapplyPin();
-      if (id) void panel.openPanel(id);
-      else panel.close();
+      if (id) void showPanel(id);
+      else closePanel();
       bar.setHint(view.depth() > 0 ? 'hint.levelOpen' : null);
     },
   });
   scene.add(view.root);
   attachDepthKeys();
-  const rail = createSlabRail(tower, rig, (l) => {
-    selection.set(slabId(l));
-    void panel.openPanel(slabId(l));
-  }, selection);
   const animator = createAnimator(tower);
   scene.add(animator.root);
-  const bar = createPlayerBar({ arch, tower, rig, animator });
+  // The layer stepper of the dock looks at that layer, like a click on it: it selects it, flies there and
+  // opens the side panel at Modell.
+  const bar = createPlayerBar({
+    arch, tower, rig, animator,
+    onLayerStep: (l) => {
+      selection.set(slabId(l));
+      void rig.flyTo(tower.anchor(slabId(l)), 14);
+      void showPanel(slabId(l));
+    },
+  });
   const dock = document.createElement('div');
   dock.className = 'dock';
   dock.append(bar.element);
-  // The rail is the run's timeline along the bottom edge: a marker on the layer the word is in, a fill.
-  bar.onOp((op, i, n) => rail.flow(op.layer ?? null, n > 1 ? i / (n - 1) : 0));
-  document.body.append(dock, rail.element);
+  // The mini dock is permanent; the run timeline sits at the very bottom, below it.
+  const timeline = createRunTimeline(() => bar.timing());
+  document.body.append(dock, timeline.element);
+  // The stepper follows the layer the word is in and any selection made elsewhere.
+  bar.onOp((op) => { if (op.layer !== undefined) bar.setLayer(op.layer); });
+  selection.onChange((l) => { if (l !== null) bar.setLayer(l); });
+  // The tool: Sitzung (sentence and words), Darstellung (view mode, quality, sound) hold the bar's controls.
+  sidebar.body('session').append(bar.session);
+  sidebar.body('display').append(bar.display);
   const layerMode = createLayerMode({
     arch, view, rig, loadWeights,
     slabCenter: (l) => new THREE.Vector3(tower.slabX(l), 0, 0),
-    selectedLayer: () => selection.layer() ?? rail.selected() ?? layerOfId(panel.current()),
+    selectedLayer: () => selection.layer() ?? layerOfId(panel.current()),
     defaults: () => bar.selection(),
   });
   document.body.appendChild(layerMode.element);
@@ -190,6 +225,7 @@ async function main(): Promise<void> {
       await layerMode.exit();
       await view.reassembleAll({ restoreCamera: false });
       panel.close();
+      sidebar.close();
     },
     onEnter: () => {
       sound.roomTone(true);
@@ -208,8 +244,10 @@ async function main(): Promise<void> {
   const legend = createLegend({
     onHighlight: (role) => highlighter.show(role ? (id) => matchesRole(id, role) : null),
   });
-  // The legend chip is a tray item of the system bar (left, after home); its key drops down below.
+  // The legend chip is a tray item of the system bar (left, after home); its card floats under the bar.
   (top.element.querySelector('.top-left') ?? document.body).appendChild(legend.element);
+  // The card leaves the bar's box (its blur would make it the card's positioning parent) and floats on the page.
+  document.body.appendChild(legend.card);
   // Open on the first visit only (beside the coach marks); afterwards a collapsed chip.
   legend.setOpen(!coachSeen());
   /** The pinned legend role again, after an explode level or a quality switch rebuilt colours. */
@@ -218,54 +256,47 @@ async function main(): Promise<void> {
     if (role) highlighter.show((id) => matchesRole(id, role));
   };
 
-  // The HUD insets the camera frames around (top bar, dock, side column, legend). The rig reads them at
-  // fly time from this provider, so a panel that opened in the same click already counts; a new measure
-  // never moves the camera. Inset changes (and camera rests) only refade the labels under the HUD.
+  // The HUD insets the camera frames around (top bar, dock and timeline, side panel, legend card). The rig
+  // reads them at fly time from this provider, so a panel that opened in the same click already counts; a
+  // new measure never moves the camera. Inset changes (and camera rests) only refade the labels under the HUD.
   const GAP = 8;
   const hudNow = () => measureHud({
-    top: top.element, dock, gap: GAP, win: window,
-    // A collapsed panel is a small tray tab in the bar: it takes no column from the scene.
-    side: () => (!layerMode.element.hidden ? layerMode.element : !panel.element.hidden && !panel.collapsed() ? panel.element : null),
-    legendList: () => (legend.element.classList.contains('open') ? legend.element.querySelector<HTMLElement>('.legend-list') : null),
+    top: top.element, dock, timeline: timeline.element, gap: GAP, win: window,
+    // The open side panel floats over the scene on the right; the layer steps use the same column.
+    side: () => (!layerMode.element.hidden ? layerMode.element : sidebar.isOpen() ? sidebar.element : null),
+    legendCard: () => (legend.isOpen() ? legend.card : null),
   });
   rig.setInsetsProvider(hudNow);
   const refadeLabels = (): void => view.fadeLabels(camera, window.innerWidth, window.innerHeight, rig.insets());
   rig.onSettle(refadeLabels);
-  // The side column (inspection panel or layer steps) and the dock never overlap: the dock moves left.
+  escBusy = () => view.depth() > 0 || layerBusy();
+  // The side panel (or the layer steps) and the dock never overlap: the dock re-centres in the free width.
+  function layerBusy(): boolean { return !layerMode.element.hidden; }
   const syncSide = (): void => {
-    document.body.classList.toggle('side-open', (!panel.element.hidden && !panel.collapsed()) || !layerMode.element.hidden);
+    document.body.classList.toggle('layer-open', !layerMode.element.hidden);
     refadeLabels();
   };
   const sideObserver = new MutationObserver(syncSide);
-  sideObserver.observe(panel.element, { attributes: true, attributeFilter: ['hidden', 'class'] });
   sideObserver.observe(layerMode.element, { attributes: true, attributeFilter: ['hidden'] });
   sideObserver.observe(legend.element, { attributes: true, attributeFilter: ['class'] });
-  // The collapsed panel docks into the system bar left of its right cluster (Tour, DE | EN, gear).
-  const trayRight = (): void => {
-    const cluster = top.element.querySelector<HTMLElement>('.top-right');
-    if (cluster) document.documentElement.style.setProperty('--tray-right', `${window.innerWidth - cluster.getBoundingClientRect().left + GAP}px`);
-  };
-  trayRight();
+  sidebar.onChange(syncSide);
   if (typeof ResizeObserver === 'function') {
-    const cluster = top.element.querySelector<HTMLElement>('.top-right');
-    if (cluster) new ResizeObserver(trayRight).observe(cluster);
     const sizes = new ResizeObserver(refadeLabels);
-    const key = legend.element.querySelector<HTMLElement>('.legend-list');
-    for (const x of [top.element, dock, key ?? legend.element, panel.element, layerMode.element]) sizes.observe(x);
+    for (const x of [top.element, dock, timeline.element, legend.card, sidebar.element, layerMode.element]) sizes.observe(x);
   }
   syncSide();
   // First frame of the session: the overview already fits between the HUD (startup, not an inset change).
   void rig.overview(0);
   lobby.show();
   startDrift();
-  panel.element.addEventListener('pointerover', (e) => {
+  sidebar.element.addEventListener('pointerover', (e) => {
     const link = (e.target as HTMLElement).closest<HTMLElement>('[data-link]');
     if (link?.dataset.link) {
       const want = link.dataset.link;
       highlighter.show((id) => id === want || id.startsWith(`${want}.`));
     }
   });
-  panel.element.addEventListener('pointerout', (e) => {
+  sidebar.element.addEventListener('pointerout', (e) => {
     const from = (e.target as HTMLElement).closest('[data-link]');
     const to = (e.relatedTarget as HTMLElement | null)?.closest?.('[data-link]');
     if (from && from !== to) {
@@ -299,13 +330,13 @@ async function main(): Promise<void> {
       pickAction(id, {
         explodable: (x) => isExplodable(x, arch),
         explode: (x) => view.explode(x),
-        openPanel: (x) => panel.openPanel(x),
+        openPanel: (x) => showPanel(x),
       });
     },
     onEmpty: () => {
       void emptyClick({
         layerActive: () => !layerMode.element.hidden,
-        depth: view.depth, reassembleAll: () => view.reassembleAll(), closePanel: () => panel.close(),
+        depth: view.depth, reassembleAll: () => view.reassembleAll(), closePanel,
       });
     },
     onHover: (id) => {
@@ -356,7 +387,9 @@ async function main(): Promise<void> {
       startProbe();
     }
   });
-  top.settings.append(menu.element, soundToggle(sound).element);
+  // Quality and sound sit in the side panel's Darstellung section (the gear opens it); the bar's own settings
+  // popover keeps the same content for a bar built without the side panel.
+  sidebar.body('display').append(menu.element, soundToggle(sound).element);
 
   // First visit only, once the visitor left the lobby: three short hints (Play, the tours, click
   // anything), then never again.
@@ -378,7 +411,6 @@ async function main(): Promise<void> {
     camera.updateProjectionMatrix();
     look.setSize(window.innerWidth, window.innerHeight);
     refadeLabels();
-    trayRight();
     // The lobby covers the view: re-base the drift on the overview of the new window size.
     if (lobby.visible()) startDrift();
   });
@@ -398,6 +430,7 @@ async function main(): Promise<void> {
     rig.update(dt);
     view.update(dt);
     bar.tick(dt);
+    timeline.update();
     animator.update(dt);
     const ms = look.render(dt, probe !== null);
     const picked = probe?.add(ms) ?? null;

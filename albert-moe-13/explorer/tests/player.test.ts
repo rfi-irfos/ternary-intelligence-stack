@@ -7,7 +7,7 @@ import { attachDepthKeys, getDepth, setDepth } from '../src/ui/depth';
 import { buildTimeline } from '../src/flow/timeline';
 import { buildTower } from '../src/scene/tower';
 import {
-  NO_TRACE_TEXT, OP_SECONDS, QUICK_PASS_SECONDS, createPlayer, createPlayerBar, quickGroups, quickSeconds,
+  NO_TRACE_TEXT, OP_SECONDS, QUICK_PASS_SECONDS, createPlayer, createPlayerBar, formatClock, opRole, quickGroups, quickSeconds, stepLayer,
 } from '../src/ui/player';
 import { timelineLength } from '../src/flow/timeline';
 import { setLang, setMode } from '../src/ui/prefs';
@@ -121,12 +121,12 @@ describe('player bar', () => {
     });
     document.body.appendChild(bar.element);
     await bar.ready;
-    const [prompt, token] = bar.element.querySelectorAll('select');
+    const [prompt, token] = bar.session.querySelectorAll('select');
     expect([...(prompt?.options ?? [])].map((o) => o.value)).toEqual(['kjv', 'de', 'ternary']);
     expect(token?.options[1]?.textContent).toContain('" the"');
     expect(bar.player()?.ops).toHaveLength(655);
     bar.player()?.jumpToNext('router');
-    const lv = bar.element.querySelector('.player-details .lv');
+    const lv = bar.session.querySelector('.player-details .lv');
     expect(lv?.getAttribute('data-kind')).toBe('measured');
     expect(show).toHaveBeenCalled();
     expect(flyTo).not.toHaveBeenCalled(); // free camera by default
@@ -153,17 +153,17 @@ describe('player bar', () => {
     await bar.ready;
     const p = bar.player();
     p?.scrub(0);
-    const embed = bar.element.querySelector('.player-row')?.textContent ?? '';
+    const embed = bar.session.querySelector('.player-row')?.textContent ?? '';
     expect(embed).toMatch(/^token "[^"]*" id \d+$/);
     p?.jumpToNext('experts');
-    const experts = bar.element.querySelector('.player-row')?.textContent ?? '';
+    const experts = bar.session.querySelector('.player-row')?.textContent ?? '';
     expect(experts).toMatch(/^lit 3 of 12 experts: E\d+, E\d+, E\d+$/);
   });
 
   it('does not move the camera on load or on prompt/token change; free is the default', async () => {
     const { bar, flyTo, overview } = make();
     await bar.ready;
-    const [prompt, token] = bar.element.querySelectorAll('select');
+    const [prompt, token] = bar.session.querySelectorAll('select');
     expect(bar.player()?.cameraMode()).toBe('free');
     if (prompt) { prompt.value = 'de'; prompt.dispatchEvent(new Event('change')); }
     if (token) { token.value = '1'; token.dispatchEvent(new Event('change')); }
@@ -177,14 +177,14 @@ describe('player bar', () => {
   it('flies on Play, Step and scrub only in follow mode', async () => {
     const { bar, flyTo } = make();
     await bar.ready;
-    const cam = bar.element.querySelector('select.player-camera') as HTMLSelectElement;
+    const cam = bar.session.querySelector('select.player-camera') as HTMLSelectElement;
     cam.value = 'follow';
     cam.dispatchEvent(new Event('change'));
     flyTo.mockClear();
     bar.player()?.scrub(0); // programmatic, not a user action
     expect(flyTo).not.toHaveBeenCalled();
     click(bar, 'next');
-    const range = bar.element.querySelector('input[type=range]') as HTMLInputElement;
+    const range = bar.session.querySelector('input[type=range]') as HTMLInputElement;
     range.value = '40';
     range.dispatchEvent(new Event('input'));
     expect(flyTo).toHaveBeenCalled();
@@ -415,3 +415,176 @@ describe('quick pass caption and screen-reader behaviour', () => {
   });
 });
 
+
+describe('run timing (the timeline reads it; nothing is typed in)', () => {
+  it('the quick pass is 75 s, the full pace is every op at OP_SECONDS; both start at 0 and end at the duration', () => {
+    const p = createPlayer(ops, () => undefined);
+    p.setPace('quick');
+    expect(p.duration()).toBeCloseTo(QUICK_PASS_SECONDS, 6);
+    expect(formatClock(p.duration())).toBe('1:15');
+    expect(p.timeOf(0)).toBe(0);
+    expect(p.timeOf(ops.length)).toBeCloseTo(p.duration(), 9);
+    p.setPace('full');
+    expect(p.duration()).toBeCloseTo(ops.length * OP_SECONDS, 6);
+    expect(formatClock(p.duration())).toBe(`${Math.floor((ops.length * OP_SECONDS) / 60)}:${String(Math.round((ops.length * OP_SECONDS) % 60)).padStart(2, '0')}`);
+  });
+
+  it('elapsed follows the run; indexAtTime inverts timeOf and clamps', () => {
+    const p = createPlayer(ops, () => undefined);
+    p.setPace('quick');
+    p.scrub(0);
+    expect(p.elapsed()).toBe(0);
+    p.play();
+    run(p, 3);
+    expect(p.elapsed()).toBeGreaterThan(2.5);
+    expect(p.elapsed()).toBeLessThan(3.5);
+    expect(p.elapsed()).toBeGreaterThanOrEqual(p.timeOf(p.index()));
+    for (const k of [0, 1, 7, 100, 333, ops.length - 1]) expect(p.indexAtTime(p.timeOf(k) + 1e-6)).toBe(k);
+    expect(p.indexAtTime(-5)).toBe(0);
+    expect(p.indexAtTime(1e9)).toBe(ops.length - 1);
+    // every time maps to the op on screen: that op starts at or before it and the next starts after it
+    for (const sec of [0.4, 12.3, 40, 74.9]) {
+      const k = p.indexAtTime(sec);
+      expect(p.timeOf(k)).toBeLessThanOrEqual(sec + 1e-9);
+      expect(p.timeOf(k + 1)).toBeGreaterThan(sec - 1e-9);
+    }
+  });
+
+  it('formatClock is m:ss rounded to the second', () => {
+    expect(formatClock(0)).toBe('0:00');
+    expect(formatClock(59.4)).toBe('0:59');
+    expect(formatClock(59.6)).toBe('1:00');
+    expect(formatClock(75)).toBe('1:15');
+    expect(formatClock(3600)).toBe('60:00');
+    expect(formatClock(-3)).toBe('0:00');
+  });
+
+  it('the bar exposes the timing: gate marks at the real gates, layer marks, seeking is the visitor\'s own navigation', async () => {
+    const bar = createPlayerBar({
+      arch: a, tower, rig: { flyTo: vi.fn(() => Promise.resolve()), overview: vi.fn(() => Promise.resolve()) },
+      animator: { show: vi.fn() }, load: (id) => Promise.resolve(trace(id)),
+    });
+    expect(bar.timing()).toBeNull();
+    await bar.ready;
+    const tm = bar.timing()!;
+    // Simple: the quick pass, 75 s
+    expect(tm.duration()).toBeCloseTo(75, 6);
+    // One gate op per fusion layer; each mark sits at the start of that op, in order
+    const gateOps = bar.player()!.ops.flatMap((o, k) => (o.kind === 'gate' ? [{ o, k }] : []));
+    expect(gateOps.map((g) => g.o.layer)).toEqual(a.model.fusion_layers);
+    expect(tm.gates()).toHaveLength(a.model.fusion_layers.length);
+    expect(tm.gates()).toEqual(gateOps.map((g) => bar.player()!.timeOf(g.k)));
+    expect([...tm.gates()].sort((x, y) => x - y)).toEqual(tm.gates());
+    expect(tm.layers()).toHaveLength(a.model.num_layers);
+    tm.seek(30);
+    expect(bar.player()!.index()).toBe(bar.player()!.indexAtTime(30));
+    expect(Math.abs(tm.elapsed() - 30)).toBeLessThan(2);
+    // Advanced is the full pace: a longer axis
+    setMode('advanced');
+    expect(bar.timing()!.duration()).toBeCloseTo(ops.length * OP_SECONDS, 6);
+    bar.dispose();
+  });
+});
+
+describe('opRole: colours of the run line follow the legend', () => {
+  it('the ends are input / merge / output; the layer ops keep their roles', () => {
+    expect(opRole({ kind: 'embed' })).toBe('input');
+    expect(opRole({ kind: 'merge' })).toBe('merge');
+    expect(opRole({ kind: 'ln_f' })).toBe('merge');
+    expect(opRole({ kind: 'lm_head' })).toBe('output');
+    expect(opRole({ kind: 'router' })).toBe('router');
+    expect(opRole({ kind: 'experts' })).toBe('expert');
+    expect(opRole({ kind: 'gate' })).toBe('gate');
+  });
+});
+
+describe('mini dock', () => {
+  const makeDock = async (extra: Partial<Parameters<typeof createPlayerBar>[0]> = {}) => {
+    const bar = createPlayerBar({
+      arch: a, tower, rig: { flyTo: vi.fn(() => Promise.resolve()), overview: vi.fn(() => Promise.resolve()) },
+      animator: { show: vi.fn() }, load: (id) => Promise.resolve(trace(id)), ...extra,
+    });
+    document.body.append(bar.element);
+    await bar.ready;
+    return bar;
+  };
+
+  it('holds back, a round play button, next, ONE speed button and the layer stepper; the rest lives in the side panel', async () => {
+    const bar = await makeDock();
+    const controls = [...bar.element.querySelectorAll<HTMLElement>('[data-control]')].map((x) => x.dataset.control);
+    expect(controls).toEqual(['prev', 'play', 'next', 'speed', 'layer']);
+    expect(bar.element.querySelectorAll('button[data-action="speed"]')).toHaveLength(1);
+    expect(bar.element.querySelector('select')).toBeNull();
+    expect(bar.element.querySelector('.word-strip')).toBeNull();
+    expect(bar.element.querySelector('.sentence-chip')).toBeNull();
+    expect(bar.session.querySelector('.word-strip')).not.toBeNull();
+    expect(bar.session.querySelector('.sentence-chip')).not.toBeNull();
+    expect(bar.display.querySelector('.mode-toggle')).not.toBeNull();
+    // Back and Next are always there now (the dock is permanent)
+    expect(bar.element.querySelector<HTMLElement>('[data-action="prev"]')!.hidden).toBe(false);
+  });
+
+  it('the speed button cycles 0.5 -> 1 -> 2 -> 4 in that order and wraps; its label shows the speed', async () => {
+    const bar = await makeDock();
+    const speed = bar.element.querySelector<HTMLButtonElement>('[data-action="speed"]')!;
+    expect(speed.textContent).toBe('1×');
+    const seen: string[] = [];
+    const rates: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      speed.click();
+      seen.push(speed.textContent ?? '');
+      rates.push(bar.player()!.speed());
+    }
+    expect(seen).toEqual(['2×', '4×', '0.5×', '1×', '2×']);
+    expect(rates).toEqual([2, 4, 0.5, 1, 2]);
+    expect(speed.getAttribute('aria-label')).toContain('2');
+    setLang('de');
+    speed.click();
+    expect(speed.textContent).toBe('4×');
+  });
+
+  it('the layer stepper shows "‹ 22 / 46 ›", clamps at both ends and reports each real step', async () => {
+    const onLayerStep = vi.fn();
+    const bar = await makeDock({ onLayerStep });
+    const count = bar.element.querySelector<HTMLElement>('.layer-count')!;
+    const prev = bar.element.querySelector<HTMLButtonElement>('[data-action="layer-prev"]')!;
+    const next = bar.element.querySelector<HTMLButtonElement>('[data-action="layer-next"]')!;
+    bar.setLayer(21);
+    expect(count.textContent).toBe('22 / 46'); // Simple counts from 1
+    next.click();
+    expect(count.textContent).toBe('23 / 46');
+    expect(onLayerStep).toHaveBeenLastCalledWith(22);
+    prev.click();
+    prev.click();
+    expect(onLayerStep).toHaveBeenLastCalledWith(20);
+    bar.setLayer(0);
+    expect(prev.disabled).toBe(true);
+    onLayerStep.mockClear();
+    prev.click();
+    expect(onLayerStep).not.toHaveBeenCalled();
+    expect(count.textContent).toBe('1 / 46');
+    bar.setLayer(999);
+    expect(count.textContent).toBe('46 / 46');
+    expect(next.disabled).toBe(true);
+    next.click();
+    expect(onLayerStep).not.toHaveBeenCalled();
+    bar.setLayer(-4);
+    expect(count.textContent).toBe('1 / 46');
+    // Advanced counts from 0, as the rest of the HUD does
+    setMode('advanced');
+    bar.setLayer(21);
+    expect(count.textContent).toBe('21 / 45');
+    setLang('de');
+    expect(bar.element.querySelector('[data-control="layer"]')!.getAttribute('aria-label')).toBe('Ebene');
+    expect(prev.getAttribute('aria-label')).toBe('Vorherige Ebene');
+  });
+
+  it('stepLayer clamps to 0..count-1', () => {
+    expect(stepLayer(5, 1, 46)).toBe(6);
+    expect(stepLayer(0, -1, 46)).toBe(0);
+    expect(stepLayer(45, 1, 46)).toBe(45);
+    expect(stepLayer(10, 100, 46)).toBe(45);
+    expect(stepLayer(10, -100, 46)).toBe(0);
+    expect(stepLayer(3, 1, 0)).toBe(0);
+  });
+});

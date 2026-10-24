@@ -36,9 +36,8 @@ export interface Panel {
   readonly element: HTMLElement;
   openPanel(id: ComponentId): Promise<void>;
   close(): void;
-  /** Collapse to a slim edge tab (icon + name) or expand again. The camera never moves. */
-  setCollapsed(on: boolean): void;
-  collapsed(): boolean;
+  /** Moves the three parts (Modell, Inspektion, Analyse) into the side panel's section bodies. */
+  mount(slots: { model: HTMLElement; inspect: HTMLElement; analysis: HTMLElement }): void;
   current(): ComponentId | null;
   dispose(): void;
 }
@@ -256,11 +255,10 @@ export function cell(x: string): string {
 export function createPanel(deps: PanelDeps): Panel {
   const { arch, tower, rig, loadWeights } = deps;
   const el = document.createElement('aside');
-  el.className = 'inspect-panel';
+  el.className = 'inspect-panel panel-host';
   el.hidden = true;
   let currentId: ComponentId | null = null;
   let token = 0;
-  let isCollapsed = false;
 
   const flyTarget = (id: ComponentId): ComponentId => {
     let cand = id;
@@ -285,23 +283,6 @@ export function createPanel(deps: PanelDeps): Panel {
   const tile = (label: StringKey, value: HTMLElement, sub = ''): string =>
     `<div class="stat-tile"><span class="stat-label">${esc(t(label))}</span><span class="stat-value">${value.outerHTML}` +
     `${sub ? `<span class="stat-sub">${sub}</span>` : ''}</span></div>`;
-
-  function tiles(p: ParsedId, rows: TensorRow[]): string {
-    const out: string[] = [];
-    if ('layer' in p) out.push(tile('tile.layer', fmt(structure(layerLabel(p.layer))), richHtml(t('tile.of', { n: arch.model.num_layers }))));
-    if (rows.length > 0) {
-      // Per-expert rows ({e} still in the name) exist once per expert.
-      const total = rows.reduce((sum, r) => sum + r.params * (r.name.includes('{e}') ? arch.model.num_experts : 1), 0);
-      out.push(tile('tile.params', fmt(structure(total))));
-      out.push(rows.length === 1 ? tile('tile.shape', fmt(structure(rows[0]!.shape))) : tile('tile.tensors', fmt(structure(rows.length))));
-      const tern = rows.some((r) => r.ternary);
-      const f32 = rows.some((r) => !r.ternary);
-      out.push(tile('tile.weights', fmt(structure(t(tern && f32 ? 'tile.mixed' : tern ? 'tile.ternary' : 'tile.f32')))));
-    } else {
-      out.push(tile('tile.weights', fmt(structure(t('tile.none')))));
-    }
-    return `<div class="stat-tiles">${out.slice(0, 4).join('')}</div>`;
-  }
 
   /** Short tensor name for the table (the full path is the tooltip and a truncated sub-line). */
 
@@ -333,23 +314,68 @@ export function createPanel(deps: PanelDeps): Panel {
     return `<table class="tensor-table">${head}<tbody>${single.map((r) => row(r, false)).join('')}${group}</tbody></table>`;
   }
 
-  // Advanced shows one tab at a time; the choice is kept while the visitor moves between components.
-  type Tab = 'overview' | 'compute' | 'tensors' | 'notes';
-  const TABS: Tab[] = ['overview', 'compute', 'tensors', 'notes'];
-  const TAB_OF: Record<string, Tab> = {
-    what: 'overview', connections: 'overview', visual: 'overview', tour: 'overview',
-    compute: 'compute', tensors: 'tensors', caveats: 'notes', source: 'notes',
-  };
+  // Inspection tabs (Parameter | Tensoren | Gewichte); the choice is kept while the visitor moves between parts.
+  type Tab = 'params' | 'tensors' | 'weights';
+  const TABS: Tab[] = ['params', 'tensors', 'weights'];
   const SEC_ICON: Record<string, string> = {
-    what: ICONS.info, tensors: ICONS.grid, compute: ICONS.sigma, connections: ICONS.link,
+    what: ICONS.info, tensors: ICONS.grid, params: ICONS.grid, weights: ICONS.sigma, compute: ICONS.sigma, connections: ICONS.link,
     visual: ICONS.sketch, caveats: ICONS.warning, source: ICONS.doc, tour: ICONS.tour,
   };
-  /** Sections Simple keeps closed until the visitor opens them. */
-  const COLLAPSIBLE = new Set(['tensors', 'compute', 'visual', 'caveats', 'source']);
-  let tab: Tab = 'overview';
-  const opened = new Set<string>();
+  /** Analysis rows that fold; "Rechnung" starts open, the others closed until the visitor opens them. */
+  const COLLAPSIBLE = new Set(['compute', 'visual', 'caveats', 'source', 'tour']);
+  let tab: Tab = 'params';
+  const opened = new Set<string>(['compute']);
 
-  function html(id: ComponentId, type: ComponentType, p: ParsedId): string {
+  // The three parts of the card: Modell, Inspektion and Analyse. The app mounts them in the side panel's
+  // sections (mount); on their own they stay inside `el`.
+  const mkPart = (name: string): HTMLElement => {
+    const d = document.createElement('div');
+    d.className = `panel-part panel-part--${name}`;
+    d.dataset.part = name;
+    return d;
+  };
+  const modelPart = mkPart('model');
+  const inspectPart = mkPart('inspect');
+  const analysisPart = mkPart('analysis');
+  const parts = [modelPart, inspectPart, analysisPart];
+  el.append(...parts);
+
+  const kvRow = (label: StringKey, value: string): string =>
+    `<div class="kv-row"><span class="stat-label">${esc(t(label))}</span><span class="stat-value">${value}</span></div>`;
+
+  /** The info card of the Modell section: key / value rows, every number labelled and from the checkpoint data. */
+  function infoCard(p: ParsedId, type: ComponentType, rc: ResolvedContent, rows: TensorRow[]): string {
+    const out: string[] = [kvRow('info.type', richHtml(rc.title))];
+    if ('layer' in p) out.push(kvRow('info.layer', `${fmt(structure(layerLabel(p.layer))).outerHTML}<span class="stat-sub">${richHtml(t('tile.of', { n: arch.model.num_layers }))}</span>`));
+    if ('stream' in p && p.stream) out.push(kvRow('info.stream', esc(p.stream)));
+    if ('expert' in p && p.expert !== undefined) out.push(kvRow('info.expert', fmt(structure(p.expert)).outerHTML));
+    if (['slab', 'bank', 'router', 'expert', 'gate'].includes(type)) {
+      out.push(kvRow('info.experts', fmt(structure(arch.model.num_experts)).outerHTML));
+      if (type !== 'expert') out.push(kvRow('info.active', fmt(structure(arch.model.top_k)).outerHTML));
+    }
+    out.push(kvRow('info.hidden', fmt(structure(arch.model.hidden)).outerHTML));
+    if (rows.length > 0) {
+      const tern = rows.some((r) => r.ternary);
+      const f32 = rows.some((r) => !r.ternary);
+      out.push(kvRow('info.dtype', fmt(structure(t(tern && f32 ? 'tile.mixed' : tern ? 'tile.ternary' : 'tile.f32'))).outerHTML));
+    }
+    return `<div class="info-card">${out.join('')}</div>`;
+  }
+
+  /** Parameter tab: the counts, shapes and weight types of the real tensors. */
+  function paramTiles(p: ParsedId, rows: TensorRow[]): string {
+    const out: string[] = [];
+    if ('layer' in p) out.push(tile('tile.layer', fmt(structure(layerLabel(p.layer))), richHtml(t('tile.of', { n: arch.model.num_layers }))));
+    const total = rows.reduce((sum, r) => sum + r.params * (r.name.includes('{e}') ? arch.model.num_experts : 1), 0);
+    out.push(tile('tile.params', fmt(structure(total))));
+    out.push(rows.length === 1 ? tile('tile.shape', fmt(structure(rows[0]!.shape))) : tile('tile.tensors', fmt(structure(rows.length))));
+    const tern = rows.some((r) => r.ternary);
+    const f32 = rows.some((r) => !r.ternary);
+    out.push(tile('tile.weights', fmt(structure(t(tern && f32 ? 'tile.mixed' : tern ? 'tile.ternary' : 'tile.f32')))));
+    return `<div class="stat-tiles">${out.join('')}</div>`;
+  }
+
+  function parts3(id: ComponentId, type: ComponentType, p: ParsedId): { model: string; inspect: string; analysis: string } {
     const c = COMPONENTS[type];
     const rc = contentFor(type, arch, getLang());
     const simple = getMode() === 'simple';
@@ -359,13 +385,16 @@ export function createPanel(deps: PanelDeps): Panel {
     const cited = (s: string): string => richHtml(s, { note, plain: facts });
     const depth = getDepth();
     const rows = tensorRows(id, arch);
+    const hasWeights = weightKey(p) !== null && 'layer' in p;
     const tau = 'layer' in p ? arch.layers[p.layer]?.tau : undefined;
     const links = connectionsOf(id, arch);
     const role = roleOf(id);
     // Depth is part of the view mode: Simple reads at Intuition, so only Advanced offers the switch.
     const depthButtons = simple ? '' : `<div class="depth-switch hud-segment" role="group" aria-label="${esc(t('panel.depth'))}">${DEPTHS.map((d, i) =>
       `<button type="button" class="depth-btn${d === depth ? ' active' : ''}" aria-pressed="${d === depth}" data-depth="${d}" title="${esc(t(`depth.${d}` as StringKey))} (${i + 1})">${esc(t(`depth.${d}` as StringKey))}</button>`).join('')}</div>`;
-    const tabs = simple ? '' : `<div class="panel-tabs" role="tablist" aria-label="${esc(t('tabs.label'))}">${TABS.map((k) =>
+    const visibleTabs = TABS.filter((k) => (k === 'weights' ? hasWeights : rows.length > 0));
+    if (!visibleTabs.includes(tab)) tab = visibleTabs[0] ?? 'params';
+    const tabs = visibleTabs.length === 0 ? '' : `<div class="panel-tabs" role="tablist" aria-label="${esc(t('inspect.label'))}">${visibleTabs.map((k) =>
       `<button type="button" role="tab" class="panel-tab${k === tab ? ' active' : ''}" aria-selected="${k === tab}" data-tab="${k}">${esc(t(`tab.${k}` as StringKey))}</button>`).join('')}</div>`;
     const stepInside = deps.onStepInside && 'layer' in p
       ? `<button type="button" class="hud-btn step-inside" data-action="step-inside" title="${esc(t('nav.enterTip'))}">${ICONS.enter}<span>${esc(t('nav.enter'))}</span></button>` : '';
@@ -386,52 +415,55 @@ export function createPanel(deps: PanelDeps): Panel {
       }).join('')}</ul>`;
     const sources = c.source.map((s) =>
       `<li><a href="${esc(sourceUrl(s.file, s.lines))}" target="_blank" rel="noopener noreferrer">${ICONS.doc}<span>${richHtml(`${s.file}:${s.lines}`)}</span></a></li>`).join('');
-    const sec = (name: string, label: StringKey, body: string): string => {
-      const collapsible = simple && COLLAPSIBLE.has(name);
+    const sec = (name: string, label: StringKey, body: string, tabOf?: Tab): string => {
+      const collapsible = COLLAPSIBLE.has(name);
       const open = !collapsible || opened.has(name);
-      const shown = simple || TAB_OF[name] === tab;
+      const shown = tabOf === undefined || tabOf === tab;
       const head = `${SEC_ICON[name] ?? ''}<span class="sec-label">${esc(t(label))}</span>`;
-      return `<section data-section="${name}" data-tab="${TAB_OF[name]}" class="panel-sec${collapsible ? ' collapsible' : ''}"${shown ? '' : ' hidden'} data-open="${open}">` +
+      return `<section data-section="${name}"${tabOf ? ` data-tab="${tabOf}"` : ''} class="panel-sec${collapsible ? ' collapsible' : ''}"${shown ? '' : ' hidden'} data-open="${open}">` +
         (collapsible
           ? `<h3 class="sec-head"><button type="button" class="sec-toggle" aria-expanded="${open}" data-toggle="${name}">${head}${ICONS.chevron}</button></h3>`
           : `<h3 class="sec-head">${head}</h3>`) +
         `<div class="sec-body"${open ? '' : ' hidden'}>${body}</div></section>`;
     };
-    return `
+    const model = `
       <div class="panel-head" data-mode="${simple ? 'simple' : 'advanced'}">
         <header>
-          <span class="role-chip" data-role="${role ?? 'neutral'}" style="--role: ${role ? ROLE_VAR[role] : 'var(--c-neutral)'}">${typeIcon(type)}<span>${esc(role ? t(`role.${role}` as StringKey) : t('role.none'))}</span></span>
-          <h2 title="${esc(t(`sum.${type}` as StringKey))}">${richHtml(rc.title)}</h2>
-          <button type="button" class="panel-collapse hud-icon hud-icon--small" data-action="collapse" aria-label="${esc(t('panel.collapse'))}" title="${esc(t('panel.collapse'))}">${ICONS.chevron}</button>
-          <button type="button" class="panel-close hud-icon hud-icon--small" aria-label="${esc(t('panel.close'))}" title="${esc(t('panel.close'))}">${ICONS.close}</button>
+          <span class="head-icon" aria-hidden="true">${typeIcon(type)}</span>
+          <h2 title="${esc(t(`sum.${type}` as StringKey))}">${richHtml(componentName(id))}</h2>
+          <span class="role-chip" data-role="${role ?? 'neutral'}" style="--role: ${role ? ROLE_VAR[role] : 'var(--c-neutral)'}">${typeIcon(type)}<span>${richHtml(rc.title)}</span></span>
         </header>
         <p class="panel-summary">${esc(t(`sum.${type}` as StringKey))}</p>
-        ${tiles(p, rows)}
-        ${stepInside}
-        ${depthButtons}
-        ${tabs}
       </div>
+      ${infoCard(p, type, rc, rows)}
+      ${stepInside}
+      ${depthButtons}
       <div class="panel-body" data-mode="${simple ? 'simple' : 'advanced'}">
       ${sec('what', 'sec.what', `<p>${richHtml(rc.text[depth])}</p>
         <p class="where">${richHtml(location(p, arch))}${tau !== undefined ? ` · τ ${fmt(structure(tau)).outerHTML}` : ''}</p>`)}
-      ${sec('tensors', 'sec.tensors', `${tensorTable(rows)}<div class="weights"></div>`)}
-      ${sec('compute', 'sec.compute', `<p class="io"><b>${esc(t('panel.in'))}</b> ${richHtml(rc.inputs)}</p><p class="formula">${richHtml(rc.formula)}</p><p class="io"><b>${esc(t('panel.out'))}</b> ${richHtml(rc.outputs)}</p>`)}
       ${sec('connections', 'sec.connections', links.length === 0 ? `<p>${esc(t('panel.none'))}</p>` :
         `<ul class="panel-links">${links.map((l) => {
           const r = roleOf(l.id);
           return `<li><a href="#" class="link-chip" data-link="${esc(l.id)}" style="--role: ${r ? ROLE_VAR[r] : 'var(--c-neutral)'}">${typeIcon(componentTypeOf(l.id) ?? '')}<span>${richHtml(componentName(l.id))}</span></a></li>`;
         }).join('')}</ul>`)}
+      </div>`;
+    const inspect = visibleTabs.length === 0 ? '' : `${tabs}
+      ${visibleTabs.includes('params') ? sec('params', 'tile.params', paramTiles(p, rows), 'params') : ''}
+      ${visibleTabs.includes('tensors') ? sec('tensors', 'sec.tensors', tensorTable(rows), 'tensors') : ''}
+      ${visibleTabs.includes('weights') ? sec('weights', 'tile.weights', '<div class="weights"></div>', 'weights') : ''}`;
+    const analysis = `
+      ${sec('compute', 'sec.compute', `<p class="io"><b>${esc(t('panel.in'))}</b> ${richHtml(rc.inputs)}</p><p class="formula">${richHtml(rc.formula)}</p><p class="io"><b>${esc(t('panel.out'))}</b> ${richHtml(rc.outputs)}</p>`)}
       ${sec('visual', 'sec.visual', `${labelBlock('illustrative', visual(type, arch, id, rc)).outerHTML}${type === 'router' ? routerCaption() : ''}`)}
       ${sec('caveats', 'sec.caveats', caveats)}
       ${sec('source', 'sec.source', `<ul class="source-list">${sources}</ul>`)}
       ${sec('tour', 'sec.tour', c.tour
-        ? `<a href="#" class="tour-link" data-tour="${c.tour}">${ICONS.tour}<span>${esc(t('panel.tourStart'))}</span></a>` : `<p>${esc(t('panel.noTour'))}</p>`)}
-      </div>`;
+        ? `<a href="#" class="tour-link" data-tour="${c.tour}">${ICONS.tour}<span>${esc(t('panel.tourStart'))}</span></a>` : `<p>${esc(t('panel.noTour'))}</p>`)}`;
+    return { model, inspect, analysis };
   }
 
   async function fillWeights(id: ComponentId, p: ParsedId, mine: number): Promise<void> {
     const key = weightKey(p);
-    const box = el.querySelector<HTMLElement>('.weights');
+    const box = inspectPart.querySelector<HTMLElement>('.weights');
     if (!key || !box || !('layer' in p)) return;
     box.textContent = t('panel.loadingWeights');
     try {
@@ -459,6 +491,16 @@ export function createPanel(deps: PanelDeps): Panel {
     void id;
   }
 
+  /** Nothing selected: the Modell section says so, the other two parts are empty. */
+  function renderEmpty(): void {
+    modelPart.innerHTML = `<p class="side-empty">${esc(t('side.noSelection'))}</p>`;
+    inspectPart.innerHTML = '';
+    analysisPart.innerHTML = '';
+    inspectPart.hidden = true;
+    analysisPart.hidden = true;
+  }
+  renderEmpty();
+
   function render(id: ComponentId): Promise<void> {
     const type = componentTypeOf(id);
     const p = parseId(id);
@@ -469,34 +511,19 @@ export function createPanel(deps: PanelDeps): Panel {
     el.dataset.id = id;
     el.dataset.type = type;
     const role = roleOf(id);
-    el.style.setProperty('--role-panel', role ? ROLE_VAR[role] : 'var(--c-accent)');
-    el.innerHTML = html(id, type, p);
-    const tab = document.createElement('button');
-    tab.type = 'button';
-    tab.className = 'panel-edge-tab tray-item';
-    tab.dataset.action = 'expand';
-    tab.title = t('panel.expand');
-    tab.setAttribute('aria-label', `${t('panel.expand')}: ${componentName(id)}`);
-    tab.innerHTML = `${typeIcon(type)}<span>${richHtml(componentName(id))}</span>`;
-    el.append(tab);
-    el.classList.toggle('collapsed', isCollapsed);
+    for (const x of parts) x.style.setProperty('--role-panel', role ? ROLE_VAR[role] : 'var(--c-accent)');
+    const h = parts3(id, type, p);
+    modelPart.innerHTML = h.model;
+    inspectPart.innerHTML = h.inspect;
+    analysisPart.innerHTML = h.analysis;
+    inspectPart.hidden = h.inspect === '';
+    analysisPart.hidden = false;
     return fillWeights(id, p, token);
   }
 
-  const setCollapsed = (on: boolean): void => {
-    isCollapsed = on;
-    el.classList.toggle('collapsed', on);
-    if (on) el.querySelector<HTMLElement>('.panel-edge-tab')?.focus();
-    el.dispatchEvent(new CustomEvent('albert:panel-collapse', { bubbles: true, detail: { collapsed: on } }));
-  };
+  const open = (id: ComponentId): Promise<void> => render(id);
 
-  /** A new component opened by the visitor shows the full card again. */
-  const open = (id: ComponentId): Promise<void> => {
-    if (isCollapsed) setCollapsed(false);
-    return render(id);
-  };
-
-  el.addEventListener('click', (e) => {
+  const onClick = (e: MouseEvent): void => {
     const t = e.target as HTMLElement;
     const link = t.closest<HTMLElement>('[data-link]');
     if (link?.dataset.link) {
@@ -528,21 +555,12 @@ export function createPanel(deps: PanelDeps): Panel {
     const tabBtn = t.closest<HTMLElement>('[role=tab][data-tab]');
     if (tabBtn?.dataset.tab) {
       tab = tabBtn.dataset.tab as Tab;
-      for (const b of el.querySelectorAll<HTMLElement>('[role=tab]')) {
+      for (const b of inspectPart.querySelectorAll<HTMLElement>('[role=tab]')) {
         const on = b.dataset.tab === tab;
         b.classList.toggle('active', on);
         b.setAttribute('aria-selected', String(on));
       }
-      for (const x of el.querySelectorAll<HTMLElement>('section[data-tab]')) x.hidden = x.dataset.tab !== tab;
-      el.querySelector('.panel-body')?.scrollTo?.({ top: 0 });
-      return;
-    }
-    if (t.closest('[data-action="collapse"]')) {
-      setCollapsed(true);
-      return;
-    }
-    if (t.closest('[data-action="expand"]')) {
-      setCollapsed(false);
+      for (const x of inspectPart.querySelectorAll<HTMLElement>('section[data-tab]')) x.hidden = x.dataset.tab !== tab;
       return;
     }
     if (t.closest('[data-action="step-inside"]') && currentId) {
@@ -557,36 +575,39 @@ export function createPanel(deps: PanelDeps): Panel {
     const tour = t.closest<HTMLElement>('[data-tour]');
     if (tour) {
       e.preventDefault();
-      el.dispatchEvent(new CustomEvent('albert:tour', { bubbles: true, detail: { id: tour.dataset.tour, component: currentId } }));
-      return;
+      tour.dispatchEvent(new CustomEvent('albert:tour', { bubbles: true, detail: { id: tour.dataset.tour, component: currentId } }));
     }
-    if (t.closest('.panel-close')) panel.close();
-  });
+  };
+  for (const x of parts) x.addEventListener('click', onClick);
 
   const offDepth = onDepthChange(() => {
     if (currentId) void render(currentId);
   });
   const offPrefs = onPrefsChange(() => {
     if (currentId) void render(currentId);
+    else renderEmpty();
   });
 
   const panel: Panel = {
     element: el,
     openPanel: open,
-    setCollapsed,
-    collapsed: () => isCollapsed,
+    mount(slots) {
+      slots.model.append(modelPart);
+      slots.inspect.append(inspectPart);
+      slots.analysis.append(analysisPart);
+    },
     close() {
       token++;
       currentId = null;
-      isCollapsed = false;
-      el.classList.remove('collapsed');
       el.hidden = true;
-      el.innerHTML = '';
+      renderEmpty();
+      el.dispatchEvent(new CustomEvent('albert:panel-close'));
     },
     current: () => currentId,
     dispose() {
       offDepth();
       offPrefs();
+      for (const x of parts) x.remove();
       el.remove();
     },
   };

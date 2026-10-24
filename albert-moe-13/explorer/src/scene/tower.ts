@@ -301,7 +301,7 @@ export function buildTower(a: Architecture, modules?: Modules | null): TowerScen
   const partMat = lookMaterial('part-glass', 'low');
   const edgeMat = lookMaterial('part-edge', 'low');
   const parts = [
-    glassPart('experts', mg?.expert ?? new THREE.BoxGeometry(EXPERT_SIZE, EXPERT_SIZE, EXPERT_SIZE), experts, () => PALETTE.expert, partMat, edgeMat),
+    glassPart('experts', mg?.expert ?? new THREE.BoxGeometry(EXPERT_SIZE, EXPERT_SIZE, EXPERT_SIZE), experts, () => PALETTE.expertIdle, partMat, edgeMat),
     glassPart('attn', mg?.attn ?? new THREE.BoxGeometry(0.4, 0.5, 0.5), perType.attn, itemStream, partMat, edgeMat),
     glassPart('router', mg?.router ?? new THREE.OctahedronGeometry(0.2), perType.router, () => PALETTE.router, partMat, edgeMat),
     glassPart('ln1', mg?.ln1 ?? new THREE.BoxGeometry(0.1, 0.4, 0.3), perType.ln1, itemStream, partMat, edgeMat),
@@ -331,14 +331,15 @@ export function buildTower(a: Architecture, modules?: Modules | null): TowerScen
   const xEmbed = slabX(0) - SLAB_PITCH;
   const xLnF = slabX(n - 1) + SLAB_PITCH;
   const xHead = xLnF + SLAB_PITCH;
-  const ends: [ComponentId, number, THREE.BufferGeometry][] = [
-    [embedId(), xEmbed, mg?.embed ?? new THREE.BoxGeometry(0.8, 3.2, 2.4)],
-    [lnFId(), xLnF, new THREE.BoxGeometry(0.15, 3.2, 1.6)],
-    [lmHeadId(), xHead, mg?.lm_head ?? new THREE.BoxGeometry(0.8, 3.2, 2.4)],
+  // Their colours are the legend's Eingabe (embed), Zusammenführung (ln_f, after the mean merge) and Ausgabe (LM head).
+  const ends: [ComponentId, number, THREE.BufferGeometry, number][] = [
+    [embedId(), xEmbed, mg?.embed ?? new THREE.BoxGeometry(0.8, 3.2, 2.4), PALETTE.input],
+    [lnFId(), xLnF, new THREE.BoxGeometry(0.15, 3.2, 1.6), PALETTE.merge],
+    [lmHeadId(), xHead, mg?.lm_head ?? new THREE.BoxGeometry(0.8, 3.2, 2.4), PALETTE.output],
   ];
-  for (const [id, x, geo] of ends) {
+  for (const [id, x, geo, color] of ends) {
     const it = add(id, new THREE.Vector3(x, 0, 0));
-    const m = glassPart(id, geo, [it], () => PALETTE.neutral, partMat, edgeMat);
+    const m = glassPart(id, geo, [it], () => color, partMat, edgeMat);
     root.add(m);
     register(m, slotsOfIds([id]));
   }

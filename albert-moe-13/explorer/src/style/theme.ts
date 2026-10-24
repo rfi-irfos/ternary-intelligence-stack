@@ -6,23 +6,35 @@
  */
 
 /**
- * UI accent for "measured" badges, caveat chips, formulas, links and active controls. Near-white
- * (about 17:1 on the dark surfaces) and drawn with a solid border, so it never reads as a role colour.
+ * UI accent (Simeon's mockup): cyan, for "measured" badges, caveat chips, formulas, links, the playhead
+ * and active controls (about 10:1 on the navy surfaces). It is drawn with a solid border or as a line,
+ * and no legend role uses it.
  */
-export const ACCENT = 0xf3f0e8;
+export const ACCENT = 0x22d3ee;
 
 /** Neutral UI colours (sRGB). Text colours pass WCAG AA on SURFACE and on black. */
 export const UI = {
   /** Main text. */
-  text: 0xf3f0e8,
-  /** Secondary text; about 11:1 on black, never used for crucial information alone. */
-  textMuted: 0xc3cad6,
+  text: 0xe8eefc,
+  /** Secondary text (mockup); about 8:1 on black, never used for crucial information alone. */
+  textMuted: 0x8fa0c8,
   /** Solid fill behind controls (glass panels use it at 82 % opacity). */
-  surface: 0x0d0f14,
+  surface: 0x0a1226,
   /** Raised fill of a control (buttons, selects). */
-  raised: 0x1b1f28,
+  raised: 0x141e3c,
   /** Hairline borders, like the thin white outlines of the slabs. */
-  hairline: 0x4a5262,
+  hairline: 0x34457a,
+} as const;
+
+/**
+ * Colours drawn into canvas textures (the in-scene pill labels), where CSS variables do not reach.
+ * tokens.css mirrors them (--c-pill-fill, --c-pill-line) and tests/tokens.test.ts keeps both equal.
+ */
+export const PILL = {
+  /** Dark navy fill of a scene label (card colour at full opacity). */
+  fill: 0x0c142c,
+  /** 1 px border of a scene label: the cyan-blue of the mockup. */
+  line: 0x4aa3f0,
 } as const;
 
 /** `#rrggbb` for CSS / SVG use. */

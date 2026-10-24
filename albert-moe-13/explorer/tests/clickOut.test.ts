@@ -12,6 +12,7 @@ import { createRaycastPicker } from '../src/ui/picking';
 import { emptyClick, pickAction } from '../src/ui/pickAction';
 import { measureHud } from '../src/ui/hudInsets';
 import { createPanel } from '../src/ui/panel';
+import { createSidebar } from '../src/ui/sidebar';
 import { onPrefsChange, setLang, setMode } from '../src/ui/prefs';
 import { sceneName } from '../src/ui/roles';
 
@@ -354,32 +355,42 @@ describe('R10: canvas labels under a HUD band fade; computed at rest, not per fr
 });
 
 describe('R1: the rig reads the insets at fly time', () => {
-  /** A panel whose layout box follows its state, as the CSS lays it out at 1280 x 720. */
+  /** The side panel whose layout box follows its state, as the CSS lays it out at 1280 x 720. */
   function hud() {
-    const panel = createPanel({ arch, tower: buildTower(arch), rig: { flyTo: vi.fn(() => Promise.resolve()) }, loadWeights });
-    document.body.appendChild(panel.element);
-    const sideW = Math.min(380, Math.max(300, 0.24 * W));
-    Object.defineProperty(panel.element, 'offsetWidth', {
-      get: () => (panel.element.hidden ? 0 : panel.collapsed() ? 220 : sideW),
-    });
-    Object.defineProperty(panel.element, 'offsetLeft', {
-      get: () => (panel.element.hidden ? 0 : panel.collapsed() ? W - 300 - 220 : W - 16 - sideW),
-    });
+    const sidebar = createSidebar({ win: { innerWidth: W } });
+    document.body.append(sidebar.element);
+    cleanup.push(() => sidebar.dispose());
+    Object.defineProperty(sidebar.element, 'offsetWidth', { get: () => (sidebar.isOpen() ? sidebar.width() : 0) });
+    Object.defineProperty(sidebar.element, 'offsetLeft', { get: () => (sidebar.isOpen() ? W - 12 - sidebar.width() : 0) });
     const top = document.createElement('div');
     Object.defineProperty(top, 'offsetHeight', { value: 36 });
     const dock = document.createElement('div');
-    Object.defineProperty(dock, 'offsetHeight', { value: 60 });
-    Object.defineProperty(dock, 'offsetTop', { value: H - 28 - 60 });
+    Object.defineProperty(dock, 'offsetHeight', { value: 78 });
+    Object.defineProperty(dock, 'offsetTop', { value: H - 44 - 78 });
+    const timeline = document.createElement('div');
+    Object.defineProperty(timeline, 'offsetHeight', { value: 32 });
+    Object.defineProperty(timeline, 'offsetTop', { value: H - 6 - 32 });
     const provider = () => measureHud({
-      top, dock, gap: 8, win: { innerWidth: W, innerHeight: H },
-      side: () => (!panel.element.hidden && !panel.collapsed() ? panel.element : null),
-      legendList: () => null,
+      top, dock, timeline, gap: 8, win: { innerWidth: W, innerHeight: H },
+      side: () => (sidebar.isOpen() ? sidebar.element : null),
+      legendCard: () => null,
     });
-    return { panel, provider, rightNow: () => W - (W - 16 - sideW) + 8 };
+    return { sidebar, provider, rightNow: () => W - (W - 12 - sidebar.width()) + 8 };
   }
 
-  for (const start of ['closed', 'collapsed'] as const) {
-    it(`from a ${start} panel, a click on slab 20 frames the level left of the real panel (all 8 corners)`, async () => {
+  it('top, bottom (the dock above the timeline) and right (the open side panel) are measured, not remembered', () => {
+    const { sidebar, provider } = hud();
+    expect(provider()).toEqual({ top: 36, bottom: 720 - (720 - 44 - 78) + 8, right: 0, left: 0 });
+    sidebar.open();
+    expect(provider().right).toBe(12 + sidebar.width() + 8);
+    sidebar.setWidth(420);
+    expect(provider().right).toBe(12 + 420 + 8);
+    sidebar.close();
+    expect(provider().right).toBe(0);
+  });
+
+  for (const start of ['closed', 'open'] as const) {
+    it(`from a ${start} side panel, a click on slab 20 frames the level left of the real panel (all 8 corners)`, async () => {
       const tower = buildTower(arch);
       const camera = new THREE.PerspectiveCamera(45, W / H, 0.1, 1000);
       camera.up.set(0, 0, 1);
@@ -389,28 +400,29 @@ describe('R1: the rig reads the insets at fly time', () => {
       document.body.appendChild(dom);
       const rig = createControls(camera, dom, tower.rowExtent);
       cleanup.push(() => rig.dispose());
-      const { panel, provider, rightNow } = hud();
+      const { sidebar, provider, rightNow } = hud();
+      const panel = createPanel({ arch, tower, rig: { flyTo: vi.fn(() => Promise.resolve()) }, loadWeights });
+      panel.mount({ model: sidebar.body('model'), inspect: sidebar.body('inspect'), analysis: sidebar.body('analysis') });
       rig.setInsetsProvider(provider);
-      if (start === 'collapsed') {
-        await panel.openPanel('L5');
-        panel.setCollapsed(true);
-      }
-      // What the app had measured before the click (no side column): stale by the time the level flies.
-      expect(provider().right).toBe(0);
+      // The app opens the side panel at Modell in the same click that selects the part.
+      const show = (id: string): Promise<void> => { sidebar.open(['model', 'inspect']); return panel.openPanel(id); };
+      if (start === 'open') sidebar.open(['display']);
+      // What the app had measured before the click: stale by the time the level flies when the panel was closed.
+      expect(provider().right).toBe(start === 'open' ? rightNow() : 0);
       const boxes: THREE.Box3[] = [];
       const frameBox = rig.frameBox.bind(rig);
       rig.frameBox = (b, ms) => { boxes.push(b.clone()); return frameBox(b, 0); };
       const view = createExplode({
         tower, arch, rig, loadWeights, label: () => new THREE.Object3D(), ms: 0,
-        onChange: (id) => { if (id) void panel.openPanel(id); else panel.close(); },
+        onChange: (id) => { if (id) void show(id); else panel.close(); },
       });
       cleanup.push(() => view.dispose());
       await rig.overview(0);
       await new Promise<void>((done) => {
-        pickAction('L20', { explodable: () => true, explode: (id) => view.explode(id).finally(done), openPanel: (id) => panel.openPanel(id) });
+        pickAction('L20', { explodable: () => true, explode: (id) => view.explode(id).finally(done), openPanel: (id) => show(id) });
       });
-      expect(panel.element.hidden).toBe(false);
-      expect(panel.collapsed()).toBe(false);
+      expect(sidebar.isOpen()).toBe(true);
+      expect(sidebar.sectionOpen('model')).toBe(true);
       expect(rig.insets().right).toBe(rightNow());
       const xMax = 1 - (2 * rightNow()) / W;
       const box = boxes.at(-1)!;

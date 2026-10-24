@@ -8,7 +8,7 @@ import { buildTile, CELL, tileCaption } from './tile';
 import type { LabelKind } from '../data/labeled';
 import { type RowExtent, type SlotKey, type TowerScene } from './tower';
 import { PALETTE, streamColor } from './palette';
-import { FONT } from '../style/theme';
+import { FONT, PILL, cssHex } from '../style/theme';
 
 export interface TileInfo {
   id: ComponentId;
@@ -166,12 +166,29 @@ export function defaultLabel(text: string, kind: LabelKind = 'structure'): THREE
   canvas.height = LABEL_H;
   const ctx = canvas.getContext('2d');
   if (!ctx) return new THREE.Object3D();
-  ctx.fillStyle = '#ffffff';
   const font = (px: number): string => `500 ${px}px ${FONT.display}`;
-  ctx.font = font(fitFontPx((px) => { ctx.font = font(px); return ctx.measureText(text).width; }, LABEL_W - 16));
+  ctx.font = font(fitFontPx((px) => { ctx.font = font(px); return ctx.measureText(text).width; }, LABEL_W - 48));
+  // Pill look (Simeon's mockup): a dark rounded fill with a thin cyan-blue border hugging the text, and a
+  // thin leader line down towards the part the label names.
+  const w = Math.min(LABEL_W - 4, ctx.measureText(text).width + 36);
+  const x0 = (LABEL_W - w) / 2;
+  const y0 = 4;
+  const h = LABEL_H - 22;
+  ctx.beginPath();
+  ctx.roundRect(x0, y0, w, h, h / 2);
+  ctx.fillStyle = cssHex(PILL.fill);
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = cssHex(PILL.line);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(LABEL_W / 2, y0 + h);
+  ctx.lineTo(LABEL_W / 2, LABEL_H - 2);
+  ctx.stroke();
+  ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(text, LABEL_W / 2, LABEL_H / 2);
+  ctx.fillText(text, LABEL_W / 2, y0 + h / 2 + 1);
   const sprite = new THREE.Sprite(
     new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, depthTest: false }),
   );

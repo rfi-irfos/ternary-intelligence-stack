@@ -14,12 +14,20 @@ export const PALETTE = {
   streamA: 0x2fd9f2,
   /** Residual stream B (lane at y = +1.8): amber. */
   streamB: 0xffb22e,
-  /** Experts (shared bank): green. */
-  expert: 0x4fdc7a,
-  /** Routers: violet. */
-  router: 0xa98bff,
-  /** Anastomosis gate (fusion slabs): red. */
-  gate: 0xff4d5e,
+  /** Active experts (the ones the router picked, lit while a run plays): teal. */
+  expert: 0x2de2c5,
+  /** Inactive experts (the rest of the bank, at rest): blue. */
+  expertIdle: 0x4a8df0,
+  /** Routers (MoE router): violet. */
+  router: 0x8b5cf6,
+  /** Anastomosis gate (fusion slabs, "Austausch-Tor"): red. */
+  gate: 0xef4444,
+  /** Input / token: the embedding at the start of the row. */
+  input: 0xb9c6ff,
+  /** Merge ("Zusammenführung"): the final layer norm after the two streams are averaged. */
+  merge: 0xf5b942,
+  /** Output: the LM head at the end of the row. */
+  output: 0xf472d0,
   /** Ternary weight +1: warm. */
   ternaryPlus: 0xf4a582,
   /** Ternary weight -1: cold. */

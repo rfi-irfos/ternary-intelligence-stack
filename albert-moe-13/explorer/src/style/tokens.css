@@ -51,24 +51,38 @@
   --c-background: #000000;
   --c-stream-a: #2fd9f2;
   --c-stream-b: #ffb22e;
-  --c-expert: #4fdc7a;
-  --c-router: #a98bff;
-  --c-gate: #ff4d5e;
+  --c-expert: #2de2c5;
+  --c-expert-idle: #4a8df0;
+  --c-router: #8b5cf6;
+  --c-gate: #ef4444;
+  --c-input: #b9c6ff;
+  --c-merge: #f5b942;
+  --c-output: #f472d0;
   --c-ternary-plus: #f4a582;
   --c-ternary-minus: #6ab0e8;
   --c-ternary-zero: #1a1c21;
   --c-edge: #ffffff;
   --c-glass: #9fb8d9;
   --c-neutral: #dfe6f2;
-  --c-accent: #f3f0e8;
+  --c-accent: #22d3ee;
 
   /* UI neutrals (theme.ts) */
-  --c-text: #f3f0e8;
-  --c-text-muted: #c3cad6;
-  --c-surface: #0d0f14;
-  --c-raised: #1b1f28;
-  --c-hairline: #4a5262;
-  --c-glass-panel: rgba(13, 15, 20, 0.82);
+  --c-text: #e8eefc;
+  --c-text-muted: #8fa0c8;
+  --c-surface: #0a1226;
+  --c-raised: #141e3c;
+  --c-hairline: #34457a;
+  /* cards of the mockup: translucent navy with a 1 px blue-violet border */
+  --c-glass-panel: rgba(12, 20, 44, 0.82);
+  --c-card-line: rgba(120, 150, 255, 0.18);
+  --c-card-solid: rgba(12, 20, 44, 0.96);
+  --c-wash: rgba(232, 238, 252, 0.1);
+  --c-wash-strong: rgba(232, 238, 252, 0.16);
+  /* canvas labels in the scene (src/style/theme.ts PILL) */
+  --c-pill-fill: #0c142c;
+  --c-pill-line: #4aa3f0;
+  --bg-top: #0a1226;
+  --bg-bottom: #050914;
 
   /* type */
   --font-ui: "Inter", system-ui, sans-serif;
@@ -91,17 +105,17 @@
   --gap: var(--space-2);
   --edge-pad: var(--space-4);
   --top-h: 36px;
-  --timeline-h: 16px;
-  --side-w: clamp(300px, 24vw, 380px);
+  --timeline-h: 32px;
+  /* side panel width: the app sets this on the root while the panel is dragged (280 px .. 40 % of the viewport) */
+  --side-w: clamp(280px, 22vw, 512px);
   --control-h: 32px;
-  /* dock: min(--dock-w, free width); fixed height = 2 x pad + caption + gap + control row + 2 x 1px border */
-  --dock-w: 720px;
-  --dock-pad: 3px;
+  /* mini dock: width min(--dock-w, free width); height = 2 x pad + caption + gap + control row + 2 x 1px border */
+  --dock-w: 640px;
+  --dock-pad: 6px;
   --caption-h: 18px;
   --dock-gap: 2px;
-  --dock-h: 60px;
-  /* inspection panel: auto height, at most this share of the viewport height (and never below the dock line) */
-  --panel-max-vh: 54;
+  --dock-row: 44px;
+  --dock-h: 78px;
 
   /* motion */
   --t-fast: 150ms;
