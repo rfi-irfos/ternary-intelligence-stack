@@ -1098,7 +1098,12 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     tick: (dt) => {
       const was = player?.playing() ?? false;
       player?.tick(dt);
-      if (was && !player?.playing()) paintOp();
+      if (was && !player?.playing()) {
+        // natural end of a run (a pause never reaches this tick): the next Play is a full pass again
+        quickRun = false;
+        applyPace();
+        paintOp();
+      }
     },
     player: () => player,
     selection: () => (traces.size > 0 ? { promptId: promptSel.value, position: Number(tokenSel.value) } : null),

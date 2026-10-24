@@ -328,6 +328,19 @@ describe('quick pass caption and screen-reader behaviour', () => {
     expect(x.text.textContent).toMatch(/^Ebene \d+ von 46 · /);
   });
 
+  it('a Watch run that ends by itself in Advanced leaves the next Play at the full pace', async () => {
+    setMode('advanced');
+    const bar = await makeBar();
+    bar.watch();
+    expect(bar.player()!.pace()).toBe('quick');
+    for (let i = 0; i < 80 * 20 && bar.player()!.playing(); i++) bar.tick(0.05);
+    expect(bar.player()!.playing()).toBe(false);
+    expect(bar.player()!.pace()).toBe('full');
+    bar.player()!.scrub(0);
+    bar.player()!.play();
+    expect(bar.player()!.pace()).toBe('full');
+  });
+
   it('paused or stepping, the per-op sentence is back; so is the normal pace', async () => {
     const bar = await makeBar();
     const x = el(bar);
