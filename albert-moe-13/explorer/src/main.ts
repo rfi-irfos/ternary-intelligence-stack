@@ -12,7 +12,7 @@ import { isExplodable } from './scene/hierarchy';
 import { parseId, slabId } from './scene/ids';
 import { createPanel, PANEL_CSS } from './ui/panel';
 import { attachDepthKeys } from './ui/depth';
-import { pickAction } from './ui/pickAction';
+import { emptyClick, pickAction } from './ui/pickAction';
 import { APP_NAME } from './content/brand';
 import { PALETTE } from './scene/palette';
 import { FONT } from './style/theme';
@@ -26,10 +26,11 @@ import { attachPicking, createHover, createRaycastPicker } from './ui/picking';
 import { createTopBar } from './ui/topbar';
 import { createLegend } from './ui/legend';
 import { createHighlighter } from './ui/highlight';
-import { componentName, matchesRole } from './ui/roles';
+import { matchesRole, sceneName } from './ui/roles';
 import { createHoverTip } from './ui/tooltip';
 import { createSelection } from './ui/selection';
 import { onPrefsChange } from './ui/prefs';
+import { measureHud } from './ui/hudInsets';
 import { coachSeen, createCoachMarks } from './ui/coach';
 
 /** Waits (at most `ms`) for the display face, so the canvas labels of the scene draw in it; runs beside the data loads. */
@@ -87,9 +88,8 @@ async function main(): Promise<void> {
   let view: ReturnType<typeof createExplode>;
   const panel = createPanel({
     arch, tower, rig, loadWeights,
-    beforeNavigate: async () => {
-      while (view.depth() > 0) await view.reassemble();
-    },
+    // A link flies on its own, so the fold-all does not restore the camera first.
+    beforeNavigate: () => view.reassembleAll({ restoreCamera: false }),
     // Contextual "Step inside" on the selection card replaces the old Enter layer button.
     onStepInside: (id) => {
       const p = parseId(id);
@@ -99,12 +99,13 @@ async function main(): Promise<void> {
   });
   document.body.appendChild(panel.element);
   view = createExplode({
-    tower, arch, rig, loadWeights, name: componentName,
+    tower, arch, rig, loadWeights, name: sceneName, watch: onPrefsChange,
     onChange: (id) => {
       note(id);
       reapplyPin();
       if (id) void panel.openPanel(id);
       else panel.close();
+      bar.setHint(view.depth() > 0 ? 'hint.levelOpen' : null);
     },
   });
   scene.add(view.root);
@@ -135,7 +136,7 @@ async function main(): Promise<void> {
   top.home.addEventListener('click', () => {
     void (async () => {
       await layerMode.exit();
-      while (view.depth() > 0) await view.reassemble();
+      await view.reassembleAll({ restoreCamera: false });
       await rig.overview();
     })();
   });
@@ -155,30 +156,23 @@ async function main(): Promise<void> {
     if (role) highlighter.show((id) => matchesRole(id, role));
   };
 
-  // The HUD insets the camera frames around (top bar, dock, side column, legend). Measured when the
-  // layout changes (side column opens or closes, a HUD element resizes, the window resizes), never per
-  // frame; a new measure never moves the camera, the next user-triggered flight uses it.
+  // The HUD insets the camera frames around (top bar, dock, side column, legend). The rig reads them at
+  // fly time from this provider, so a panel that opened in the same click already counts; a new measure
+  // never moves the camera. Inset changes (and camera rests) only refade the labels under the HUD.
   const GAP = 8;
-  /** Right edge of the open legend key (it drops down under its chip in the system bar). */
-  const legendRight = (): number => {
-    const list = legend.element.querySelector<HTMLElement>('.legend-list');
-    return list && !list.hidden ? list.getBoundingClientRect().right : 0;
-  };
-  const measureInsets = (): void => {
-    // A collapsed panel is a small tray tab in the corner: it takes no column from the scene.
-    const side = !layerMode.element.hidden ? layerMode.element : !panel.element.hidden && !panel.collapsed() ? panel.element : null;
-    const edge = (x: HTMLElement): number => window.innerWidth - x.offsetLeft;
-    rig.setInsets({
-      top: top.element.offsetHeight,
-      bottom: dock.offsetHeight ? window.innerHeight - dock.offsetTop + GAP : 0,
-      right: side && side.offsetWidth ? edge(side) + GAP : 0,
-      left: legend.element.classList.contains('open') ? legendRight() + GAP : 0,
-    });
-  };
+  const hudNow = () => measureHud({
+    top: top.element, dock, gap: GAP, win: window,
+    // A collapsed panel is a small tray tab in the bar: it takes no column from the scene.
+    side: () => (!layerMode.element.hidden ? layerMode.element : !panel.element.hidden && !panel.collapsed() ? panel.element : null),
+    legendList: () => (legend.element.classList.contains('open') ? legend.element.querySelector<HTMLElement>('.legend-list') : null),
+  });
+  rig.setInsetsProvider(hudNow);
+  const refadeLabels = (): void => view.fadeLabels(camera, window.innerWidth, window.innerHeight, rig.insets());
+  rig.onSettle(refadeLabels);
   // The side column (inspection panel or layer steps) and the dock never overlap: the dock moves left.
   const syncSide = (): void => {
     document.body.classList.toggle('side-open', (!panel.element.hidden && !panel.collapsed()) || !layerMode.element.hidden);
-    measureInsets();
+    refadeLabels();
   };
   const sideObserver = new MutationObserver(syncSide);
   sideObserver.observe(panel.element, { attributes: true, attributeFilter: ['hidden', 'class'] });
@@ -193,7 +187,7 @@ async function main(): Promise<void> {
   if (typeof ResizeObserver === 'function') {
     const cluster = top.element.querySelector<HTMLElement>('.top-right');
     if (cluster) new ResizeObserver(trayRight).observe(cluster);
-    const sizes = new ResizeObserver(measureInsets);
+    const sizes = new ResizeObserver(refadeLabels);
     const key = legend.element.querySelector<HTMLElement>('.legend-list');
     for (const x of [top.element, dock, key ?? legend.element, panel.element, layerMode.element]) sizes.observe(x);
   }
@@ -244,8 +238,10 @@ async function main(): Promise<void> {
       });
     },
     onEmpty: () => {
-      if (view.depth() > 0) void view.reassemble();
-      else panel.close();
+      void emptyClick({
+        layerActive: () => !layerMode.element.hidden,
+        depth: view.depth, reassembleAll: () => view.reassembleAll(), closePanel: () => panel.close(),
+      });
     },
     onHover: (id) => {
       hover.show(id && lastHit?.id === id ? lastHit : null);
@@ -311,7 +307,7 @@ async function main(): Promise<void> {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     look.setSize(window.innerWidth, window.innerHeight);
-    measureInsets();
+    refadeLabels();
     trayRight();
   });
 

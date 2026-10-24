@@ -33,6 +33,12 @@ button, select, input { font: inherit; color: inherit; }
     --c-glass-panel: rgba(13, 15, 20, 0.96);
   }
 }
+/* The side panels carry body text over the scene: nearly opaque, with a stronger blur, so the scene never
+   shows through the header text; without backdrop-filter they are solid. */
+.inspect-panel, .layer-panel { background: rgba(13, 15, 20, 0.96); backdrop-filter: blur(20px) saturate(1.1); -webkit-backdrop-filter: blur(20px) saturate(1.1); }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .inspect-panel, .layer-panel { background: var(--c-surface); }
+}
 
 /* ---- shared controls ------------------------------------------------------------------- */
 .hud-btn, .hud-icon, .hud-select, .hud-number {
@@ -60,7 +66,7 @@ button, select, input { font: inherit; color: inherit; }
 }
 
 /* tray items: the OS look of the top bar, the legend chip and the panel's edge tab */
-.tray-item { height: 30px; border-color: transparent; background: transparent; border-radius: var(--r-control); }
+.tray-item { height: 32px; min-height: 32px; border-color: transparent; background: transparent; border-radius: var(--r-control); }
 .tray-item:hover { border-color: transparent; background: rgba(243, 240, 232, 0.10); }
 .tray-item[aria-expanded="true"] { background: rgba(243, 240, 232, 0.14); }
 
@@ -83,7 +89,8 @@ button, select, input { font: inherit; color: inherit; }
   font: 500 var(--fs-base)/1 var(--font-ui); color: var(--c-text-muted); white-space: nowrap;
   transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
 /* 32 px hit area around the 26 px pill */
-.hud-segment button::before { content: ""; position: absolute; inset: -3px 0; }
+/* the visual pill stays slim; the hit area is 32 px tall (min-height on the ::before box) */
+.hud-segment button::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; min-height: 32px; transform: translateY(-50%); }
 .hud-segment button:hover { color: var(--c-text); background: rgba(243, 240, 232, 0.10); }
 .hud-segment button.active { background: var(--c-accent); color: #000; font-weight: 600; }
 
@@ -114,6 +121,7 @@ button, select, input { font: inherit; color: inherit; }
 .tours-btn .icon { width: 16px; height: 16px; }
 .top-prefs { position: relative; display: flex; align-items: center; gap: var(--space-2); }
 .top-prefs .hud-segment button { height: 24px; padding: 0 var(--space-3); }
+.top-prefs .hud-segment button::before { min-height: 32px; }
 .settings-pop { position: absolute; right: 0; top: calc(100% + 8px); z-index: 30; min-width: 220px; padding: var(--space-4); }
 
 /* ---- legend (tray chip in the system bar; the key drops down under it) ------------------- */
@@ -210,7 +218,10 @@ body.side-open .player-bar[data-mode="advanced"] .play-btn { width: 36px; paddin
 .progress .hud-range { flex: 1 1 auto; }
 .player-counter { color: var(--c-text-muted); font-size: var(--fs-small); white-space: nowrap; min-width: 5.6em; text-align: right; }
 .hud-join { display: inline-flex; gap: var(--space-1); }
-.player-speed { width: 5.2em; }
+.speed-pill { flex: none; min-width: 44px; justify-content: center; font-feature-settings: "tnum"; font-weight: 600; }
+.player-hint { flex: 1 1 auto; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 500 var(--fs-base)/var(--caption-h) var(--font-ui); color: var(--c-text); }
+.player-hint[hidden] { display: none; }
 .player-camera { width: 11em; }
 .player-kind { width: 12em; }
 .player-detail-full { flex: 1 1 100%; }
@@ -250,18 +261,20 @@ body.side-open .player-bar[data-mode="advanced"] .play-btn { width: 36px; paddin
 .slab-rail-item.fusion .rail-num { color: var(--c-gate); border-color: var(--c-gate); }
 
 /* ---- inspection panel ------------------------------------------------------------------- */
-.inspect-panel { --frame: var(--role-panel, var(--c-accent)); position: fixed; z-index: 5; right: var(--edge-pad); top: calc(var(--top-h) + var(--space-3));
-  width: var(--side-w); max-height: min(calc(100vh - var(--top-h) - var(--timeline-h) - 5 * var(--space-2)), calc(var(--panel-max-vh) * 1vh));
+.inspect-panel { --frame: var(--role-panel, var(--c-accent)); position: fixed; z-index: 5; right: var(--edge-pad);
+  /* full height: from the bottom of the top bar to one gap above the layer rail; the head stays, the body scrolls */
+  top: var(--top-h); bottom: calc(var(--timeline-h) + 2 * var(--space-2));
+  width: var(--side-w);
   display: flex; flex-direction: column; overflow: hidden;
   font: 400 var(--fs-base)/1.45 var(--font-ui); color: var(--c-text); animation: os-in var(--t-fast) var(--ease); }
 /* collapsed: a slim tab (icon + name) that docks into the system bar as a tray item, left of Tour (like a
    minimised window); the card behind it keeps its state. main.ts sets --tray-right from the bar's right
    cluster, so the tab never covers the scene. */
-.inspect-panel.collapsed { z-index: 11; top: 3px; right: var(--tray-right, 280px); width: auto; max-width: 220px; height: 30px; padding: 0;
+.inspect-panel.collapsed { z-index: 11; top: 2px; bottom: auto; right: var(--tray-right, 280px); width: auto; max-width: 220px; height: 32px; padding: 0;
   border-color: color-mix(in srgb, var(--role-panel, var(--c-accent)) 45%, transparent); border-radius: var(--r-control); box-shadow: none; }
 .inspect-panel.collapsed > :not(.panel-edge-tab) { display: none; }
 .inspect-panel:not(.collapsed) > .panel-edge-tab { display: none; }
-.panel-edge-tab { display: inline-flex; align-items: center; gap: var(--space-2); height: 28px; padding: 0 var(--space-3); color: var(--c-text); cursor: pointer;
+.panel-edge-tab { display: inline-flex; align-items: center; gap: var(--space-2); height: 32px; min-height: 32px; padding: 0 var(--space-3); color: var(--c-text); cursor: pointer;
   font: 500 var(--fs-base)/1 var(--font-ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .panel-edge-tab .icon { width: 16px; height: 16px; color: var(--role-panel, var(--c-accent)); }
 .panel-head { flex: none; padding: var(--space-3) var(--space-4) var(--space-3); border-bottom: 1px solid rgba(255, 255, 255, 0.08);
@@ -293,14 +306,15 @@ body.side-open .player-bar[data-mode="advanced"] .play-btn { width: 36px; paddin
 .step-inside { width: 100%; justify-content: center; height: var(--control-h); margin-top: var(--space-2); border-color: var(--role-panel, var(--c-accent));
   background: color-mix(in srgb, var(--role-panel, var(--c-accent)) 16%, rgba(13, 15, 20, 0.8)); font-weight: 600; }
 .depth-switch { margin-top: var(--space-3); }
-.depth-switch .depth-btn { height: 26px; padding: 0 var(--space-3); }
+.depth-switch .depth-btn { position: relative; height: 26px; padding: 0 var(--space-3); }
+.depth-switch .depth-btn::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; min-height: 32px; transform: translateY(-50%); }
 .panel-tabs { display: flex; gap: 2px; margin: var(--space-3) calc(-1 * var(--space-4)) calc(-1 * var(--space-3)); padding: 0 var(--space-3); border-top: 1px solid rgba(255, 255, 255, 0.06); }
 .panel-tab { flex: 1 1 0; height: 34px; padding: 0 4px; border: 0; border-bottom: 2px solid transparent; background: transparent; cursor: pointer;
   font: 500 var(--fs-base)/1 var(--font-ui); color: var(--c-text-muted); white-space: nowrap;
   transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease); }
 .panel-tab:hover { color: var(--c-text); background: rgba(255, 255, 255, 0.04); }
 .panel-tab.active { color: var(--c-text); border-bottom-color: var(--role-panel, var(--c-accent)); font-weight: 600; }
-.panel-body { flex: 0 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: var(--space-3) var(--space-4) var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
+.panel-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: var(--space-3) var(--space-4) var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
 /* Simple: what it does and the connections first, then the closed sections. */
 .panel-body[data-mode="simple"] > [data-section="what"] { order: 1; }
 .panel-body[data-mode="simple"] > [data-section="connections"] { order: 2; }
@@ -356,8 +370,14 @@ tr[data-group="experts"] td.t-name { padding-left: 14px; box-shadow: inset 2px 0
 .cv-title { flex: 1 1 auto; min-width: 0; }
 .cv-body { padding: 0 var(--space-3) var(--space-2); }
 .cv-table-wrap { position: relative; margin: 4px 0 var(--space-2); overflow-x: auto; }
+/* the badge of a data table sits on its own line under the table, so it never covers the header */
+.cv-table-wrap.lv-block > .badge { position: static; display: block; width: max-content; margin: 0 0 2px auto; }
 .cv-table { width: 100%; border-collapse: collapse; font-size: var(--fs-small); font-feature-settings: "tnum"; }
 .cv-table th, .cv-table td { padding: 3px 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); text-align: left; white-space: nowrap; }
+.cv-table th { white-space: normal; vertical-align: bottom; }
+/* R6: the table fits the side column at 1280 px without a horizontal scroll: headers and short times wrap */
+.cv-table td:has(> time) { white-space: normal; }
+.cv-table time { display: inline-block; }
 .cv-table th { color: var(--c-text-muted); font-weight: 500; }
 .tag { display: inline-block; padding: 1px 7px; font: 600 var(--fs-small)/1.5 var(--font-ui); border: 1px solid var(--c-accent); border-radius: var(--r-control); color: var(--c-accent); }
 .inspect-panel .evidence { font-size: var(--fs-small); color: var(--c-text-muted); }
@@ -369,7 +389,7 @@ tr[data-group="experts"] td.t-name { padding-left: 14px; box-shadow: inset 2px 0
 .inspect-panel .schematic-note { color: var(--c-text-muted); }
 
 /* the layer step panel uses the same surface (layout rules live in LAYER_CSS) */
-.layer-panel { top: calc(var(--top-h) + var(--space-3)) !important; bottom: calc(var(--timeline-h) + 3 * var(--space-2)) !important; animation: os-in var(--t-fast) var(--ease); }
+.layer-panel { top: var(--top-h) !important; bottom: calc(var(--timeline-h) + 2 * var(--space-2)) !important; animation: os-in var(--t-fast) var(--ease); }
 
 /* ---- hover tooltip --------------------------------------------------------------------- */
 .hover-tip { --frame: var(--role); position: fixed; z-index: 20; left: 0; top: 0; display: inline-flex; align-items: center; gap: 7px; pointer-events: none;

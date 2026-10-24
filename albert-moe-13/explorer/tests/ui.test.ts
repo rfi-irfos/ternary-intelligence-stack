@@ -13,7 +13,7 @@ import {
 import { LANGS, MODES, STRINGS, TOUR_IDS, type StringKey, resolve } from '../src/ui/strings';
 import { createTopBar } from '../src/ui/topbar';
 import { createLegend } from '../src/ui/legend';
-import { ROLES, hoverText, matchesRole, roleOf } from '../src/ui/roles';
+import { ROLES, hoverText, matchesRole, roleOf, sceneName } from '../src/ui/roles';
 import { createHoverTip } from '../src/ui/tooltip';
 import { closeTourMenu, isTourMenuOpen, openTourMenu } from '../src/ui/tourMenu';
 import { createSelection } from '../src/ui/selection';
@@ -154,11 +154,15 @@ describe('Simple | Advanced', () => {
     top.dispose();
   });
 
-  it('Simple hides speed, camera, next-of-kind and ids; Advanced shows them', async () => {
+  it('Simple hides camera, next-of-kind and ids; Advanced shows them; the speed pill shows in both', async () => {
     const b = bar();
     await b.ready;
     const adv = b.element.querySelector<HTMLElement>('.advanced-controls')!;
-    expect(adv.contains(b.element.querySelector('.player-speed'))).toBe(true);
+    // One speed control: the pill after Next (the Tools drawer no longer has a speed select).
+    expect(b.element.querySelector('.player-speed')).toBeNull();
+    const pill = b.element.querySelector<HTMLElement>('.speed-pill')!;
+    expect(adv.contains(pill)).toBe(false);
+    expect(pill.closest('[hidden]')).toBeNull();
     expect(adv.contains(b.element.querySelector('.player-camera'))).toBe(true);
     expect(adv.contains(b.element.querySelector('.player-kind'))).toBe(true);
     const [prompt, token] = b.element.querySelectorAll<HTMLSelectElement>('select');
@@ -188,15 +192,62 @@ describe('Simple | Advanced', () => {
   });
 });
 
+describe('R3: what the sentences and names say', () => {
+  it('the step text carries labelled values (.lv[data-kind]) in the caption line', async () => {
+    const b = bar();
+    await b.ready;
+    b.element.querySelector<HTMLButtonElement>('[data-action="play"]')!.click();
+    const p = b.player()!;
+    p.pause();
+    p.jumpToNext('router');
+    const lv = [...b.element.querySelectorAll<HTMLElement>('.step-line .step-text .lv[data-kind]')];
+    expect(lv.length).toBeGreaterThan(0);
+    for (const x of lv) expect(['measured', 'structure', 'illustrative', 'derived']).toContain(x.dataset.kind);
+  });
+
+  it('the router sentence follows the config top_k (no literal 3)', async () => {
+    const b = bar();
+    await b.ready;
+    const ops = b.player()!.ops;
+    const i = ops.findIndex((op) => op.kind === 'router');
+    for (const mode of MODES) {
+      setMode(mode);
+      const three = stepSentence(ops[i]!, i, ops.length, a, ' earth');
+      const two = stepSentence(ops[i]!, i, ops.length, { ...a, model: { ...a.model, top_k: 2 } }, ' earth');
+      expect(two, mode).not.toBe(three);
+      expect(two, mode).toMatch(/\b2\b/);
+    }
+  });
+
+  it('Simple names the norms in words; Advanced keeps ln1/ln2', () => {
+    expect(sceneName('L12.A.ln1')).toBe('Norm (before attention)');
+    expect(sceneName('L12.B.ln2')).toBe('Norm (before the switch)');
+    setLang('de');
+    expect(sceneName('L12.A.ln1')).toBe('Norm (vor Aufmerksamkeit)');
+    expect(sceneName('L12.B.ln2')).toBe('Norm (vor der Weiche)');
+    setMode('advanced');
+    expect(sceneName('L12.A.ln1')).toBe('ln1 A');
+    expect(sceneName('L12.B.ln2')).toBe('ln2 B');
+    // Anything else keeps its component name.
+    expect(sceneName('L12.bank')).toBe(sceneName('L12.bank'));
+  });
+});
+
 describe('player bar', () => {
   it('every transport button has an icon, an aria-label and a tooltip that says what happens', async () => {
     const b = bar();
     await b.ready;
     const icons = [...b.element.querySelectorAll<HTMLButtonElement>('.transport button')];
-    expect(icons.map((x) => x.dataset.action)).toEqual(['prev', 'play', 'next']);
+    expect(icons.map((x) => x.dataset.action)).toEqual(['prev', 'play', 'next', 'speed']);
     expect(icons[1]!.title).toMatch(/^Runs one sentence through all 46 layers/);
     for (const x of icons) {
       expect(x.getAttribute('aria-label')?.length, x.dataset.action).toBeGreaterThan(0);
+      // The step buttons name their key; the speed pill's tooltip is just "Speed" (its value is in the label).
+      if (x.dataset.action === 'speed') {
+        // A text pill ("1×"), no icon.
+        expect(x.textContent).toMatch(/^\d+(\.\d)?×$/);
+        continue;
+      }
       expect(x.title).toMatch(/\(.+\)$/);
       expect(x.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
     }
@@ -558,24 +609,174 @@ describe('reduced HUD', () => {
     return { all, orphans, groups };
   }
 
-  it('Simple shows at most five controls: home, guide (tour + legend), preferences, play and the sentence', async () => {
+  it('Simple dock: at most six controls, each with its own key (prev, play, next, speed, sentence, mode)', async () => {
+    // The top bar is OS chrome (home, tours, legend, gear) and is not counted; it still has no orphans.
     const top = createTopBar(null);
     const b = bar();
-    const legend = createLegend({ onHighlight: vi.fn() });
-    document.body.append(top.element, legend.element);
+    document.body.append(top.element);
     await b.ready;
-    const c = controls([top.element, b.element, legend.element]);
+    expect(controls([top.element]).orphans).toEqual([]);
+    const c = controls([b.element]);
     expect(c.orphans).toEqual([]);
-    expect([...c.groups].sort()).toEqual(['guide', 'home', 'play', 'prefs', 'sentence']);
-    expect(c.groups.size).toBeLessThanOrEqual(5);
     expect(c.all.filter((x) => x.tagName === 'SELECT' || x.tagName === 'INPUT')).toEqual([]);
-    // The transport is Play alone until a run was started and paused.
-    expect(c.all.filter((x) => x.closest('[data-control="play"]')).map((x) => x.dataset.action)).toEqual(['play']);
+    // Before the first run: Play, the speed pill, the sentence and the mode toggle.
+    expect([...c.groups].sort()).toEqual(['mode', 'play', 'sentence', 'speed']);
     b.element.querySelector<HTMLButtonElement>('[data-action="play"]')!.click();
     b.element.querySelector<HTMLButtonElement>('[data-action="play"]')!.click();
-    const paused = controls([b.element]).all.filter((x) => x.closest('[data-control="play"]')).map((x) => x.dataset.action);
-    expect(paused).toEqual(['prev', 'play', 'next']);
+    const paused = controls([b.element]);
+    expect([...paused.groups].sort()).toEqual(['mode', 'next', 'play', 'prev', 'sentence', 'speed']);
+    expect(paused.groups.size).toBeLessThanOrEqual(6);
+    // Each transport key holds exactly one button (no grouping of several controls under one key).
+    for (const k of ['prev', 'play', 'next', 'speed']) {
+      expect(paused.all.filter((x) => x.closest<HTMLElement>('[data-control]')!.dataset.control === k), k).toHaveLength(1);
+    }
     top.dispose();
+  });
+
+  it('the speed pill cycles 0.5x, 1x, 2x, 4x; label, tooltip and aria-label follow, and the player speed with it', async () => {
+    const b = bar();
+    await b.ready;
+    const pill = b.element.querySelector<HTMLButtonElement>('.speed-pill')!;
+    expect(pill.tagName).toBe('BUTTON');
+    expect(pill.textContent).toBe('1×');
+    expect(pill.title).toBe('Speed');
+    expect(pill.getAttribute('aria-label')).toBe('Speed: 1×');
+    expect(b.player()!.speed()).toBe(1);
+    const seen: Array<[string | null, number]> = [];
+    for (let i = 0; i < 4; i++) { pill.click(); seen.push([pill.textContent, b.player()!.speed()]); }
+    expect(seen).toEqual([['2×', 2], ['4×', 4], ['0.5×', 0.5], ['1×', 1]]);
+    setLang('de');
+    pill.click();
+    expect(pill.title).toBe('Tempo');
+    expect(pill.getAttribute('aria-label')).toBe('Tempo: 2×');
+    // The choice survives a new sentence (the run is rebuilt with the same speed).
+    b.element.querySelector<HTMLButtonElement>('.sentence-chip')!.click();
+    document.querySelector<HTMLElement>('.sentence-pop [data-prompt="de"]')!.click();
+    await b.ready;
+    await new Promise((r) => setTimeout(r, 0));
+    expect(b.player()!.speed()).toBe(2);
+    expect(pill.textContent).toBe('2×');
+  });
+
+  it('F-GPU-3: a select gives focus back after a change; Left/Right on a focused select step the run, Up/Down stay native', async () => {
+    setMode('advanced');
+    const b = bar();
+    await b.ready;
+    b.element.querySelector<HTMLButtonElement>('[data-control="tools"]')!.click();
+    const [prompt, token] = b.element.querySelectorAll<HTMLSelectElement>('select');
+    const p = b.player()!;
+    p.scrub(9);
+    const before = { prompt: prompt!.value, pos: b.selection()!.position, i: p.index() };
+    expect(before.prompt).toBe('kjv');
+    // Left/Right on a focused select: the run steps, the value stays (the browser would pick the next sentence).
+    for (const sel of [prompt!, token!]) {
+      sel.focus();
+      const right = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true });
+      sel.dispatchEvent(right);
+      expect(right.defaultPrevented).toBe(true);
+    }
+    expect(prompt!.value).toBe(before.prompt);
+    expect(b.selection()!.position).toBe(before.pos);
+    expect(p.index()).toBe(before.i + 2);
+    // Up/Down and typeahead stay native: a keyboard user can change the sentence.
+    prompt!.focus();
+    const down = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true });
+    prompt!.dispatchEvent(down);
+    expect(down.defaultPrevented).toBe(false);
+    const letter = new KeyboardEvent('keydown', { key: 'd', bubbles: true, cancelable: true });
+    prompt!.dispatchEvent(letter);
+    expect(letter.defaultPrevented).toBe(false);
+    // The browser's answer to ArrowDown: the next option and a change event. The sentence changes, and the
+    // select gives the focus back.
+    prompt!.value = 'de';
+    prompt!.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(b.selection()!.promptId).toBe('de');
+    expect(document.activeElement).not.toBe(prompt);
+    // Right after a pointer change: ArrowRight (on the page) steps the run and keeps the sentence.
+    const q = b.player()!;
+    const i0 = q.index();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+    expect(q.index()).toBe(i0 + 1);
+    expect(prompt!.value).toBe('de');
+    expect(b.selection()!.promptId).toBe('de');
+    // Every Tools select gives the focus back after a change.
+    for (const sel of b.element.querySelectorAll<HTMLSelectElement>('.advanced-controls select')) {
+      sel.focus();
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      expect(document.activeElement, sel.className).not.toBe(sel);
+    }
+    // Switching language and mode keeps the sentence and the step.
+    const kept = { prompt: prompt!.value, i: b.player()!.index() };
+    setLang('de');
+    setMode('simple');
+    setMode('advanced');
+    expect(prompt!.value).toBe(kept.prompt);
+    expect(b.player()!.index()).toBe(kept.i);
+  });
+
+  it('R9: dispose disconnects the word-strip ResizeObserver', async () => {
+    const disconnect = vi.fn();
+    const RO = vi.fn(function (this: unknown) { return { observe: vi.fn(), unobserve: vi.fn(), disconnect }; });
+    vi.stubGlobal('ResizeObserver', RO);
+    try {
+      const b = createPlayerBar({
+        arch: a, tower, rig: { flyTo: vi.fn(() => Promise.resolve()), overview: vi.fn(() => Promise.resolve()) },
+        animator: { show: vi.fn() }, load: (id) => Promise.resolve(trace(id)),
+      });
+      document.body.appendChild(b.element);
+      await b.ready;
+      expect(RO).toHaveBeenCalled();
+      expect(disconnect).not.toHaveBeenCalled();
+      b.dispose();
+      expect(disconnect).toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('while a level is open the caption shows the fold-out hint, verbatim in DE and EN', async () => {
+    const b = bar();
+    await b.ready;
+    const hint = b.element.querySelector<HTMLElement>('.player-hint')!;
+    expect(hint.hidden).toBe(true);
+    b.setHint('hint.levelOpen');
+    expect(hint.hidden).toBe(false);
+    expect(hint.textContent).toBe('Click empty space: fold everything back · Esc: one level up');
+    setLang('de');
+    expect(hint.textContent).toBe('Klick ins Leere: alles zusammenklappen · Esc: eine Ebene zurück');
+    // A playing run shows its step sentence instead; paused, the hint is back.
+    b.element.querySelector<HTMLButtonElement>('[data-action="play"]')!.click();
+    expect(hint.hidden).toBe(true);
+    b.element.querySelector<HTMLButtonElement>('[data-action="play"]')!.click();
+    expect(hint.hidden).toBe(false);
+    // The level closes: the hint is cleared.
+    b.setHint(null);
+    expect(hint.hidden).toBe(true);
+    expect(hint.textContent).toBe('');
+  });
+
+  it('while a level is open and the run plays, the Pause tooltip carries the fold-back hint once', async () => {
+    const b = bar();
+    await b.ready;
+    const play = b.element.querySelector<HTMLButtonElement>('[data-action="play"]')!;
+    const hint = b.element.querySelector<HTMLElement>('.player-hint')!;
+    play.click(); // playing, no level open
+    expect(play.title).not.toContain('Click empty space');
+    play.click();
+    b.setHint('hint.levelOpen');
+    play.click(); // playing with a level open: the caption keeps the step sentence, the tooltip has the hint
+    expect(hint.hidden).toBe(true);
+    expect(b.element.querySelector<HTMLElement>('.step-line')!.hidden).toBe(false);
+    expect(play.title).toContain('Click empty space: fold everything back');
+    play.click(); // paused: the caption line shows the hint, the tooltip is plain again
+    expect(hint.hidden).toBe(false);
+    expect(play.title).not.toContain('Click empty space');
+    play.click(); // once only
+    expect(play.title).not.toContain('Click empty space');
+    play.click();
+    setLang('de');
+    b.setHint(null);
+    expect(hint.hidden).toBe(true);
   });
 
   it('Advanced adds the gear and the tools drawer, still grouped', async () => {

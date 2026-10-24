@@ -3,6 +3,7 @@ import { CAVEATS } from '../content/caveats';
 import type { Architecture } from '../data/architecture';
 import { type Labeled, type LabeledValue, decText, fmt, pctStr, structure } from '../data/labeled';
 import { type Trace, decodeToken, loadTrace } from '../data/trace';
+import { defaultPosition, isPunct, wordOf } from '../data/words';
 import type { Animator } from '../flow/animate';
 import {
   type AttnData, type EmbedData, type ExpertsData, type GateData, type LmHeadData, type MergeData,
@@ -152,11 +153,7 @@ const row = (label: string, ...parts: (HTMLElement | string)[]): HTMLElement => 
   return d;
 };
 
-/** Visible form of a decoded token for Simple mode: trimmed, a blank shows as ␣. */
-export const wordOf = (decoded: string): string => decoded.trim() || '␣';
-
-/** True for a token without letters or digits (".", ",", "␣"): its chip gets extra room so it stays visible. */
-export const isPunct = (word: string): boolean => !/[\p{L}\p{N}]/u.test(word);
+export { defaultPosition, isPunct, wordOf };
 
 /**
  * The current step as one sentence: "Step 3 of 655 · Layer 12 of 46 · The switch picks 3 of 12
@@ -211,12 +208,6 @@ export function wordGroups(decoded: string[]): { from: number; to: number }[] {
     else prev.to = k;
   });
   return out;
-}
-
-/** The default word to follow: the last token that is not punctuation ("earth" in "… the earth."). */
-export function defaultPosition(decoded: string[]): number {
-  for (let k = decoded.length - 1; k >= 0; k--) if (!isPunct(wordOf(decoded[k] ?? ''))) return k;
-  return Math.max(0, decoded.length - 1);
 }
 
 /** Language of a traced prompt (fixed set: "de" is German, "kjv" and "ternary" are English). */
@@ -368,6 +359,11 @@ export interface PlayerBar {
   selection(): { promptId: string; position: number } | null;
   /** Called on every op change: the op, its index and the timeline length (the rail shows the progress). */
   onOp(cb: (op: Op, index: number, total: number) => void): () => void;
+  /**
+   * A short hint for the caption line while a level of the model is open (null = none). It shows while
+   * the run is paused; a playing run shows its step sentence.
+   */
+  setHint(key: StringKey | null): void;
   dispose(): void;
 }
 
@@ -497,9 +493,13 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   scrub.value = '0';
   const counter = document.createElement('span');
   counter.className = 'player-counter num';
-  const speedSel = select('player-speed');
-  for (const sp of SPEEDS) speedSel.append(new Option(`${sp}×`, String(sp)));
-  speedSel.value = '1';
+  // Speed: one pill right after Next, in both modes; a click cycles 0.5× → 1× → 2× → 4× (the only speed control).
+  let speed: Speed = 1;
+  const speedBtn = document.createElement('button');
+  speedBtn.type = 'button';
+  speedBtn.className = 'hud-btn speed-pill';
+  speedBtn.dataset.action = 'speed';
+  speedBtn.dataset.control = 'speed';
   const camSel = select('player-camera');
   for (const m of CAMERA_MODES) camSel.append(new Option(m, m));
   camSel.value = 'free';
@@ -531,12 +531,15 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   fullDetails.className = 'player-detail-full';
   // Einfach | Erweitert sits at the right end of the control row (same prefs state as everywhere).
   const modeSeg = segmented<Mode>('mode-toggle', MODES, getMode, setMode);
-  modeSeg.wrap.dataset.control = 'prefs';
+  modeSeg.wrap.dataset.control = 'mode';
 
+  // Every dock control carries its own data-control key (the HUD count in tests/ui.test.ts).
+  prev.dataset.control = 'prev';
+  play.dataset.control = 'play';
+  next.dataset.control = 'next';
   const transport = document.createElement('div');
   transport.className = 'hud-group transport';
-  transport.dataset.control = 'play';
-  transport.append(prev, play, next);
+  transport.append(prev, play, next, speedBtn);
   const pick = document.createElement('div');
   pick.className = 'hud-group pickers';
   pick.append(prompt.el, token.el);
@@ -554,7 +557,7 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   const kindJoin = document.createElement('span');
   kindJoin.className = 'hud-join';
   kindJoin.append(kindSel, kindGo);
-  adv.append(pick, progress, speedSel, camSel, jump, kindJoin, fullDetails);
+  adv.append(pick, progress, camSel, jump, kindJoin, fullDetails);
   let toolsOpen = false;
   const sentenceWrap = document.createElement('div');
   sentenceWrap.className = 'sentence-wrap';
@@ -563,7 +566,21 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   // Caption line: the headline before the first Play, then the step sentence (one line, fixed height).
   const top = document.createElement('div');
   top.className = 'player-caption';
-  top.append(headline, chip);
+  /** Caption hint while a level is open (U3); the step sentence wins while the run plays. */
+  let levelHint: StringKey | null = null;
+  let foldTipShown = false;
+  let foldTipDone = false;
+  const hintLine = document.createElement('p');
+  hintLine.className = 'player-hint';
+  hintLine.hidden = true;
+  const paintHint = (): boolean => {
+    const on = levelHint !== null && !(player?.playing() ?? false);
+    hintLine.hidden = !on;
+    hintLine.textContent = on && levelHint ? t(levelHint) : '';
+    return on;
+  };
+
+  top.append(headline, chip, hintLine);
   // Control row: transport | word chips (one scrolling line) | sentence picker | Einfach|Erweitert | Tools.
   const controls = document.createElement('div');
   controls.className = 'player-controls';
@@ -584,6 +601,18 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     if (tower.has(id)) void rig.flyTo(tower.anchor(id).clone(), FOLLOW_DISTANCE, 600);
   };
 
+  const paintSpeed = (): void => {
+    const v = `${decText(speed, speed % 1 === 0 ? 0 : 1)}×`;
+    speedBtn.textContent = v;
+    speedBtn.title = t('player.speed');
+    speedBtn.setAttribute('aria-label', t('player.speedAria', { v }));
+  };
+  const cycleSpeed = (): void => {
+    speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length] as Speed;
+    player?.setSpeed(speed);
+    paintSpeed();
+  };
+
   const syncPlay = (): void => {
     const playing = player?.playing() ?? false;
     if (playing) started = true;
@@ -591,6 +620,12 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     playText.textContent = t(playing ? 'player.pause' : 'player.play');
     play.setAttribute('aria-label', playText.textContent);
     play.title = `${t(playing ? 'player.pauseTip' : 'player.playTip', { n: arch.model.num_layers })} (${t('key.space')})`;
+    // While a level is open the caption line keeps the step sentence during a run; the fold-back hint
+    // rides on the Pause tooltip instead, once: after the first pause the caption line shows it.
+    if (playing && levelHint && !foldTipDone) {
+      play.title += ` · ${t('hint.foldTip')}`;
+      foldTipShown = true;
+    } else if (!playing && foldTipShown && levelHint) foldTipDone = true;
     play.setAttribute('aria-pressed', String(playing));
     play.classList.toggle('playing', playing);
     const steps = getMode() === 'advanced' || (started && !playing);
@@ -659,7 +694,8 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     if (left - pad < words.scrollLeft) words.scrollLeft = Math.max(0, left - pad);
     else if (left + c.offsetWidth + pad > words.scrollLeft + words.clientWidth) words.scrollLeft = left + c.offsetWidth + pad - words.clientWidth;
   };
-  if (typeof ResizeObserver === 'function') new ResizeObserver(revealCurrent).observe(words);
+  const stripObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(revealCurrent) : null;
+  stripObserver?.observe(words);
   // The popover lives on <body> while open: the dock's chamfered frame clips anything that leaves it.
   const setPop = (open: boolean): void => {
     pop.hidden = !open;
@@ -698,8 +734,9 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     const tr = traces.get(promptSel.value);
     const word = decodeToken(tr?.provenance.tokens[Number(tokenSel.value)] ?? '');
     // One caption line: the headline until the first Play, then the step sentence (same height).
-    headline.hidden = !hint;
-    chip.hidden = hint;
+    const levelOpen = paintHint();
+    headline.hidden = !hint || levelOpen;
+    chip.hidden = hint || levelOpen;
     chipText.innerHTML = hint ? '' : stepSentenceHtml(op, index, player.ops.length, arch, word);
     const simple = getMode() === 'simple';
     const d = hint ? document.createElement('div') : opDetails(op, arch);
@@ -728,7 +765,7 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     offChange = player.onChange(show);
     scrub.max = String(ops.length - 1);
     lastKey = '';
-    player.setSpeed(Number(speedSel.value) as Speed);
+    player.setSpeed(speed);
     player.setCameraMode(camSel.value as CameraMode);
     player.scrub(0);
   };
@@ -777,8 +814,7 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     tokenSel.setAttribute('aria-label', t('player.token'));
     scrub.setAttribute('aria-label', t('player.scrub'));
     scrub.title = t('player.scrub');
-    speedSel.setAttribute('aria-label', t('player.speed'));
-    speedSel.title = t('player.speed');
+    paintSpeed();
     camSel.setAttribute('aria-label', t('player.camera'));
     camSel.title = t('player.camera');
     const camText: Record<CameraMode, StringKey> = { follow: 'player.cameraFollow', free: 'player.cameraFree', overview: 'player.cameraOverview' };
@@ -852,7 +888,7 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
   prev.addEventListener('click', () => { act(() => player?.step(-1)); syncPlay(); });
   next.addEventListener('click', () => { act(() => player?.step(1)); syncPlay(); });
   scrub.addEventListener('input', () => act(() => player?.scrub(Number(scrub.value))));
-  speedSel.addEventListener('change', () => player?.setSpeed(Number(speedSel.value) as Speed));
+  speedBtn.addEventListener('click', cycleSpeed);
   camSel.addEventListener('change', () => {
     player?.setCameraMode(camSel.value as CameraMode);
     lastKey = '';
@@ -867,6 +903,20 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
 
   // Keyboard extras (mouse-first; keys are for accessibility): Space play/pause, arrows step.
   const keyDoc = deps.keys === undefined ? (typeof document === 'undefined' ? null : document) : deps.keys;
+  // F-GPU-3: focus stayed on a select of the Tools drawer after a pick, so the step key ArrowRight
+  // reached the select (Chrome picks the next option) and reset the run with another sentence.
+  // A select gives focus back right after its change, so the step keys work again. While it has focus,
+  // Left/Right step the run (never the value); Up/Down and typeahead change the value natively.
+  const onSelectKey = (e: KeyboardEvent): void => {
+    if (!player || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      act(() => player?.step(e.key === 'ArrowLeft' ? -1 : 1));
+      syncPlay();
+    }
+  };
+  for (const s of [promptSel, tokenSel, camSel, kindSel]) s.addEventListener('change', () => s.blur());
+  for (const s of [promptSel, tokenSel, camSel, kindSel]) s.addEventListener('keydown', onSelectKey);
   const onKey = (e: KeyboardEvent): void => {
     if (!player || e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
     if (e.key === ' ') { e.preventDefault(); act(() => player?.toggle()); paintOp(); }
@@ -900,12 +950,17 @@ export function createPlayerBar(deps: PlayerBarDeps): PlayerBar {
     tick: (dt) => {
       const was = player?.playing() ?? false;
       player?.tick(dt);
-      if (was && !player?.playing()) syncPlay();
+      if (was && !player?.playing()) paintOp();
     },
     player: () => player,
     selection: () => (traces.size > 0 ? { promptId: promptSel.value, position: Number(tokenSel.value) } : null),
     onOp(cb) { opListeners.add(cb); return () => opListeners.delete(cb); },
+    setHint(key) {
+      levelHint = key;
+      paintOp();
+    },
     dispose() {
+      stripObserver?.disconnect();
       offPrefs();
       offChange?.();
       keyDoc?.removeEventListener('keydown', onKey);

@@ -156,7 +156,7 @@ export const COMPONENTS: Record<ComponentType, ComponentContent> = {
     text: {
       intuition: {
         en: 'Rescales the numbers of one stream so attention sees them on a steady scale.',
-        de: 'Bringt die Zahlen eines Stroms auf ein ruhiges Maß, damit die Aufmerksamkeit sie gleichmäßig sieht.',
+        de: 'Bringt die Zahlen eines Stroms auf eine einheitliche Größenordnung, damit die Aufmerksamkeit sie gleichmäßig sieht.',
       },
       technical: {
         en: 'LayerNorm in F32 (weight and bias), applied before attention: Attn(ln1(x)). Each stream has its own.',
@@ -184,7 +184,7 @@ export const COMPONENTS: Record<ComponentType, ComponentContent> = {
     text: {
       intuition: {
         en: 'Rescales one stream again, before it goes to the router and the experts.',
-        de: 'Bringt einen Strom noch einmal auf ein ruhiges Maß, bevor er zur Weiche und zu den Experten geht.',
+        de: 'Bringt einen Strom noch einmal auf eine einheitliche Größenordnung, bevor er zur Weiche und zu den Experten geht.',
       },
       technical: {
         en: 'LayerNorm in F32, applied before the MoE: MoE(ln2(x)). Each stream has its own.',
@@ -282,7 +282,7 @@ export const COMPONENTS: Record<ComponentType, ComponentContent> = {
           'Tile cells are checkpoint values (structure).',
         de: 'γ = w.abs().mean_all() in ste.rs:5-8 und, alle 20 Aufrufe aufgefrischt, in TernaryLinear::get_gamma (ternary_linear.rs:386-392); ' +
           'Schwelle und Vorzeichen stehen in ste.rs:12-20. τ je Ebene = 0,01 + (top − 0,01) · i / (num_layers − 1), höchstens 0,05, mit ' +
-          'top = max(config.threshold, 0,03) (config.rs:42-51). Router-Gate: F32 „for routing resolution“ (moe.rs:202). ' +
+          'top = max(config.threshold, 0,03) (config.rs:42-51). Router-Gate: F32 „für die Auflösung beim Routing“ (Quellkommentar, moe.rs:202). ' +
           'Die Zellen der Kachel sind Checkpoint-Werte (Struktur).',
       },
     },
@@ -302,7 +302,7 @@ export const COMPONENTS: Record<ComponentType, ComponentContent> = {
     text: {
       intuition: {
         en: 'A switchboard. For every word it picks the {top_k} experts that should handle it, and gives each a share of the vote.',
-        de: 'Ein Stellwerk. Für jedes Wort wählt es die {top_k} Experten, die es bearbeiten sollen, und gibt jedem einen Anteil an der Stimme.',
+        de: 'Ein Stellwerk. Für jedes Wort wählt es die {top_k} Experten, die es bearbeiten sollen, und gibt jedem ein Stimmgewicht.',
       },
       technical: {
         en: 'An F32 linear layer scores all experts, scaled by a router temperature. The top {top_k} are chosen by sequential argmax. ' +
@@ -445,7 +445,7 @@ export const COMPONENTS: Record<ComponentType, ComponentContent> = {
     text: {
       intuition: {
         en: 'After the last layer the two streams are averaged into one, and this step rescales the result.',
-        de: 'Nach der letzten Ebene werden die beiden Ströme zu einem gemittelt, und dieser Schritt bringt das Ergebnis auf ein ruhiges Maß.',
+        de: 'Nach der letzten Ebene werden die beiden Ströme zu einem gemittelt, und dieser Schritt bringt das Ergebnis auf eine einheitliche Größenordnung.',
       },
       technical: {
         en: 'The streams merge as a mean, h = (h_a + h_b) / 2, then ln_f (F32) feeds the LM head.',

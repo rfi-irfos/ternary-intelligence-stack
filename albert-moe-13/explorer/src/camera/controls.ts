@@ -105,7 +105,15 @@ export interface CameraRig {
    * flight (flyTo, frame, frameBox, overview) fits into the free rect.
    */
   setInsets(insets: Insets): void;
+  /**
+   * Where the insets come from at fly time: every flight (flyTo, frame, frameBox, overview) and
+   * `insets()` read the provider first, so a panel that opened in the same task is already counted
+   * (no stale insets from a deferred measure). Reading it never moves the camera.
+   */
+  setInsetsProvider(provider: (() => Insets) | null): void;
   insets(): Insets;
+  /** Called when the camera comes to rest: a flight ends, or (after a short pause) a user drag ends. */
+  onSettle(cb: () => void): () => void;
   /** dt in seconds. */
   update(dt: number): void;
   isFlying(): boolean;
@@ -163,6 +171,15 @@ export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement
 
   let flight: Flight | null = null;
   let hud: Insets = { ...NO_INSETS };
+  let provider: (() => Insets) | null = null;
+  const clampInsets = (i: Insets): Insets =>
+    ({ top: Math.max(0, i.top), right: Math.max(0, i.right), bottom: Math.max(0, i.bottom), left: Math.max(0, i.left) });
+  /** The HUD insets of this moment (from the provider when there is one). */
+  const pull = (): void => {
+    if (provider) hud = clampInsets(provider());
+  };
+  const settled = new Set<() => void>();
+  const settle = (): void => settled.forEach((cb) => cb());
   const viewSize = (): { w: number; h: number } => {
     const el = dom as HTMLElement & { clientWidth?: number };
     const w = el.clientWidth || (typeof window === 'undefined' ? 0 : window.innerWidth) || 1;
@@ -186,6 +203,7 @@ export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement
     controls.target.copy(f.toTarget);
     controls.update();
     f.resolve();
+    settle();
   };
 
   const start = (toTarget: THREE.Vector3, toPos: THREE.Vector3, ms: number): Promise<void> => {
@@ -217,6 +235,7 @@ export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement
   const rig: CameraRig = {
     controls,
     flyTo(target, distance, ms = 900) {
+      pull();
       const dir = viewDir();
       if (!hasInsets()) return start(target, target.clone().addScaledVector(dir, distance), ms);
       // The point lands in the middle of the free rect, and what filled the view fills the free rect.
@@ -240,6 +259,7 @@ export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement
     pose: () => ({ position: camera.position.clone(), target: controls.target.clone() }),
     flyToPose: (p, ms = 900) => start(p.target, p.position, ms),
     frame(target, halfWidth, halfHeight, ms = 900) {
+      pull();
       const dir = viewDir();
       if (!hasInsets()) {
         const halfV = THREE.MathUtils.degToRad(camera.fov) / 2;
@@ -258,14 +278,26 @@ export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement
       return start(p.target, p.position, ms);
     },
     frameBox(box, ms = 900) {
+      pull();
       const p = fit(boxCorners(box), viewDir(), 1.15);
       return start(p.target, p.position, ms);
     },
     setInsets(insets) {
-      hud = { top: Math.max(0, insets.top), right: Math.max(0, insets.right), bottom: Math.max(0, insets.bottom), left: Math.max(0, insets.left) };
+      hud = clampInsets(insets);
     },
-    insets: () => ({ ...hud }),
+    setInsetsProvider(p) {
+      provider = p;
+    },
+    insets: () => {
+      pull();
+      return { ...hud };
+    },
+    onSettle(cb) {
+      settled.add(cb);
+      return () => settled.delete(cb);
+    },
     overview(ms = 900) {
+      pull();
       if (!hasInsets()) {
         const { target, distance } = overviewPose(camera.aspect, camera.fov, extent);
         return start(target, target.clone().addScaledVector(OVERVIEW_DIR, distance), ms);
@@ -294,9 +326,20 @@ export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement
     escapeGuard: null,
     dispose() {
       dom.ownerDocument.removeEventListener('keydown', onKey);
+      controls.removeEventListener('end', onDragEnd);
+      if (dragTimer) clearTimeout(dragTimer);
+      settled.clear();
       controls.dispose();
     },
   };
+
+  // A user drag ends; damping still glides the camera for a moment, so the settle waits for it.
+  let dragTimer: ReturnType<typeof setTimeout> | null = null;
+  const onDragEnd = (): void => {
+    if (dragTimer) clearTimeout(dragTimer);
+    dragTimer = setTimeout(() => { dragTimer = null; settle(); }, 500);
+  };
+  controls.addEventListener('end', onDragEnd);
 
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === 'Escape' && !rig.escapeGuard?.()) void rig.overview();

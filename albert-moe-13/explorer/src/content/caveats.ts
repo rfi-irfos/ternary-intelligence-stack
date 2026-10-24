@@ -94,8 +94,8 @@ export const CAVEATS: Record<CaveatId, Caveat> = {
         '20 Sep 2026, and so far only the training watch log records them, by tensor count (+78 tensors per layer). ' +
         'The explorer shows all 46 real layers: it reads the depth from the checkpoint, not the config.',
       de: '42 Ebenen sind der offiziell dokumentierte Stand: session_log und convergence_log von TIS halten die Tiefe bis zu ' +
-        'den Operationen 36→42 vom 19. Sep. 2026 fest. Die Ebenen 43-46 (im Modus „Erweitert“ 42-45, weil er dort ab 0 zählt) kamen danach hinzu, in den vier ' +
-        'Tiefenoperationen 42→46 am 19. und 20. Sep. 2026; bisher hält nur das Trainings-Watch-Log sie fest, über die Zahl der Tensoren ' +
+        'den Eingriffen 36→42 vom 19. Sep. 2026 fest. Die Ebenen 43-46 (im Modus „Erweitert“ 42-45, weil er dort ab 0 zählt) kamen danach hinzu, in den vier ' +
+        'Tiefen-Eingriffen 42→46 am 19. und 20. Sep. 2026; bisher hält nur das Trainings-Watch-Log sie fest, über die Zahl der Tensoren ' +
         '(+78 Tensoren je Ebene). Der Explorer zeigt alle 46 echten Ebenen: er liest die Tiefe aus dem Checkpoint, nicht aus der Konfiguration.',
     },
     evidence: {
@@ -139,7 +139,7 @@ export const CAVEATS: Record<CaveatId, Caveat> = {
       en: 'It does not take the depth from the checkpoint (46). Whether blocks 38-45 are then silently ignored is not ' +
         'yet verified. If so, the deployed albert. runs a different depth than it was trained with.',
       de: 'Es übernimmt die Tiefe nicht aus dem Checkpoint (46). Ob die Blöcke 38-45 dann stillschweigend ignoriert werden, ist ' +
-        'noch nicht geprüft. Falls ja, läuft das ausgelieferte albert. mit einer anderen Tiefe, als mit der es trainiert wurde.',
+        'noch nicht geprüft. Falls ja, läuft das ausgelieferte albert. mit einer anderen Tiefe als der, mit der es trainiert wurde.',
     },
     evidence: { en: 'albert_serve.rs:194, builder check 2026-10-23', de: 'albert_serve.rs:194, Prüfung des Builders am 2026-10-23' },
   },

@@ -278,7 +278,16 @@ describe('codex panel layout', () => {
       expect(d.querySelector('summary .cv-title')?.textContent).toBe(CAVEATS[d.dataset.caveat as 'A6'].title.en);
     }
     const a6 = rows[0]!;
-    const cells = [...a6.querySelectorAll('.cv-table tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
+    // A time cell shows short ("09-19 14:00Z", R6: the table fits the panel at 1280 px) and keeps the full
+    // ISO value in datetime and title.
+    const cells = [...a6.querySelectorAll('.cv-table tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => {
+      const time = td.querySelector('time');
+      if (time) {
+        expect(time.title).toBe(time.getAttribute('datetime'));
+        expect(time.textContent).toBe(`${time.getAttribute('datetime')!.slice(5, 10)} ${time.getAttribute('datetime')!.slice(11)}`);
+      }
+      return time?.getAttribute('datetime') ?? td.textContent;
+    }));
     expect(cells).toEqual([
       ['42 → 43', '2026-09-19T14:00Z', 'ep8938', '3372'],
       ['43 → 44', '2026-09-19T15:05Z', 'ep8942', '3450'],

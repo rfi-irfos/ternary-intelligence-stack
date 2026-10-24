@@ -92,3 +92,14 @@ export function componentName(id: ComponentId): string {
   }
   return t(key, v);
 }
+
+/**
+ * Name of a part on its canvas label in the scene. The norms get a short form in Simple ("Norm (before
+ * attention)"; the panel title keeps the long name) and their code names in Advanced; every other part
+ * uses componentName.
+ */
+export function sceneName(id: ComponentId): string {
+  const p = parseId(id);
+  if (p && (p.type === 'ln1' || p.type === 'ln2')) return t(p.type === 'ln1' ? 'scene.ln1' : 'scene.ln2', { s: p.stream });
+  return componentName(id);
+}

@@ -21,3 +21,25 @@ export function pickAction(id: ComponentId, d: PickDeps): void {
     void d.openPanel(id);
   });
 }
+
+export interface EmptyClickDeps {
+  /** True while layer mode is open: it owns its levels, so an empty click leaves them and the camera alone. */
+  layerActive?(): boolean;
+  depth(): number;
+  /** Closes every open level in one tween; the camera returns to the pose from before the first level. */
+  reassembleAll(): Promise<void>;
+  closePanel(): void;
+}
+
+/**
+ * Click into empty space. While a level is open, everything outside the open group counts as empty
+ * (the picker raycasts only the open level, so dimmed row slabs, faded neighbour glass and the
+ * background all land here): one click folds every level back together and the camera returns. With
+ * nothing open it closes the panel. Esc stays one level back (scene/explode.ts).
+ */
+export function emptyClick(d: EmptyClickDeps): Promise<void> {
+  if (d.layerActive?.()) return Promise.resolve();
+  if (d.depth() > 0) return d.reassembleAll();
+  d.closePanel();
+  return Promise.resolve();
+}

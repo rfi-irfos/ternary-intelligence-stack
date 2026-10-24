@@ -12,7 +12,7 @@ import { PALETTE, cssHex } from '../scene/palette';
 import { DEPTHS, type Depth, getDepth, onDepthChange, setDepth } from '../ui/depth';
 import { ICONS } from '../ui/icons';
 import { getLang, getMode, layerLabel, lt, onPrefsChange, t } from '../ui/prefs';
-import { defaultPosition } from '../ui/player';
+import { defaultPosition } from '../data/words';
 import type { StringKey } from '../ui/strings';
 import { type Step, type ViewSpec, layerSteps } from './steps';
 

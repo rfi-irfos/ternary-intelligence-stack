@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Architecture } from '../data/architecture';
-import type { CameraRig } from '../camera/controls';
+import type { CameraPose, CameraRig, Insets } from '../camera/controls';
 import { findMatrix, type WeightsLoader, weightKey } from '../data/weights';
 import { type ComponentId, type Stream, parseId, slabId } from './ids';
 import { type ChildSpec, type PartKind, childrenOf, isExplodable, lanePath } from './hierarchy';
@@ -28,16 +28,24 @@ export interface TileInfo {
 export interface ExplodeDeps {
   tower: TowerScene;
   arch: Architecture;
-  /** `frameBox` (optional for test shims) fits a level into the free rect left by the HUD. */
-  rig: Pick<CameraRig, 'flyTo' | 'escapeGuard'> & Partial<Pick<CameraRig, 'frameBox'>>;
+  /**
+   * `frameBox` (optional for test shims) fits a level into the free rect left by the HUD; `pose` and
+   * `flyToPose` let a fold-all click return the camera to where it was before the first level opened.
+   */
+  rig: Pick<CameraRig, 'flyTo' | 'escapeGuard'> & Partial<Pick<CameraRig, 'frameBox' | 'pose' | 'flyToPose'>>;
   loadWeights: WeightsLoader;
   /** Text label factory; defaults to a serif canvas sprite. Tests inject a stub. */
   label?: (text: string, kind?: LabelKind) => THREE.Object3D;
   /**
-   * Name of a part in the UI language (the app passes roles.componentName). Parts named after a tensor
-   * or code id (Q, K, V, O, gate, c_fc, c_proj, seed_bias, GELU, ln1/ln2) keep their code name.
+   * Name of a part in the UI language and mode (the app passes roles.sceneName). Parts named after a
+   * tensor or code id (Q, K, V, O, gate, c_fc, c_proj, seed_bias, GELU) keep their code name.
    */
   name?: (id: ComponentId) => string;
+  /**
+   * Subscribes to language and mode changes (the app passes prefs.onPrefsChange): the scene labels of
+   * every open level then redraw in place, without reopening the level.
+   */
+  watch?: (cb: () => void) => () => void;
   /** Animation length in ms (0 = instant). */
   ms?: number;
   /** True when the user prefers reduced motion: parts and the row shift then move instantly. Defaults to the media query. */
@@ -58,6 +66,19 @@ export interface ExplodeView {
   explode(id: ComponentId): Promise<void>;
   /** Closes the top level (parts fly back and the previous level, or the intact row, returns). */
   reassemble(): Promise<void>;
+  /**
+   * Closes every open level at once, in one tween (instant under reduced motion). With `restoreCamera`
+   * (default true) the camera flies back to the pose it had just before the first level opened.
+   */
+  reassembleAll(opts?: { restoreCamera?: boolean }): Promise<void>;
+  /** Redraws the scene labels of the open levels in the current language and mode. */
+  relabel(): void;
+  /**
+   * Fades the canvas labels of the open context levels (every level but the framed top one) whose
+   * projected rect intersects a HUD band (`insets`, px on a `width` x `height` view). Called when the
+   * camera settles and when the insets change, never per frame.
+   */
+  fadeLabels(camera: THREE.Camera, width: number, height: number, insets: Insets): void;
   depth(): number;
   current(): ComponentId | null;
   /** Object to raycast against: the open level, or the whole row when nothing is exploded. */
@@ -361,6 +382,14 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
   let loading = false;
   /** Levels whose reassemble animation is still running. */
   let closing = 0;
+  /** Camera pose just before the first level of the open chain opened (a fold-all click returns there). */
+  let savedPose: CameraPose | null = null;
+  /** True while explode() closes another chain before it opens a new one (the saved pose is kept). */
+  let switching = false;
+  /** Where a running fold-all flies the camera (kept until that fold-all ends). */
+  let lastRestore: CameraPose | null = null;
+  /** Counts fold-alls: an open whose weights were still loading when one ran is dropped. */
+  let foldEpoch = 0;
   const top = (): Level | undefined => stack[stack.length - 1];
 
   /** Frames a level: its whole (nudged) box fits the free rect when the rig knows the HUD insets. */
@@ -528,6 +557,8 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
     tileCaption(m).forEach((t, i) => {
       const l = label(t, 'structure');
       l.userData.label = true;
+      l.userData.text = t;
+      l.userData.relabel = (): string => tileCaption(m)[i] ?? t;
       l.position.set(0, -0.05, -(grid.rows * CELL) / 2 - 0.35 - i * 0.45);
       tile.add(l);
     });
@@ -566,9 +597,13 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
       outline.raycast = (): void => {};
       mesh.add(outline);
       mesh.position.copy(start());
-      const named = c.kind === 'attn' || c.kind === 'router' || c.kind === 'bank' || c.kind === 'expert' || c.kind === 'head';
-      const text = label(named && deps.name ? deps.name(c.id) : c.label, 'structure');
+      const named = c.kind === 'attn' || c.kind === 'router' || c.kind === 'bank' || c.kind === 'expert' || c.kind === 'head' || c.kind === 'ln';
+      const nameOf = named && deps.name ? deps.name : null;
+      const caption = nameOf ? nameOf(c.id) : c.label;
+      const text = label(caption, 'structure');
       text.userData.label = true;
+      text.userData.text = caption;
+      if (nameOf) text.userData.relabel = (): string => nameOf(c.id);
       // Just under the part; experts sit closer (and their grid rows further apart, hierarchy.ts) so no
       // caption hides under the cube of the next row.
       text.position.set(0, -0.2, -(c.kind === 'bank' ? 1.6 : c.kind === 'expert' ? 0.8 : 0.95));
@@ -618,6 +653,29 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
     return walk(slabId(layer));
   };
 
+  /** Every caption sprite of a level (part captions and tile captions). */
+  const labelsOf = (group: THREE.Object3D): THREE.Object3D[] => {
+    const out: THREE.Object3D[] = [];
+    group.traverse((o) => { if (o.userData.label) out.push(o); });
+    return out;
+  };
+  /** True when `o` and every parent up to `group` are visible. */
+  const shownIn = (o: THREE.Object3D, group: THREE.Object3D): boolean => {
+    for (let x: THREE.Object3D | null = o; x && x !== group; x = x.parent) if (!x.visible) return false;
+    return true;
+  };
+
+  /** A label under a HUD band is faded out (its material opacity), and back when it is free again. */
+  const setLabelFade = (o: THREE.Object3D, on: boolean): void => {
+    o.userData.hudFaded = on;
+    o.traverse((x) => {
+      const m = (x as THREE.Sprite).material as THREE.Material | undefined;
+      if (!m) return;
+      if (m.userData.baseOpacity === undefined) m.userData.baseOpacity = m.opacity;
+      m.opacity = on ? 0 : (m.userData.baseOpacity as number);
+    });
+  };
+
   const view: ExplodeView = {
     root,
 
@@ -626,8 +684,18 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
       const p = parseId(id);
       if (!p || !('layer' in p)) return;
       let cur = top();
+      const epoch = foldEpoch;
+      // The pose before the first level of a chain opens (taken now, before any flight or await).
+      // While a fold-all still flies the camera back, its destination is the pose to return to (the
+      // camera is mid-flight, so rig.pose() would save a point between the level and the overview).
+      const poseBefore = cur ? null : closing > 0 && lastRestore ? lastRestore : rig.pose ? rig.pose() : null;
       if (cur && !cur.parts.has(id)) {
-        while (stack.length) await view.reassemble();
+        switching = true;
+        try {
+          while (stack.length) await view.reassemble();
+        } finally {
+          switching = false;
+        }
         cur = undefined;
       }
       // From the row, a part opens through its slab (and any level between): the slab's other parts
@@ -658,7 +726,7 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
             }
             built.push({ level, targets: [[level.parts.get(cid)!, center.clone()]], extent: Math.max(level.tile!.rows, level.tile!.cols) * CELL / 2 + 1 });
             // The stack changed while the weights loaded (a close, another open): this open is stale.
-            if (top() !== cur) {
+            if (top() !== cur || foldEpoch !== epoch) {
               drop();
               return;
             }
@@ -673,6 +741,7 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
       }
 
       setLanesVisible(false);
+      if (stack.length === 0 && !savedPose) savedPose = poseBefore;
       if (cur) {
         // The parent stays as context: the opened part gives way to its own parts, its siblings make room.
         cur.open = chain[0]!;
@@ -739,6 +808,104 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
         tower.unhide();
         undim();
       }
+      // Closed level by level (Esc): the camera stays where the visitor left it; the next open saves a new pose.
+      if (stack.length === 0 && !switching && !loading) savedPose = null;
+    },
+
+    async reassembleAll(opts = {}) {
+      foldEpoch++;
+      const levels = stack.splice(0);
+      const first = levels[0];
+      if (!first) return;
+      closing++;
+      for (const l of levels) {
+        const lanes = l.group.userData.lanes as THREE.Object3D | undefined;
+        if (lanes) lanes.visible = false;
+      }
+      deps.onChange?.(null);
+      const pose = savedPose;
+      savedPose = null;
+      const restoring = opts.restoreCamera !== false && pose && rig.flyToPose ? pose : null;
+      if (restoring) {
+        lastRestore = restoring;
+        void rig.flyToPose!(restoring, reduced() ? 0 : undefined);
+      }
+      // Every part of every level flies back into the slab it came from, while the row closes its gap:
+      // one tween of the explode length.
+      const back = tower.has(first.id) ? tower.anchor(first.id) : first.center.clone();
+      try {
+        await Promise.all([
+          ...levels.flatMap((l) => [...l.parts.values()].filter((o) => o.visible).map((o) => animate(o, back, o.scale.x, 0.2))),
+          ...relayout(),
+        ]);
+      } finally {
+        closing--;
+        if (closing === 0 && lastRestore === restoring) lastRestore = null;
+      }
+      for (const l of levels) {
+        root.remove(l.group);
+        disposeTree(l.group);
+      }
+      if (stack.length === 0 && closing === 0) {
+        tower.unhide();
+        undim();
+      }
+    },
+
+    relabel() {
+      for (const l of stack) {
+        // Part captions hang under their part, tile captions under the tile: every label of the level.
+        for (const old of labelsOf(l.group)) {
+          const make = old.userData.relabel as (() => string) | undefined;
+          const parent = old.parent;
+          if (!make || !parent) continue;
+          const text = make();
+          if (text === old.userData.text) continue;
+          const fresh = label(text, (old.userData.kind as LabelKind | undefined) ?? 'structure');
+          fresh.position.copy(old.position);
+          fresh.userData.label = true;
+          fresh.userData.text = text;
+          fresh.userData.relabel = make;
+          if (old.userData.hudFaded) setLabelFade(fresh, true);
+          parent.remove(old);
+          disposeTree(old);
+          parent.add(fresh);
+          delete parent.userData.localBox;
+        }
+      }
+    },
+
+    fadeLabels(camera, width, height, insets) {
+      const w = Math.max(width, 1);
+      const h = Math.max(height, 1);
+      const framed = top();
+      camera.updateMatrixWorld();
+      const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+      const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+      const at = new THREE.Vector3();
+      const q = new THREE.Vector3();
+      for (const l of stack) {
+        for (const c of labelsOf(l.group)) {
+          let under = false;
+          if (l !== framed && shownIn(c, l.group)) {
+            c.getWorldPosition(at);
+            let x0 = Infinity; let x1 = -Infinity; let y0 = Infinity; let y1 = -Infinity;
+            let behind = false;
+            for (const sx of [-0.5, 0.5]) for (const sy of [-0.5, 0.5]) {
+              q.copy(at).addScaledVector(right, sx * c.scale.x).addScaledVector(up, sy * c.scale.y).project(camera);
+              if (q.z > 1) behind = true;
+              const px = ((q.x + 1) / 2) * w;
+              const py = ((1 - q.y) / 2) * h;
+              x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py);
+            }
+            // On screen and reaching into a band: the top bar, the dock, the side column or the legend.
+            under = !behind && x1 > 0 && x0 < w && y1 > 0 && y0 < h
+              && ((insets.top > 0 && y0 < insets.top) || (insets.bottom > 0 && y1 > h - insets.bottom)
+                || (insets.right > 0 && x1 > w - insets.right) || (insets.left > 0 && x0 < insets.left));
+          }
+          setLabelFade(c, under);
+        }
+      }
     },
 
     depth: () => stack.length,
@@ -788,6 +955,7 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
     },
 
     dispose() {
+      offWatch?.();
       doc?.removeEventListener('keydown', onKey);
       if (rig.escapeGuard === guard) rig.escapeGuard = null;
       while (stack.length) {
@@ -822,6 +990,7 @@ export function createExplode(deps: ExplodeDeps): ExplodeView {
     if (stack.length > 0) void view.reassemble();
   };
   doc?.addEventListener('keydown', onKey);
+  const offWatch = deps.watch?.(() => view.relabel());
   return view;
 }
 

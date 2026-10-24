@@ -246,6 +246,13 @@ const sv = (v: number | null, key: string, format?: (x: unknown) => string): str
   return el.outerHTML;
 };
 
+/** A table cell; an ISO time ("2026-09-19T14:00Z") shows short ("09-19 14:00Z") and keeps the full value in
+ * datetime and title, so the A6 table fits the side panel at 1280 px without a horizontal scroll. */
+export function cell(x: string): string {
+  const m = /^(\d{4})-(\d{2}-\d{2})T(\d{2}:\d{2})Z$/.exec(x);
+  return m ? `<time datetime="${esc(x)}" title="${esc(x)}">${m[2]} ${m[3]}Z</time>` : esc(x);
+}
+
 export function createPanel(deps: PanelDeps): Panel {
   const { arch, tower, rig, loadWeights } = deps;
   const el = document.createElement('aside');
@@ -371,7 +378,7 @@ export function createPanel(deps: PanelDeps): Panel {
         const tip = cv.logPath ?? note;
         const table = cv.table
           ? `<div class="cv-table-wrap lv-block lv-block--${kind}" data-kind="${kind}" title="${esc(tip)}"><table class="cv-table"><thead><tr>${cv.table.head.map((h) => `<th>${esc(lt(h))}</th>`).join('')}</tr></thead>` +
-            `<tbody>${cv.table.rows.map((r) => `<tr>${r.map((x) => `<td>${esc(x)}</td>`).join('')}</tr>`).join('')}</tbody></table>${badge(kind, undefined, tip).outerHTML}</div>` : '';
+            `<tbody>${cv.table.rows.map((r) => `<tr>${r.map((x) => `<td>${cell(x)}</td>`).join('')}</tr>`).join('')}</tbody></table>${badge(kind, undefined, tip).outerHTML}</div>` : '';
         const label = cv.label ? `<p class="cv-label"><span class="tag tag--measured">${esc(lt(cv.label))}</span></p>` : '';
         return `<li><details data-caveat="${cid}"><summary><span class="code-chip">${cid}</span><span class="cv-title">${cited(lt(cv.title))}</span>${ICONS.chevron}</summary>` +
           `<div class="cv-body"><p>${cited(lt(cv.body))}</p>${table}${label}` +

@@ -159,7 +159,7 @@ export function layerSteps(
       },
       formula: 'y = (x - mean(x)) / sqrt(var(x) + eps) · γ + β',
       view: {
-        kind: 'heat', label: 'illustrative', title: L({ en: `toy ${hidden}-vector before and after (not a recorded activation)`, de: `Spielzeugvektor mit ${hidden} Werten vorher und nachher (keine aufgezeichnete Aktivierung)` }),
+        kind: 'heat', label: 'illustrative', title: L({ en: `toy ${hidden}-vector before and after (not a recorded activation)`, de: `Beispielvektor mit ${hidden} Werten vorher und nachher (keine aufgezeichnete Aktivierung)` }),
         series: [{ name: 'x', values: x }, { name: 'ln1(x)', values: normalise(x) }], slice: [0, Math.min(64, hidden)],
       },
       data: illustrative({ vectorLength: hidden, note: 'toy vector, the trace holds no activation vectors' }),
@@ -248,12 +248,12 @@ export function layerSteps(
     const note = truncated
       ? L({
         en: `truncated: position ${position} lies before the recorded window (positions ${windowStart}..${n - 1}); toy rows shown`,
-        de: `abgeschnitten: Position ${position} liegt vor dem aufgezeichneten Fenster (Positionen ${windowStart}..${n - 1}); Spielzeugzeilen gezeigt`,
+        de: `abgeschnitten: Position ${position} liegt vor dem aufgezeichneten Fenster (Positionen ${windowStart}..${n - 1}); Beispielzeilen gezeigt`,
       })
       : hasTrace
         ? (isFixture ? L({ en: 'fixture rows, not a measurement', de: 'Testdaten, keine Messung' })
           : L({ en: 'recorded attention weights of this layer and stream', de: 'aufgezeichnete Attention-Gewichte dieser Ebene und dieses Stroms' }))
-        : L({ en: 'toy rows; no measured trace', de: 'Spielzeugzeilen; keine gemessene Spur' });
+        : L({ en: 'toy rows; no measured trace', de: 'Beispielzeilen; keine gemessene Spur' });
     steps.push({
       id: 'softmax',
       title: {
@@ -281,7 +281,7 @@ export function layerSteps(
     steps.push({
       id: 'o_resid',
       title: {
-        intuition: L({ en: 'Mix the answers and add them back', de: 'Antworten mischen und dazuzählen' }),
+        intuition: L({ en: 'Mix the answers and add them back', de: 'Antworten mischen und aufaddieren' }),
         technical: L({ en: 'O projection, then the residual add', de: 'O-Projektion, dann die Residual-Addition' }),
         researcher: L({ en: 'x1 = x + concat(heads) Wo', de: 'x1 = x + concat(heads) Wo' }),
       },
@@ -305,6 +305,8 @@ export function layerSteps(
     position, logits, top3, weights: wts, a3Clamped: clamped, outputScales: router?.output_scales ?? [],
   };
   const a3Involved = top3.some((e) => e < 4);
+  // the selected slots of the weight bars: as many as the config's top_k
+  const picks = Array.from({ length: k }, (_, i) => i);
   const routerLabel = router && !isFixture ? 'measured' : 'illustrative';
   steps.push({
     id: 'router',
@@ -336,10 +338,10 @@ export function layerSteps(
         de: `Top-${k} der Logits; Softmax über diese ${k} nach der A3-Klemme, vor den Ausgabeskalen`,
       }),
     },
-    formula: 'w = softmax(logits[top3])',
+    formula: `w = softmax(logits[top${k}])`,
     view: {
-      kind: 'bars', label: routerLabel, title: L({ en: 'weights of the selected experts', de: 'Gewichte der gewählten Experten' }), values: [...wts], marked: [0, 1, 2],
-      labels: top3.map((e) => `E${e}`), ...(clamped ? { clamped: [0, 1, 2].filter((k) => (top3[k] ?? 9) < 4) } : {}),
+      kind: 'bars', label: routerLabel, title: L({ en: 'weights of the selected experts', de: 'Gewichte der gewählten Experten' }), values: [...wts], marked: picks,
+      labels: top3.map((e) => `E${e}`), ...(clamped ? { clamped: picks.filter((i) => (top3[i] ?? 9) < 4) } : {}),
     },
     data: router ? m(rd) : illustrative(rd),
     caveats: a3Involved || clamped ? ['A3'] : [], open: slabOpen,
@@ -386,7 +388,7 @@ export function layerSteps(
     steps.push({
       id: 'moe_resid',
       title: {
-        intuition: L({ en: `Blend the ${k} answers and add them back`, de: `Die ${k} Antworten mischen und dazuzählen` }),
+        intuition: L({ en: `Blend the ${k} answers and add them back`, de: `Die ${k} Antworten mischen und aufaddieren` }),
         technical: L({ en: 'Weighted expert sum, then the residual add', de: 'Gewichtete Summe der Experten, dann die Residual-Addition' }),
         researcher: L({ en: 'x2 = x1 + sum_i scale_i * w_i * expert_i(ln2(x1))', de: 'x2 = x1 + sum_i scale_i * w_i * expert_i(ln2(x1))' }),
       },
