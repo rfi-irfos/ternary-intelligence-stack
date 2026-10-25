@@ -25,7 +25,7 @@ Built by [RFI-IRFOS](https://ternlang.com) · Graz, Austria · Whitepaper [https
 - **[README.md](https://github.com/rfi-irfos/ternary-intelligence-stack/blob/main/ternlang-root/README.md)** — Full technical documentation and compiler specifications
 - **[Ternlang Studio (Preview)](https://ternlang-api.fly.dev/studio)** — Developer dashboard and SDK
 - **[albert.](https://github.com/rfi-irfos/ternary-intelligence-stack/tree/main/albert-moe-13)** — Native ternary training framework, EvolutionManager, live dashboard
-- **[Xperience albert.](albert-moe-13/explorer/README.md)** — interactive 3D explorer of albert.'s architecture (46 layers, in the browser)
+- **[Xperience albert.](https://albert.rfi-irfos.com/)** — interactive 3D explorer of albert.'s architecture (46 layers, in the browser) · [how it is built](albert-moe-13/explorer/README.md)
 - **[Model Card](https://github.com/rfi-irfos/ternary-intelligence-stack/blob/main/MODEL_CARD.md)** — Architecture, training status, EU AI Act compliance notes
 - **[Convergence Log](https://github.com/rfi-irfos/ternary-intelligence-stack/blob/main/albert-moe-13/docs/convergence_log.md)** — Training loss history across all albert. versions (last recorded epoch 9270)
 - **[Agent Albert CLI](https://github.com/rfi-irfos/agent-albert-cli)** — Terminal-native, model-agnostic AI agent built in pure Rust
@@ -57,7 +57,7 @@ A ternary Mixture-of-Experts language model trained natively from scratch — no
 
 **Current state:** **46L dual-stream** · 2×256H · **1,104 total expert-routing slots** (12E/layer × 46L × 2 streams) · Top-3 · **512CTX** · 32k vocab · 331,140,622 parameters · **33 depth surgeries** (12L→46L) + 1 cord surgery complete · last recorded epoch **9270**: loss_avg **3.9353**, loss_best **3.8420** · training **stopped** (Modal workspace paused) · chip ATL **0.6116** (older value, not re-checked)
 
-**Explore it:** [Xperience albert.](albert-moe-13/explorer/README.md) is an interactive 3D explorer of the 46 layers, in the browser (built, not public yet).
+**Explore it:** [Xperience albert.](https://albert.rfi-irfos.com/) is an interactive 3D explorer of the 46 layers, in the browser.
 
 ```bash
 # API live — requires key (free tier at ternlang.com/#licensing)

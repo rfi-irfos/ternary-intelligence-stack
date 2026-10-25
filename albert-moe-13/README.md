@@ -1,6 +1,6 @@
 # Albert MoE-13
 
-**Xperience albert.** — [interactive 3D explorer of albert.'s architecture (46 layers, in the browser)](explorer/README.md). A museum-style walk through the real checkpoint structure, with recorded traces of the real model. Not public yet: the live URL follows at launch.
+**Xperience albert.** — [interactive 3D explorer of albert.'s architecture (46 layers, in the browser)](https://albert.rfi-irfos.com/). A museum-style walk through the real checkpoint structure, with recorded traces of the real model. Build notes: [explorer/README.md](explorer/README.md).
 
 **Ternary-native dual-stream Mixture-of-Experts language model** — weights constrained to {-1, 0, +1}, trained from scratch with real-time dashboard telemetry. GPU training via Modal (T4).
 

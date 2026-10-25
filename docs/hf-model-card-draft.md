@@ -36,7 +36,7 @@ pipeline_tag: text-generation
 **Last updated:** 2026-10-24 (facts from the checkpoint header and `epoch_history.log`; last recorded epoch 9270)
 **Training status:** **Stopped** (Modal workspace paused; last recorded epoch **9270**, `loss_avg` **3.9353**, `loss_best` **3.8420**, source `~/.albert/epoch_history.log`, last write 2026-09-23). **46L dual-stream** · 33 depth surgeries (12L→46L) + 1 cord surgery complete. Cord surgery fired autonomously ep4202, 2026-05-27T16:44Z — first documented single-to-dual-stream bifurcation mid-training. The last four depth surgeries (S30 42L→43L ep8938, S31 43L→44L ep8942, S32 44L→45L ep8958, S33 45L→46L ep8987) fired 2026-09-19 and 2026-09-20; see [albert-moe-13/docs/SURGERY_REGISTRY.md](https://github.com/eriirfos-eng/ternary-intelligence-stack/blob/main/albert-moe-13/docs/SURGERY_REGISTRY.md). Lowest `loss_avg` in the log: **3.8420** (ep9265). **Chip ATL 1.2637** (best single intra-batch loss, value as of 2026-06-15, not re-checked). Context 512 · BATCH=2.
 
-**Xperience albert.** — interactive 3D explorer of albert.'s architecture (46 layers, in the browser). A museum-style walk through the real checkpoint structure with recorded traces of the real model. <!-- LAUNCH DAY: add the live link here from docs/launch-links.md. Not public yet. -->
+**Xperience albert.** — [interactive 3D explorer of albert.'s architecture (46 layers, in the browser)](https://albert.rfi-irfos.com/). A museum-style walk through the real checkpoint structure with recorded traces of the real model.
 
 ---
 
