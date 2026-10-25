@@ -375,9 +375,10 @@ describe('phone 390 px: the side panel is a bottom sheet, the model stays in the
     card.getBoundingClientRect = () => ({ right: 100 }) as DOMRect;
     expect(measureHud({ ...base, side: () => sheet, legendCard: () => card }).left).toBe(108);
     // desktop widths: a 422 px panel at 1920 takes width, not height
-    const wide = measureHud({ ...base, win: { innerWidth: 1920, innerHeight: 1080 }, side: () => box({ offsetWidth: 422, offsetLeft: 1920 - 12 - 422, offsetHeight: 800, offsetTop: 60 }), legendCard: () => null });
+    const winW = { innerWidth: 1920, innerHeight: 1080 };
+    const wide = measureHud({ ...base, win: winW, side: () => box({ offsetWidth: 422, offsetLeft: 1920 - 12 - 422, offsetHeight: 800, offsetTop: 60 }), legendCard: () => null });
     expect(wide.right).toBe(12 + 422 + 8);
-    expect(wide.bottom).toBeLessThan(1080 - 800);
+    expect(wide.bottom).toBe(measureHud({ ...base, win: winW, side: () => null, legendCard: () => null }).bottom);
     // closed: nothing
     expect(measureHud({ ...base, side: () => null, legendCard: () => null }).right).toBe(0);
   });
