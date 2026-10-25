@@ -12,6 +12,8 @@ export interface ShortcutsOptions {
 export const KEY_ROWS: ReadonlyArray<{ keys: Array<StringKey | string>; text: StringKey }> = [
   { keys: ['shortcuts.k.space'], text: 'shortcuts.d.space' },
   { keys: ['←', '→'], text: 'shortcuts.d.arrows' },
+  { keys: ['W', 'A', 'S', 'D'], text: 'shortcuts.d.wasd' },
+  { keys: ['Q', 'E'], text: 'shortcuts.d.qe' },
   { keys: ['Home', 'End'], text: 'shortcuts.d.homeEnd' },
   { keys: ['1', '2', '3'], text: 'shortcuts.d.depth' },
   { keys: ['shortcuts.k.esc'], text: 'shortcuts.d.esc' },

@@ -8,6 +8,8 @@ export interface TopBar {
   /** Home: closes everything and returns to the main menu (lobby); the app wires the click. */
   home: HTMLButtonElement;
   toursButton: HTMLButtonElement;
+  /** Flies to the framed training picture (the exhibit); the app wires the click. */
+  exhibitButton: HTMLButtonElement;
   /** Navigation group of the right side: Lobby, Legende (the app inserts it before Tour), Tour. */
   nav: HTMLElement;
   gear: HTMLButtonElement;
@@ -69,7 +71,7 @@ export function segmented<T extends string>(cls: string, values: readonly T[], g
 
 /**
  * OS-style system bar: one slim full-width row of translucent glass with a hairline under it. Left: the
- * wordmark only. Right: the navigation (Lobby, Legende, Tour), a thin divider, then the settings (DE | EN
+ * wordmark only. Right: the navigation (Lobby, Legende, Tour, Training picture), a thin divider, then the settings (DE | EN
  * pill and the gear, which opens a dropdown with Quality and Sound). Einfach | Erweitert lives in the
  * sidebar head (src/ui/player.ts). Each
  * top-level control carries `data-control`, so the HUD can be counted (Simple: at most 5). Switching
@@ -88,6 +90,14 @@ export function createTopBar(title: HTMLElement | null): TopBar {
   const homeText = document.createElement('span');
   home.innerHTML = ICONS.home;
   home.append(homeText);
+
+  const exhibitBtn = document.createElement('button');
+  exhibitBtn.type = 'button';
+  exhibitBtn.className = 'hud-btn tray-item exhibit-btn';
+  exhibitBtn.dataset.control = 'guide';
+  const exhibitText = document.createElement('span');
+  exhibitBtn.innerHTML = ICONS.eye;
+  exhibitBtn.append(exhibitText);
 
   const tours = document.createElement('button');
   tours.type = 'button';
@@ -145,7 +155,7 @@ export function createTopBar(title: HTMLElement | null): TopBar {
   prefs.append(lang.wrap, gear);
   const nav = document.createElement('div');
   nav.className = 'top-nav';
-  nav.append(home, tours);
+  nav.append(home, tours, exhibitBtn);
   const divider = document.createElement('span');
   divider.className = 'top-divider';
   divider.setAttribute('aria-hidden', 'true');
@@ -158,6 +168,8 @@ export function createTopBar(title: HTMLElement | null): TopBar {
     home.title = t('nav.homeTip');
     homeText.textContent = t('nav.homeText');
     toursText.textContent = t('app.tours');
+    exhibitText.textContent = t('nav.exhibitText');
+    exhibitBtn.title = t('nav.exhibitTip');
     tours.title = t('app.toursTip', { n: TOUR_IDS.length });
     lang.label.textContent = t('lang.label');
     lang.group.setAttribute('aria-label', t('lang.label'));
@@ -174,7 +186,7 @@ export function createTopBar(title: HTMLElement | null): TopBar {
   paint();
   const off = onPrefsChange(paint);
   return {
-    element: el, home, toursButton: tours, nav, gear,
+    element: el, home, toursButton: tours, exhibitButton: exhibitBtn, nav, gear,
     settings: { element: menu, body: menuBody, isOpen: () => !menu.hidden, open: () => setMenu(true), close: () => setMenu(false) },
     dispose: () => {
       off();

@@ -121,7 +121,11 @@ async function main(): Promise<void> {
 
   const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
   camera.up.set(0, 0, 1);
-  const rig = createControls(camera, renderer.domElement, tower.rowExtent);
+  const rig = createControls(camera, renderer.domElement, tower.rowExtent, {
+    // WASD flies only in the explorer: not in the lobby or the intro film, and not while a dialog is up.
+    keysEnabled: () => !document.body.classList.contains('in-lobby') && !document.body.classList.contains('cinema')
+      && !document.querySelector('.shortcuts, .lightbox, .gl-lost, .lobby-about'),
+  });
 
   // Functional layout rules that live with their modules; the look comes from src/style/*.css.
   const style = document.createElement('style');
@@ -182,12 +186,12 @@ async function main(): Promise<void> {
   // Its picture loads only when the visitor asks for it ("Show in the scene").
   const exhibit = createExhibit(tower.rowExtent, { maxAnisotropy: () => renderer.capabilities.getMaxAnisotropy() });
   scene.add(exhibit.group);
-  const exhibitEntry = createExhibitEntry({
-    show: () => {
-      void exhibit.ensureTexture();
-      void rig.flyTo(exhibit.anchor, exhibit.viewDistance(camera.aspect, camera.fov));
-    },
-  });
+  const showExhibit = (): void => {
+    void exhibit.ensureTexture();
+    void rig.flyTo(exhibit.anchor, exhibit.viewDistance(camera.aspect, camera.fov));
+  };
+  const exhibitEntry = createExhibitEntry({ show: showExhibit });
+  top.exhibitButton.addEventListener('click', showExhibit);
   sidebar.body('analysis').append(exhibitEntry.element);
   // Keys and mouse actions: the ? key anywhere, and an entry at the foot of the Session section.
   attachShortcutsKey();

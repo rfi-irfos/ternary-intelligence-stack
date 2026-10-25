@@ -32,7 +32,11 @@ describe('E: top bar, wordmark left, everything else right', () => {
     expect([...left.children].map((x) => x.className)).toEqual(['wordmark']);
     const right = top.element.querySelector('.top-right')!;
     expect([...right.children].map((x) => x.className)).toEqual(['top-nav', 'top-divider', 'top-prefs']);
-    expect([...top.nav.children]).toEqual([top.home, legend, top.toursButton]);
+    expect([...top.nav.children]).toEqual([top.home, legend, top.toursButton, top.exhibitButton]);
+    // the training picture is one click away, in the same control group as Legende and Tour (no extra HUD group)
+    expect(top.exhibitButton.dataset.control).toBe('guide');
+    expect(top.exhibitButton.textContent).toBe('Training');
+    expect(top.exhibitButton.title).toBe(t('nav.exhibitTip'));
     expect(top.home.dataset.control).toBe('home');
     const prefs = right.querySelector('.top-prefs')!;
     expect([...prefs.children].map((x) => x.className.split(' ')[0])).toEqual(['hud-segmented', 'hud-icon']);
@@ -42,6 +46,7 @@ describe('E: top bar, wordmark left, everything else right', () => {
     setLang('de');
     expect(top.home.textContent).toBe(t('nav.homeText'));
     expect(top.toursButton.textContent).toBe(t('app.tours'));
+    expect(top.exhibitButton.title).toBe('Zum gerahmten Bild des laufenden Trainings fliegen');
   });
 });
 

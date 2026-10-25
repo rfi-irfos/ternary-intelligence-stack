@@ -616,14 +616,14 @@ body.cinema :is(.top-bar, .dock, .tour-card, .timeline, .os-sidebar, .sidebar-ed
   .lobby-entry-desc { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 }
 @media (max-width: 1100px) {
-  .tours-btn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .tours-btn span, .exhibit-btn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 }
 /* Phones: the bar keeps icons only (names stay in the tooltips and, for the home button, the legend chip
    and the side-panel button, in the accessible name); the open side panel becomes a full-width sheet over
    the scene and the dock under it waits until it is closed. The sheet is a bottom sheet of about 42 % of the
    height (Simeon, phone test 2026-10-25: a full-screen sheet hid the model), so the scene stays visible above it. */
 @media (max-width: 700px) {
-  .home-btn span, .legend-toggle span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .home-btn span, .legend-toggle span, .exhibit-btn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .top-bar { gap: var(--space-2); padding: 0 var(--space-2); }
   .top-left, .top-right, .top-prefs { gap: 0; }
   #app-name { font-size: 15px; }

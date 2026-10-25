@@ -193,7 +193,17 @@ export function overviewPoints(extent: RowExtent): THREE.Vector3[] {
 export interface ControlsOptions {
   /** True when the visitor prefers reduced motion: every flight then cuts to its pose. Defaults to the media query. */
   reducedMotion?: () => boolean;
+  /** False while the keys must not fly the camera (lobby, intro, a dialog). Defaults to always true. */
+  keysEnabled?: () => boolean;
 }
+
+/** Fly keys by physical position (so they work on every layout): W/S forward and back, A/D left and right, Q/E down and up. */
+export const FLY_KEYS: Readonly<Record<string, { fwd?: number; right?: number; up?: number }>> = {
+  KeyW: { fwd: 1 }, KeyS: { fwd: -1 }, KeyD: { right: 1 }, KeyA: { right: -1 }, KeyE: { up: 1 }, KeyQ: { up: -1 },
+};
+/** Flying speed in view distances per second, and the Shift boost. */
+export const FLY_SPEED = 0.8;
+export const FLY_BOOST = 3;
 
 export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement, extent: RowExtent, opts: ControlsOptions = {}): CameraRig {
   const motionQuery = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
@@ -240,6 +250,54 @@ export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement
     controls.update();
     f.resolve();
     settle();
+  };
+
+  // Fly keys (a user action, so the camera may move): camera and pivot move together, speed scales with the
+  // distance to the pivot so it feels the same near a slab and far out.
+  const held = new Set<string>();
+  let boost = false;
+  let flyTimer: ReturnType<typeof setTimeout> | null = null;
+  const doc = dom.ownerDocument;
+  const typing = (t: EventTarget | null): boolean => {
+    const n = t as HTMLElement | null;
+    return !!n && (n.tagName === 'INPUT' || n.tagName === 'TEXTAREA' || n.tagName === 'SELECT' || n.isContentEditable);
+  };
+  const onFlyDown = (e: KeyboardEvent): void => {
+    if (!(e.code in FLY_KEYS) || e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;
+    if (opts.keysEnabled && !opts.keysEnabled()) return;
+    held.add(e.code);
+    boost = e.shiftKey;
+    e.preventDefault();
+  };
+  const onFlyUp = (e: KeyboardEvent): void => {
+    boost = e.shiftKey;
+    if (held.delete(e.code) && held.size === 0) {
+      if (flyTimer) clearTimeout(flyTimer);
+      flyTimer = setTimeout(() => { flyTimer = null; settle(); }, 500);
+    }
+  };
+  const onFlyBlur = (): void => { held.clear(); };
+  doc.addEventListener('keydown', onFlyDown);
+  doc.addEventListener('keyup', onFlyUp);
+  if (typeof window !== 'undefined') window.addEventListener('blur', onFlyBlur);
+  const flyDir = new THREE.Vector3();
+  const flyRight = new THREE.Vector3();
+  const flyMove = new THREE.Vector3();
+  const fly = (dt: number): void => {
+    if (held.size === 0) return;
+    if (opts.keysEnabled && !opts.keysEnabled()) { held.clear(); return; }
+    let fwd = 0, right = 0, up = 0;
+    for (const c of held) { const k = FLY_KEYS[c]!; fwd += k.fwd ?? 0; right += k.right ?? 0; up += k.up ?? 0; }
+    if (fwd === 0 && right === 0 && up === 0) return;
+    flyDir.copy(controls.target).sub(camera.position);
+    const dist = Math.max(flyDir.length(), 6);
+    if (flyDir.lengthSq() < 1e-9) flyDir.copy(OVERVIEW_DIR).negate();
+    flyDir.normalize();
+    flyRight.crossVectors(flyDir, camera.up).normalize();
+    flyMove.set(0, 0, 0).addScaledVector(flyDir, fwd).addScaledVector(flyRight, right).addScaledVector(camera.up, up);
+    flyMove.multiplyScalar(dist * FLY_SPEED * (boost ? FLY_BOOST : 1) * Math.min(dt, 0.1));
+    camera.position.add(flyMove);
+    controls.target.add(flyMove);
   };
 
   let atOv = false;
@@ -373,6 +431,8 @@ export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement
         const k = easeInOutCubic(s);
         camera.position.lerpVectors(f.fromPos, f.toPos, k);
         controls.target.lerpVectors(f.fromTarget, f.toTarget, k);
+      } else {
+        fly(dt);
       }
       controls.update();
     },
@@ -380,6 +440,10 @@ export function createControls(camera: THREE.PerspectiveCamera, dom: HTMLElement
     escapeGuard: null,
     dispose() {
       dom.ownerDocument.removeEventListener('keydown', onKey);
+      doc.removeEventListener('keydown', onFlyDown);
+      doc.removeEventListener('keyup', onFlyUp);
+      if (typeof window !== 'undefined') window.removeEventListener('blur', onFlyBlur);
+      if (flyTimer) clearTimeout(flyTimer);
       controls.removeEventListener('end', onDragEnd);
       if (dragTimer) clearTimeout(dragTimer);
       settled.clear();

@@ -335,3 +335,92 @@ describe('reduced motion', () => {
     expect(r.isFlying()).toBe(true);
   });
 });
+
+describe('fly keys (WASD, Q/E)', () => {
+  const press = (code: string, init: KeyboardEventInit = {}): void => { document.dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true, cancelable: true, ...init })); };
+  const release = (code: string): void => { document.dispatchEvent(new KeyboardEvent('keyup', { code, bubbles: true })); };
+
+  it('W moves camera and pivot together along the view direction; releasing the key stops it', () => {
+    const { camera, rig: r } = rig();
+    const p0 = camera.position.clone();
+    const t0 = r.controls.target.clone();
+    const dir = t0.clone().sub(p0).normalize();
+    press('KeyW');
+    r.update(0.1);
+    const moved = camera.position.clone().sub(p0);
+    expect(moved.length()).toBeGreaterThan(0.1);
+    expect(moved.clone().normalize().dot(dir)).toBeGreaterThan(0.999);
+    expect(r.controls.target.clone().sub(t0).distanceTo(moved)).toBeLessThan(1e-6);
+    release('KeyW');
+    const p1 = camera.position.clone();
+    r.update(0.1);
+    expect(camera.position.distanceTo(p1)).toBeLessThan(1e-3);
+  });
+
+  it('S goes back, A and D go sideways, E goes up (+z) and Q down', () => {
+    const { camera, rig: r } = rig();
+    const step = (code: string): THREE.Vector3 => { const a = camera.position.clone(); press(code); r.update(0.1); release(code); return camera.position.clone().sub(a); };
+    const dir = r.controls.target.clone().sub(camera.position).normalize();
+    expect(step('KeyS').dot(dir)).toBeLessThan(-0.1);
+    const right = new THREE.Vector3().crossVectors(dir, camera.up).normalize();
+    expect(step('KeyD').dot(right)).toBeGreaterThan(0.1);
+    expect(step('KeyA').dot(right)).toBeLessThan(-0.1);
+    expect(step('KeyE').z).toBeGreaterThan(0.1);
+    expect(step('KeyQ').z).toBeLessThan(-0.1);
+  });
+
+  it('Shift is faster; Ctrl, Meta and Alt combinations, typing in a field and a disabled state do nothing', () => {
+    const { camera, rig: r } = rig();
+    const dist = (code: string, init: KeyboardEventInit = {}): number => { const a = camera.position.clone(); press(code, init); r.update(0.1); release(code); return camera.position.distanceTo(a); };
+    const plain = dist('KeyW');
+    expect(dist('KeyW', { shiftKey: true })).toBeGreaterThan(plain * 2);
+    expect(dist('KeyW', { ctrlKey: true })).toBe(0);
+    expect(dist('KeyW', { metaKey: true })).toBe(0);
+    const input = document.createElement('input');
+    document.body.append(input);
+    const a = camera.position.clone();
+    input.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', bubbles: true, cancelable: true }));
+    r.update(0.1);
+    input.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW', bubbles: true }));
+    expect(camera.position.distanceTo(a)).toBe(0);
+    input.remove();
+  });
+
+  it('keysEnabled false (lobby, intro, dialogs) blocks the keys', () => {
+    let on = false;
+    const camera = new THREE.PerspectiveCamera(45, 16 / 9, 0.1, 1000);
+    camera.up.set(0, 0, 1);
+    camera.position.set(10, -10, 5);
+    const dom = document.createElement('canvas');
+    document.body.appendChild(dom);
+    const r = createControls(camera, dom, EXTENT, { keysEnabled: () => on });
+    rigs.push(r);
+    const a = camera.position.clone();
+    press('KeyW');
+    r.update(0.1);
+    release('KeyW');
+    expect(camera.position.distanceTo(a)).toBe(0);
+    on = true;
+    press('KeyW');
+    r.update(0.1);
+    release('KeyW');
+    expect(camera.position.distanceTo(a)).toBeGreaterThan(0.1);
+  });
+
+  it('a running flight is not disturbed by the keys, and a dropped rig no longer listens', () => {
+    const { camera, rig: r } = rig();
+    void r.flyTo(new THREE.Vector3(50, 0, 0), 20, 1000);
+    press('KeyW');
+    r.update(0.1);
+    const a = camera.position.clone();
+    r.update(0.1);
+    // the flight keeps moving the camera along its own path (towards 50,0,0), the key adds nothing on top
+    expect(camera.position.distanceTo(a)).toBeGreaterThan(0);
+    release('KeyW');
+    r.dispose();
+    const b = camera.position.clone();
+    press('KeyW');
+    r.update(0.1);
+    expect(camera.position.distanceTo(b)).toBeLessThan(1e-6);
+  });
+});
