@@ -126,6 +126,9 @@ test.describe('smoke', () => {
     let prev = depth0;
     for (const s of steps) { expect(prev - s.depth).toBeLessThanOrEqual(1); prev = s.depth; }
     expect(steps.at(-1)).toEqual({ depth: 0, side: false });
+    // depth() drops the moment a level is popped, but its close animation still runs (slow under SwiftShader) and Esc
+    // belongs to the explode view until it ends: wait for that, or the last Esc is swallowed and no overview flight starts
+    await expect.poll(() => page.evaluate(() => !window.__albert.rig.escapeGuard?.()), { timeout: 30_000 }).toBe(true);
     await page.keyboard.press('Escape');
     // the flight back to the overview ends at the overview pose (SwiftShader frames are slow: poll, do not guess a time)
     await expect.poll(() => page.evaluate(() => window.__albert.rig.atOverview() && !window.__albert.rig.isFlying()), { timeout: 20_000 }).toBe(true);
