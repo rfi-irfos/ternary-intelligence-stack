@@ -128,12 +128,7 @@ test.describe('smoke', () => {
     expect(steps.at(-1)).toEqual({ depth: 0, side: false });
     await page.keyboard.press('Escape');
     // the flight back to the overview ends at the overview pose (SwiftShader frames are slow: poll, do not guess a time)
-    try {
-      await expect.poll(() => page.evaluate(() => window.__albert.rig.atOverview() && !window.__albert.rig.isFlying()), { timeout: 20_000 }).toBe(true);
-    } catch (e) {
-      console.log('DIAG', JSON.stringify(await page.evaluate(() => { const a = window.__albert; const p = a.rig.pose(); return { ov: a.rig.atOverview(), fly: a.rig.isFlying(), pos: p.position.toArray(), tgt: p.target.toArray(), depth: a.view.depth(), side: a.sidebar.isOpen(), focus: document.activeElement?.tagName + '.' + document.activeElement?.className }; })));
-      throw e;
-    }
+    await expect.poll(() => page.evaluate(() => window.__albert.rig.atOverview() && !window.__albert.rig.isFlying()), { timeout: 20_000 }).toBe(true);
   });
 
   test('mobile 390 × 844: pinch zooms, the panel is a full-width sheet, the preset is low', async ({ browser }) => {
