@@ -123,8 +123,9 @@ async function main(): Promise<void> {
   camera.up.set(0, 0, 1);
   const rig = createControls(camera, renderer.domElement, tower.rowExtent, {
     // WASD flies only in the explorer: not in the lobby or the intro film, and not while a dialog is up.
+    // Some dialogs stay in the DOM with `hidden` (.gl-lost, .lobby-about), so only a visible one counts.
     keysEnabled: () => !document.body.classList.contains('in-lobby') && !document.body.classList.contains('cinema')
-      && !document.querySelector('.shortcuts, .lightbox, .gl-lost, .lobby-about'),
+      && ![...document.querySelectorAll<HTMLElement>('.shortcuts, .lightbox, .gl-lost, .lobby-about')].some((e) => !e.hidden && !e.closest('[hidden]')),
   });
 
   // Functional layout rules that live with their modules; the look comes from src/style/*.css.
