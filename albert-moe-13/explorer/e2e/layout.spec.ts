@@ -192,6 +192,23 @@ test.describe('phone 390 × 844', () => {
     await settle(page);
     await expectClean(page, 'phone tour');
   });
+
+  test('a tap on a slab opens the Workbench as a bottom sheet and the model stays visible above it', async ({ page }) => {
+    await enter(page);
+    const slab = await pickPoint(page, /^L\d+$/);
+    expect(slab, 'a slab is drawn and tappable').not.toBeNull();
+    await page.touchscreen.tap(slab!.x, slab!.y);
+    await settle(page);
+    const m = await page.evaluate(() => {
+      const r = document.querySelector('.os-sidebar')!.getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, h: innerHeight, w: innerWidth, depth: window.__albert.view.depth() };
+    });
+    expect(m.depth).toBeGreaterThanOrEqual(1);
+    expect(m.top, 'the sheet starts in the lower half').toBeGreaterThan(m.h * 0.45);
+    expect(m.bottom).toBeLessThanOrEqual(m.h);
+    expect(m.right - m.left).toBeGreaterThan(m.w * 0.9);
+    await page.screenshot({ path: 'e2e/out/phone-sheet.png' });
+  });
 });
 
 test.describe('picking a slab with the Workbench open (R1)', () => {
