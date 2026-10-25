@@ -296,6 +296,16 @@ describe('HUD layout rules use the tokens', () => {
 });
 
 describe('E and G: the top bar and the settings dropdown follow the rules', () => {
+  it('phone lobby: small title, entry descriptions kept for screen readers only, tight settings row', () => {
+    const css = readFileSync('src/style/ui.css', 'utf8');
+    const phone = css.slice(css.indexOf('@media (max-width: 600px)'), css.indexOf('@media (max-width: 1100px)'));
+    expect(phone).toContain('.lobby-logo { font-size: 38px; }');
+    expect(phone).toContain('.lobby-entry-desc { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }');
+    expect(phone).toContain('.lobby-entry { min-height: 56px;');
+    // 56 px stays above the 32 px target floor
+    expect(56).toBeGreaterThanOrEqual(32);
+  });
+
   it('every target is at least 32 px; the divider is 1 px; the phone collapse (icons only) is kept', () => {
     expect(rule('.tray-item')).toMatch(/min-height: 32px/);
     expect(rule('.hud-icon')).toContain('width: var(--control-h)');

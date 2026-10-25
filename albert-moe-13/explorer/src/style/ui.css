@@ -596,6 +596,21 @@ body.cinema :is(.top-bar, .dock, .tour-card, .timeline, .os-sidebar, .sidebar-ed
   .lobby-entry:hover, .lobby-entry:focus-visible { transform: none; }
   .lobby-foot { justify-content: flex-start; }
   .lobby, .lobby[data-still="true"] { background: linear-gradient(90deg, rgba(0, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0.8) 100%); }
+  /* Phone lobby (Simeon, phone test 2026-10-25: too much at once): a small title, three plain entries (the
+     one-line descriptions stay for screen readers), one tight row of settings. */
+  .lobby { padding-top: clamp(20px, 6vh, 48px); }
+  .lobby-inner { gap: var(--space-3); }
+  .lobby-logo { font-size: 38px; }
+  .lobby-sub { margin-bottom: var(--space-3); font-size: 15px; }
+  .lobby-menu { gap: var(--space-2); }
+  .lobby-entry { min-height: 56px; gap: var(--space-3); }
+  .lobby-entry-icon { width: 36px; height: 36px; }
+  .lobby-entry-icon .icon { width: 22px; height: 22px; }
+  .lobby-entry-title { font-size: 18px; }
+  .lobby-entry-desc { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .lobby-foot { margin-top: var(--space-3); padding-top: var(--space-3); gap: var(--space-2); }
+  .lobby-prefs, .lobby-meta { gap: var(--space-2); }
+  .lobby-checkpoint { font-size: 12px; }
 }
 @media (max-width: 1100px) {
   .tours-btn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
