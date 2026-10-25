@@ -31,10 +31,10 @@ pipeline_tag: text-generation
 
 **Version:** v3.0 (ternary MoE)  
 **Maintainer:** RFI-IRFOS, contact@ternlang.com  
-**Repository:** https://github.com/eriirfos-eng/ternary-intelligence-stack  
-**License:** LGPL-3.0-or-later (model weights, training code, inference runtime). Platform infrastructure (API server, MCP tooling, HDL) is BSL-1.1. See [README §Licensing](https://github.com/eriirfos-eng/ternary-intelligence-stack/blob/main/README.md#licensing) for the full tier breakdown.  
+**Repository:** https://github.com/rfi-irfos/ternary-intelligence-stack  
+**License:** LGPL-3.0-or-later (model weights, training code, inference runtime). Platform infrastructure (API server, MCP tooling, HDL) is BSL-1.1. See [README §Licensing](https://github.com/rfi-irfos/ternary-intelligence-stack/blob/main/README.md#licensing) for the full tier breakdown.  
 **Last updated:** 2026-10-24 (facts from the checkpoint header and `epoch_history.log`; last recorded epoch 9270)
-**Training status:** **Stopped** (Modal workspace paused; last recorded epoch **9270**, `loss_avg` **3.9353**, `loss_best` **3.8420**, source `~/.albert/epoch_history.log`, last write 2026-09-23). **46L dual-stream** · 33 depth surgeries (12L→46L) + 1 cord surgery complete. Cord surgery fired autonomously ep4202, 2026-05-27T16:44Z — first documented single-to-dual-stream bifurcation mid-training. The last four depth surgeries (S30 42L→43L ep8938, S31 43L→44L ep8942, S32 44L→45L ep8958, S33 45L→46L ep8987) fired 2026-09-19 and 2026-09-20; see [albert-moe-13/docs/SURGERY_REGISTRY.md](https://github.com/eriirfos-eng/ternary-intelligence-stack/blob/main/albert-moe-13/docs/SURGERY_REGISTRY.md). Lowest `loss_avg` in the log: **3.8420** (ep9265). **Chip ATL 1.2637** (best single intra-batch loss, value as of 2026-06-15, not re-checked). Context 512 · BATCH=2.
+**Training status:** **Stopped** (Modal workspace paused; last recorded epoch **9270**, `loss_avg` **3.9353**, `loss_best` **3.8420**, source `~/.albert/epoch_history.log`, last write 2026-09-23). **46L dual-stream** · 33 depth surgeries (12L→46L) + 1 cord surgery complete. Cord surgery fired autonomously ep4202, 2026-05-27T16:44Z — first documented single-to-dual-stream bifurcation mid-training. The last four depth surgeries (S30 42L→43L ep8938, S31 43L→44L ep8942, S32 44L→45L ep8958, S33 45L→46L ep8987) fired 2026-09-19 and 2026-09-20; see [albert-moe-13/docs/SURGERY_REGISTRY.md](https://github.com/rfi-irfos/ternary-intelligence-stack/blob/main/albert-moe-13/docs/SURGERY_REGISTRY.md). Lowest `loss_avg` in the log: **3.8420** (ep9265). **Chip ATL 1.2637** (best single intra-batch loss, value as of 2026-06-15, not re-checked). Context 512 · BATCH=2.
 
 **Xperience albert.** — [interactive 3D explorer of albert.'s architecture (46 layers, in the browser)](https://albert.rfi-irfos.com/). A museum-style walk through the real checkpoint structure with recorded traces of the real model.
 
@@ -97,7 +97,7 @@ scaling without pruning.
 
 ## Training Data
 
-See [DATA_PROVENANCE.md](https://github.com/eriirfos-eng/ternary-intelligence-stack/blob/main/DATA_PROVENANCE.md) for full source documentation
+See [DATA_PROVENANCE.md](https://github.com/rfi-irfos/ternary-intelligence-stack/blob/main/DATA_PROVENANCE.md) for full source documentation
 and governance details.
 
 **Summary:**
@@ -212,7 +212,7 @@ The gate fires when loss plateaus below 9.8 for a 144-epoch window with `myc_sta
 - **@sparseskip speedup baseline:** The 83 tok/s inference figure is measured against albert.'s own F32-weight dense equivalent on the same hardware. It is not a direct comparison with INT4-quantized industry inference (TensorRT-LLM, llama.cpp Q4). The relevant claim is that ternary weights eliminate a quantization step entirely — the speedup over post-hoc INT4 quantization of a larger model is a separate, untested question.
 - **Net2net surgery stability at scale:** All 33 depth surgeries (12L→46L) and the cord surgery were performed on one run that grew to 331,140,622 parameters. Whether the Fibonacci-gated surgery protocol remains stable beyond that size has not been tested. The plateau-gate's **withhold behavior** is now validated across six independent events (ep791 non-firing + alternating descent phase ep2109–ep2120 — see below); the question of whether these properties hold beyond 331M parameters remains open.
 
-**Validated finding — surgery governor robustness (ep2120):** The plateau gate demonstrated robustness against premature surgery triggering: at ep2120, despite crossing the loss threshold (9.7997 < 9.80) at ep2081, the model continued descending through the projected plateau zone, invalidating three pre-computed surgery timing scenarios. The governor correctly withheld surgery while the model was still actively learning — a validation of the design principle that architecture should grow only when learning has genuinely exhausted current capacity. Five new epoch ATLs were recorded in seven epochs (9.7976→9.7884) during the withheld window. Full technical record: [convergence_log.md — Alternating Descent Phase section](https://github.com/eriirfos-eng/ternary-intelligence-stack/blob/main/docs/convergence_log.md).
+**Validated finding — surgery governor robustness (ep2120):** The plateau gate demonstrated robustness against premature surgery triggering: at ep2120, despite crossing the loss threshold (9.7997 < 9.80) at ep2081, the model continued descending through the projected plateau zone, invalidating three pre-computed surgery timing scenarios. The governor correctly withheld surgery while the model was still actively learning — a validation of the design principle that architecture should grow only when learning has genuinely exhausted current capacity. Five new epoch ATLs were recorded in seven epochs (9.7976→9.7884) during the withheld window. Full technical record: [convergence_log.md — Alternating Descent Phase section](https://github.com/rfi-irfos/ternary-intelligence-stack/blob/main/docs/convergence_log.md).
 
 ---
 
@@ -261,7 +261,7 @@ oversight mechanisms are in place:
 5. **Rollback capability:** All checkpoints and best-loss weights are
    preserved on persistent storage. Any version can be reverted.
 
-See [SECURITY.md](https://github.com/eriirfos-eng/ternary-intelligence-stack/blob/main/SECURITY.md) for the incident reporting process.
+See [SECURITY.md](https://github.com/rfi-irfos/ternary-intelligence-stack/blob/main/SECURITY.md) for the incident reporting process.
 
 ---
 
@@ -274,10 +274,10 @@ albert. is developed in the European Union and is subject to Regulation
 | Obligation | Article | Status |
 |------------|---------|--------|
 | Technical documentation | Annex XI | This document |
-| Training data summary | Art. 53(1)(d) | [DATA_PROVENANCE.md](https://github.com/eriirfos-eng/ternary-intelligence-stack/blob/main/DATA_PROVENANCE.md) |
-| Copyright compliance summary | Art. 53(1)(c) | [DATA_PROVENANCE.md](https://github.com/eriirfos-eng/ternary-intelligence-stack/blob/main/DATA_PROVENANCE.md) |
+| Training data summary | Art. 53(1)(d) | [DATA_PROVENANCE.md](https://github.com/rfi-irfos/ternary-intelligence-stack/blob/main/DATA_PROVENANCE.md) |
+| Copyright compliance summary | Art. 53(1)(c) | [DATA_PROVENANCE.md](https://github.com/rfi-irfos/ternary-intelligence-stack/blob/main/DATA_PROVENANCE.md) |
 | Human oversight measures | Art. 53(1)(e) | Described above |
-| Incident reporting | Art. 53(2) | [SECURITY.md](https://github.com/eriirfos-eng/ternary-intelligence-stack/blob/main/SECURITY.md) |
+| Incident reporting | Art. 53(2) | [SECURITY.md](https://github.com/rfi-irfos/ternary-intelligence-stack/blob/main/SECURITY.md) |
 | Bias/fairness assessment | Art. 53(1)(b) | Planned v3.1 |
 
 For questions about compliance or to report concerns:
@@ -298,5 +298,5 @@ contact@ternlang.com
 **Organisation:** Research Focus Institute — Interdisciplinary Research Facility for Open Sciences (RFI-IRFOS)  
 **Address:** Elisabethinergasse 25, 8020 Graz, Austria  
 **Website:** https://ternlang.com  
-**Issues:** https://github.com/eriirfos-eng/ternary-intelligence-stack/issues  
+**Issues:** https://github.com/rfi-irfos/ternary-intelligence-stack/issues  
 **General contact:** contact@ternlang.com
