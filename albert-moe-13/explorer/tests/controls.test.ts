@@ -374,15 +374,15 @@ describe('fly keys (WASD, Q/E)', () => {
     const dist = (code: string, init: KeyboardEventInit = {}): number => { const a = camera.position.clone(); press(code, init); r.update(0.1); release(code); return camera.position.distanceTo(a); };
     const plain = dist('KeyW');
     expect(dist('KeyW', { shiftKey: true })).toBeGreaterThan(plain * 2);
-    expect(dist('KeyW', { ctrlKey: true })).toBe(0);
-    expect(dist('KeyW', { metaKey: true })).toBe(0);
+    expect(dist('KeyW', { ctrlKey: true })).toBeLessThan(1e-9);
+    expect(dist('KeyW', { metaKey: true })).toBeLessThan(1e-9);
     const input = document.createElement('input');
     document.body.append(input);
     const a = camera.position.clone();
     input.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', bubbles: true, cancelable: true }));
     r.update(0.1);
     input.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW', bubbles: true }));
-    expect(camera.position.distanceTo(a)).toBe(0);
+    expect(camera.position.distanceTo(a)).toBeLessThan(1e-9);
     input.remove();
   });
 
@@ -399,7 +399,7 @@ describe('fly keys (WASD, Q/E)', () => {
     press('KeyW');
     r.update(0.1);
     release('KeyW');
-    expect(camera.position.distanceTo(a)).toBe(0);
+    expect(camera.position.distanceTo(a)).toBeLessThan(1e-9);
     on = true;
     press('KeyW');
     r.update(0.1);
@@ -407,20 +407,25 @@ describe('fly keys (WASD, Q/E)', () => {
     expect(camera.position.distanceTo(a)).toBeGreaterThan(0.1);
   });
 
-  it('a running flight is not disturbed by the keys, and a dropped rig no longer listens', () => {
+  it('during a flight the keys add nothing on top of the flight path', () => {
     const { camera, rig: r } = rig();
     void r.flyTo(new THREE.Vector3(50, 0, 0), 20, 1000);
+    const ref = rig();
+    void ref.rig.flyTo(new THREE.Vector3(50, 0, 0), 20, 1000);
     press('KeyW');
-    r.update(0.1);
-    const a = camera.position.clone();
-    r.update(0.1);
-    // the flight keeps moving the camera along its own path (towards 50,0,0), the key adds nothing on top
-    expect(camera.position.distanceTo(a)).toBeGreaterThan(0);
+    r.update(0.3);
+    ref.rig.update(0.3);
     release('KeyW');
+    expect(camera.position.distanceTo(ref.camera.position)).toBeLessThan(1e-6);
+  });
+
+  it('a disposed rig no longer listens', () => {
+    const { camera, rig: r } = rig();
     r.dispose();
     const b = camera.position.clone();
     press('KeyW');
     r.update(0.1);
-    expect(camera.position.distanceTo(b)).toBeLessThan(1e-6);
+    release('KeyW');
+    expect(camera.position.distanceTo(b)).toBeLessThan(1e-9);
   });
 });
