@@ -9,13 +9,13 @@ export const EXHIBIT_URL = assetUrl('assets/exhibits/dashboard-live.png');
 /** Size of the screenshot in pixels (1871 x 932); the picture keeps this ratio. */
 export const EXHIBIT_ASPECT = 1871 / 932;
 /** World height of the picture (the frame comes on top). */
-const PICTURE_H = 27;
+const PICTURE_H = 24;
 const BAR = 0.8;
 const BAR_DEPTH = 1.2;
 /** Place in the room: along the row, toward the camera, and height (the row sits at z = 0). */
 const EXHIBIT_X_FRACTION = 0.5;
 const EXHIBIT_Y = 46;
-const EXHIBIT_Z = 9;
+const EXHIBIT_Z = -6;
 
 export interface ExhibitDeps {
   /** Loads the picture; only called on the first `ensureTexture()`. Defaults to an HTML image. */
