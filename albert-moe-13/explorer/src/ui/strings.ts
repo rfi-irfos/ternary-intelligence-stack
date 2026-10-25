@@ -436,7 +436,7 @@ const EN = {
   // Task 11d: mockup HUD, sidebar, mini dock, timeline
   'nav.homeText': 'To lobby',
   'nav.exhibitText': 'Training',
-  'nav.exhibitTip': 'Fly to the framed picture of the live training dashboard',
+  'nav.exhibitTip': 'Show or hide the training backdrop behind the model',
   'legend.collapse': 'Fold the legend up or down',
   'side.title': 'Workbench',
   'side.toggleTip': 'Open or close the side panel',
@@ -966,7 +966,7 @@ const DE: Record<StringKey, Entry> = {
   // Task 11d: mockup HUD, sidebar, mini dock, timeline
   'nav.homeText': 'Zur Lobby',
   'nav.exhibitText': 'Training',
-  'nav.exhibitTip': 'Zum gerahmten Bild des laufenden Trainings fliegen',
+  'nav.exhibitTip': 'Die Trainings-Kulisse hinter dem Modell ein- oder ausblenden',
   'legend.collapse': 'Legende ein- oder ausklappen',
   'side.title': 'Werkbank',
   'side.toggleTip': 'Seitenleiste öffnen oder schließen',

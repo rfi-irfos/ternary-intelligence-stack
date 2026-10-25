@@ -9,13 +9,13 @@ export const EXHIBIT_URL = assetUrl('assets/exhibits/dashboard-live.png');
 /** Size of the screenshot in pixels (1871 x 932); the picture keeps this ratio. */
 export const EXHIBIT_ASPECT = 1871 / 932;
 /** World height of the picture (the frame comes on top). */
-const PICTURE_H = 9;
-const BAR = 0.28;
-const BAR_DEPTH = 0.4;
+const PICTURE_H = 27;
+const BAR = 0.8;
+const BAR_DEPTH = 1.2;
 /** Place in the room: along the row, toward the camera, and height (the row sits at z = 0). */
 const EXHIBIT_X_FRACTION = 0.5;
-const EXHIBIT_Y = -34;
-const EXHIBIT_Z = -3;
+const EXHIBIT_Y = 46;
+const EXHIBIT_Z = 9;
 
 export interface ExhibitDeps {
   /** Loads the picture; only called on the first `ensureTexture()`. Defaults to an HTML image. */
@@ -37,9 +37,9 @@ export interface Exhibit {
 }
 
 /**
- * Where the exhibit hangs: in the model's room, in front of the row (toward the default overview camera) and a little
- * left of its middle, facing the camera (-y). The row ends alone set the overview frame; the wall stands inside that
- * frame, in the empty space below the row, so it is in view from the first moment.
+ * Where the exhibit hangs: in the model's room as a backdrop, behind the row (away from the default overview camera) and
+ * centred along it, facing the camera (-y). The row ends alone set the overview frame; the backdrop stands inside that
+ * frame, so it is in view from the first moment.
  */
 export function exhibitAnchor(extent: RowExtent): THREE.Vector3 {
   const len = extent.maxX - extent.minX;

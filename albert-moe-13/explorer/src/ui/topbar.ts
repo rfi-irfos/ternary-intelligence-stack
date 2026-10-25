@@ -8,7 +8,7 @@ export interface TopBar {
   /** Home: closes everything and returns to the main menu (lobby); the app wires the click. */
   home: HTMLButtonElement;
   toursButton: HTMLButtonElement;
-  /** Flies to the framed training picture (the exhibit); the app wires the click. */
+  /** Shows or hides the training backdrop (the exhibit); the app wires the click and keeps `aria-pressed`. */
   exhibitButton: HTMLButtonElement;
   /** Navigation group of the right side: Lobby, Legende (the app inserts it before Tour), Tour. */
   nav: HTMLElement;

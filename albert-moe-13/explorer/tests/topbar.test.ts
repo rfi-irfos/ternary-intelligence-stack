@@ -46,7 +46,7 @@ describe('E: top bar, wordmark left, everything else right', () => {
     setLang('de');
     expect(top.home.textContent).toBe(t('nav.homeText'));
     expect(top.toursButton.textContent).toBe(t('app.tours'));
-    expect(top.exhibitButton.title).toBe('Zum gerahmten Bild des laufenden Trainings fliegen');
+    expect(top.exhibitButton.title).toBe('Die Trainings-Kulisse hinter dem Modell ein- oder ausblenden');
   });
 });
 

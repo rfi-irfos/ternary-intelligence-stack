@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { enter, settle } from './helpers';
 
 test.describe('fly keys in the real app', () => {
-  test('W, S, A, D, Q and E move the camera in the explorer, and not while the About is open', async ({ page }) => {
+  test('W, S, A, D, Q and E move the camera in the explorer', async ({ page }) => {
     await enter(page);
     await settle(page);
     const pos = (): Promise<number[]> => page.evaluate(() => window.__albert.rig.pose().position.toArray());

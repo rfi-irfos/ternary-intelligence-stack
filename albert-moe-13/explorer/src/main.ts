@@ -183,16 +183,23 @@ async function main(): Promise<void> {
   });
   scene.add(view.root);
   attachDepthKeys();
-  // The exhibit (framed training dashboard) hangs in the model's room, in front of the row, inside the overview frame.
+  // The exhibit (framed training dashboard) hangs in the model's room as a backdrop behind the row, inside the overview frame; the top bar toggles it.
   const exhibit = createExhibit(tower.rowExtent, { maxAnisotropy: () => renderer.capabilities.getMaxAnisotropy() });
   scene.add(exhibit.group);
   void exhibit.ensureTexture();
+  const setExhibitVisible = (on: boolean): void => {
+    exhibit.group.visible = on;
+    top.exhibitButton.setAttribute('aria-pressed', String(on));
+  };
+  setExhibitVisible(true);
+  // The side panel's "Show in the scene" switches the backdrop on (if it was off) and flies close to it.
   const showExhibit = (): void => {
+    setExhibitVisible(true);
     void exhibit.ensureTexture();
     void rig.flyTo(exhibit.anchor, exhibit.viewDistance(camera.aspect, camera.fov));
   };
   const exhibitEntry = createExhibitEntry({ show: showExhibit });
-  top.exhibitButton.addEventListener('click', showExhibit);
+  top.exhibitButton.addEventListener('click', () => setExhibitVisible(!exhibit.group.visible));
   sidebar.body('analysis').append(exhibitEntry.element);
   // Keys and mouse actions: the ? key anywhere, and an entry at the foot of the Session section.
   attachShortcutsKey();

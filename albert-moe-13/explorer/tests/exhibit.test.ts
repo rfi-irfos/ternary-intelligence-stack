@@ -32,7 +32,7 @@ describe('exhibit caption and assets', () => {
 });
 
 describe('exhibit scene object', () => {
-  it('hangs in the model room: inside the overview frame on screens from 1:1 up, and the row still fits', () => {
+  it('hangs in the model room as a backdrop: inside the overview frame on screens from 1:1 up, and the row still fits', () => {
     const ex = createExhibit(extent);
     const points = overviewPoints(extent);
     for (const aspect of [1, 1.78, 2.4]) {
