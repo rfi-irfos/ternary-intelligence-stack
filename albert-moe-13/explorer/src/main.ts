@@ -182,10 +182,10 @@ async function main(): Promise<void> {
   });
   scene.add(view.root);
   attachDepthKeys();
-  // The exhibit (framed training dashboard) hangs far beyond the output end: outside every overview frame.
-  // Its picture loads only when the visitor asks for it ("Show in the scene").
+  // The exhibit (framed training dashboard) hangs in the model's room, in front of the row, inside the overview frame.
   const exhibit = createExhibit(tower.rowExtent, { maxAnisotropy: () => renderer.capabilities.getMaxAnisotropy() });
   scene.add(exhibit.group);
+  void exhibit.ensureTexture();
   const showExhibit = (): void => {
     void exhibit.ensureTexture();
     void rig.flyTo(exhibit.anchor, exhibit.viewDistance(camera.aspect, camera.fov));

@@ -12,6 +12,10 @@ export const EXHIBIT_ASPECT = 1871 / 932;
 const PICTURE_H = 9;
 const BAR = 0.28;
 const BAR_DEPTH = 0.4;
+/** Place in the room: along the row, toward the camera, and height (the row sits at z = 0). */
+const EXHIBIT_X_FRACTION = 0.5;
+const EXHIBIT_Y = -34;
+const EXHIBIT_Z = -3;
 
 export interface ExhibitDeps {
   /** Loads the picture; only called on the first `ensureTexture()`. Defaults to an HTML image. */
@@ -33,13 +37,13 @@ export interface Exhibit {
 }
 
 /**
- * Where the exhibit hangs: far beyond the output end of the row (two and a half row lengths plus 60 units to +x), facing
- * the default overview camera (-y). The overview bounds are the row ends only, so the exhibit lies outside every
- * overview frame; the visitor reaches it with the "show exhibit" button of the side panel.
+ * Where the exhibit hangs: in the model's room, in front of the row (toward the default overview camera) and a little
+ * left of its middle, facing the camera (-y). The row ends alone set the overview frame; the wall stands inside that
+ * frame, in the empty space below the row, so it is in view from the first moment.
  */
 export function exhibitAnchor(extent: RowExtent): THREE.Vector3 {
   const len = extent.maxX - extent.minX;
-  return new THREE.Vector3(extent.maxX + len * 2.5 + 60, 0, 0);
+  return new THREE.Vector3(extent.minX + len * EXHIBIT_X_FRACTION, EXHIBIT_Y, EXHIBIT_Z);
 }
 
 const defaultLoad = (url: string): Promise<TexImageSource> =>
