@@ -14,10 +14,10 @@ import { segmented } from './topbar';
 
 /**
  * The lobby: a full-screen title screen over a slowly drifting, blurred view of the real scene. The
- * logotype, one subtitle (counts from architecture.json), three big entries (Explore, Guided tour,
- * Watch it think) and a small footer: DE | EN and Simple | Advanced (the same prefs state as the HUD),
- * the sound toggle (off by default), the checkpoint line and the About button (the About dialog: ui/about.ts). Mouse alone is enough;
- * the arrow keys move between the entries.
+ * logotype, one subtitle (counts from architecture.json) and four plain entries (Explore, Guided tour,
+ * Watch it think, About: the About dialog is ui/about.ts). One gear in the top right holds everything else:
+ * DE | EN and Simple | Advanced (the same prefs state as the HUD), the sound toggle (off by default) and the
+ * checkpoint line. Mouse alone is enough; the arrow keys move between the entries.
  *
  * Camera rule: the drift is the one scripted camera move without a user action. It runs only while the
  * lobby is visible (no interactive view exists then) and stops when the visitor leaves it.
@@ -167,30 +167,63 @@ export function createLobby(deps: LobbyDeps): Lobby {
     menu.append(b);
     return { id, b, title, desc };
   });
+  const about = doc.createElement('button');
+  about.type = 'button';
+  about.className = 'lobby-entry lobby-about-btn';
+  about.dataset.entry = 'about';
+  about.setAttribute('aria-haspopup', 'dialog');
+  about.setAttribute('aria-expanded', 'false');
+  const aboutIcon = doc.createElement('span');
+  aboutIcon.className = 'lobby-entry-icon';
+  aboutIcon.innerHTML = ICONS.info;
+  const aboutText = doc.createElement('span');
+  aboutText.className = 'lobby-entry-text';
+  const aboutTitle = doc.createElement('span');
+  aboutTitle.className = 'lobby-entry-title';
+  aboutText.append(aboutTitle);
+  about.append(aboutIcon, aboutText);
+  menu.append(about);
+  const navButtons = [...buttons.map((x) => x.b), about];
   inner.append(logo, rule, sub, menu);
 
-  const foot = doc.createElement('footer');
-  foot.className = 'lobby-foot';
+  // The gear (top right): language, mode, sound and the checkpoint line in one small panel.
+  const corner = doc.createElement('div');
+  corner.className = 'lobby-corner';
+  const gear = doc.createElement('button');
+  gear.type = 'button';
+  gear.className = 'hud-icon lobby-gear';
+  gear.innerHTML = ICONS.gear;
+  gear.setAttribute('aria-haspopup', 'dialog');
+  gear.setAttribute('aria-expanded', 'false');
+  const panel = doc.createElement('div');
+  panel.className = 'lobby-settings';
+  panel.setAttribute('role', 'dialog');
+  panel.hidden = true;
   const lang = segmented<Lang>('lang-toggle', LANGS, getLang, setLang);
   const mode = segmented<Mode>('mode-toggle', MODES, getMode, setMode);
   const snd = soundToggle(deps.sound, doc);
   const cp = doc.createElement('p');
   cp.className = 'lobby-checkpoint';
-  const about = doc.createElement('button');
-  about.type = 'button';
-  about.className = 'hud-btn hud-btn--ghost lobby-about-btn';
-  about.setAttribute('aria-haspopup', 'dialog');
-  about.setAttribute('aria-expanded', 'false');
   const prefs = doc.createElement('div');
   prefs.className = 'lobby-prefs';
   prefs.append(lang.wrap, mode.wrap, snd.element);
-  const meta = doc.createElement('div');
-  meta.className = 'lobby-meta';
-  meta.append(cp, about);
-  foot.append(prefs, meta);
+  panel.append(prefs, cp);
+  corner.append(gear, panel);
+  const setPanel = (open: boolean, focusBack = false): void => {
+    if (panel.hidden === !open) return;
+    panel.hidden = !open;
+    gear.setAttribute('aria-expanded', String(open));
+    if (open) panel.querySelector<HTMLElement>('button')?.focus();
+    else if (focusBack) gear.focus();
+  };
+  gear.addEventListener('click', () => setPanel(panel.hidden));
+  const onDocDown = (e: Event): void => {
+    if (!panel.hidden && !corner.contains(e.target as Node)) setPanel(false);
+  };
+  doc.addEventListener('pointerdown', onDocDown, true);
 
-  const dlg = createAbout({ arch, background: () => [inner, foot] });
-  el.append(inner, foot, dlg.element);
+  const dlg = createAbout({ arch, background: () => [inner, corner] });
+  el.append(inner, corner, dlg.element);
 
   about.addEventListener('click', () => { if (dlg.isOpen()) dlg.close(); else dlg.open(about); });
 
@@ -242,7 +275,10 @@ export function createLobby(deps: LobbyDeps): Lobby {
       b.title = t(`mode.${b.dataset.value}Tip` as StringKey);
     }
     mode.sync();
-    about.textContent = t('lobby.about');
+    aboutTitle.textContent = t('lobby.about');
+    gear.setAttribute('aria-label', t('settings.label'));
+    gear.title = t('settings.tip');
+    panel.setAttribute('aria-label', t('settings.label'));
     if (dlg.isOpen()) dlg.paint();
     paintCheckpoint();
   };
@@ -263,24 +299,25 @@ export function createLobby(deps: LobbyDeps): Lobby {
       e.stopImmediatePropagation();
       e.preventDefault();
       if (dlg.isOpen()) dlg.close();
+      else setPanel(false, true);
       return;
     }
     if (!el.contains(e.target as Node)) {
       e.stopImmediatePropagation();
       if (e.key === 'Tab' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
-        buttons[0]?.b.focus();
+        navButtons[0]?.focus();
       }
     }
   };
   doc.addEventListener('keydown', onKey, true);
   // Inside the lobby: Up/Down move between the entries, and no key bubbles to the page's own shortcuts.
   el.addEventListener('keydown', (e) => {
-    const k = buttons.findIndex((x) => x.b === doc.activeElement);
+    const k = navButtons.findIndex((x) => x === doc.activeElement);
     if (k >= 0 && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
       e.preventDefault();
-      const n = (k + (e.key === 'ArrowDown' ? 1 : buttons.length - 1)) % buttons.length;
-      buttons[n]?.b.focus();
+      const n = (k + (e.key === 'ArrowDown' ? 1 : navButtons.length - 1)) % navButtons.length;
+      navButtons[n]?.focus();
     }
     e.stopPropagation();
   });
@@ -295,6 +332,7 @@ export function createLobby(deps: LobbyDeps): Lobby {
     },
     hide() {
       dlg.close();
+      setPanel(false);
       el.hidden = true;
       doc.body.classList.remove('in-lobby');
     },
@@ -313,6 +351,7 @@ export function createLobby(deps: LobbyDeps): Lobby {
       dlg.dispose();
       snd.dispose();
       doc.removeEventListener('keydown', onKey, true);
+      doc.removeEventListener('pointerdown', onDocDown, true);
       doc.body.classList.remove('in-lobby');
       el.remove();
     },

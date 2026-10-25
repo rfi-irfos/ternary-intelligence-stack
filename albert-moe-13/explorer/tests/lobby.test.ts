@@ -61,16 +61,16 @@ function app(opts: {
 const entry = (id: LobbyEntry) => document.querySelector<HTMLButtonElement>(`.lobby-entry[data-entry="${id}"]`)!;
 
 describe('lobby', () => {
-  it('the lobby renders 3 entries in DE and EN', () => {
+  it('the lobby renders 4 entries (About is the fourth) in DE and EN', () => {
     const { lobby } = app();
     const titles = () => [...lobby.element.querySelectorAll('.lobby-entry .lobby-entry-title')].map((x) => x.textContent);
-    expect(lobby.element.querySelectorAll('.lobby-entry')).toHaveLength(3);
-    expect(titles()).toEqual(['Explore', 'Guided tour', 'Watch it think']);
+    expect(lobby.element.querySelectorAll('.lobby-entry')).toHaveLength(4);
+    expect(titles()).toEqual(['Explore', 'Guided tour', 'Watch it think', 'About albert.']);
     expect(lobby.element.querySelector('.lobby-logo')!.textContent).toBe('Xperience albert.');
     for (const b of lobby.element.querySelectorAll('.lobby-entry')) expect(b.querySelector('svg.icon')).not.toBeNull();
     setLang('de');
-    expect(lobby.element.querySelectorAll('.lobby-entry')).toHaveLength(3);
-    expect(titles()).toEqual(['Erkunden', 'Geführte Tour', 'Durchlauf ansehen']);
+    expect(lobby.element.querySelectorAll('.lobby-entry')).toHaveLength(4);
+    expect(titles()).toEqual(['Erkunden', 'Geführte Tour', 'Durchlauf ansehen', 'Über albert.']);
     expect(lobby.element.querySelector('.lobby-sub')!.textContent).toBe('Ein Sprachmodell zum Anfassen – 46 Ebenen, 2 Ströme, 12 gemeinsame Experten');
   });
 
@@ -237,6 +237,33 @@ describe('lobby', () => {
     setLang('de');
     expect(cp.querySelector('time')!.textContent).toMatch(/^\d{2}\.\d{2}\.\d{4}$/);
     expect(cp.querySelector('.kind-tag')!.textContent).toBe('Struktur');
+  });
+
+  it('one gear holds language, mode, sound and the checkpoint; Esc and an outside press close it one level at a time', () => {
+    const { lobby } = app();
+    const gear = lobby.element.querySelector<HTMLButtonElement>('.lobby-gear')!;
+    const panel = lobby.element.querySelector<HTMLElement>('.lobby-settings')!;
+    // nothing but the gear is visible at first; the rest of the old footer is not loose on the screen
+    expect(panel.hidden).toBe(true);
+    expect(lobby.element.querySelector('.lobby-foot')).toBeNull();
+    for (const sel of ['.lang-toggle', '.mode-toggle', '.sound-toggle', '.lobby-checkpoint']) expect(panel.querySelector(sel), sel).not.toBeNull();
+    gear.click();
+    expect(panel.hidden).toBe(false);
+    expect(gear.getAttribute('aria-expanded')).toBe('true');
+    // Esc closes the panel and keeps the lobby open
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    expect(panel.hidden).toBe(true);
+    expect(lobby.visible()).toBe(true);
+    // an outside press closes it too; a press inside does not
+    gear.click();
+    panel.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(panel.hidden).toBe(false);
+    lobby.element.querySelector('.lobby-logo')!.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(panel.hidden).toBe(true);
+    // hiding the lobby closes it as well
+    gear.click();
+    lobby.hide();
+    expect(panel.hidden).toBe(true);
   });
 
   it('About opens an honest blurb; Esc closes it (one level) and the key goes no further', () => {
