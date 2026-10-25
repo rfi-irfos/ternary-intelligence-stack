@@ -602,13 +602,14 @@ body.cinema :is(.top-bar, .dock, .tour-card, .timeline, .os-sidebar, .sidebar-ed
 }
 /* Phones: the bar keeps icons only (names stay in the tooltips and, for the home button, the legend chip
    and the side-panel button, in the accessible name); the open side panel becomes a full-width sheet over
-   the scene and the dock under it waits until it is closed. */
+   the scene and the dock under it waits until it is closed. The sheet is a bottom sheet of about 42 % of the
+   height (Simeon, phone test 2026-10-25: a full-screen sheet hid the model), so the scene stays visible above it. */
 @media (max-width: 700px) {
   .home-btn span, .legend-toggle span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .top-bar { gap: var(--space-2); padding: 0 var(--space-2); }
   .top-left, .top-right, .top-prefs { gap: 0; }
   #app-name { font-size: 15px; }
-  .os-sidebar { left: var(--edge-pad); width: auto !important; }
+  .os-sidebar { left: var(--edge-pad); width: auto !important; top: auto; height: min(42vh, 420px); height: min(42dvh, 420px); }
   body.side-open .dock, body.side-open .tour-card { visibility: hidden; }
   .legend-card { width: 168px; }
 }

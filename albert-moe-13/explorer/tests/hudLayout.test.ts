@@ -289,7 +289,7 @@ describe('HUD layout rules use the tokens', () => {
   it('phones: icons-only bar, the open side panel is a full-width sheet and the dock waits below it', () => {
     const css = read('../src/style/ui.css');
     const phone = css.slice(css.indexOf('@media (max-width: 700px)'));
-    expect(phone).toContain('.os-sidebar { left: var(--edge-pad); width: auto !important; }');
+    expect(phone).toContain('.os-sidebar { left: var(--edge-pad); width: auto !important; top: auto; height: min(42vh, 420px); height: min(42dvh, 420px); }');
     expect(phone).toContain('body.side-open .dock, body.side-open .tour-card { visibility: hidden; }');
     expect(phone).toContain('.home-btn span, .legend-toggle span');
   });

@@ -28,16 +28,24 @@ export function measureHud(e: HudElements): Insets {
   const reach = (x: HTMLElement | undefined): number => (x && x.offsetHeight ? e.win.innerHeight - x.offsetTop + e.gap : 0);
   const left = legendRight > 0 ? legendRight + e.gap : 0;
   let right = side && side.offsetWidth ? e.win.innerWidth - side.offsetLeft + e.gap : 0;
-  // On a phone the side panel is a full-width sheet. The camera must never frame the model into less than a
-  // quarter of the viewport width: the right inset gives way (the sheet then simply covers the model's edge).
+  let bottom = Math.max(reach(e.dock), reach(e.timeline));
+  // On a phone the side panel is a bottom sheet (nearly full width): it takes height from the scene, not
+  // width, so the model is framed into the free band above it.
+  if (side && side.offsetWidth >= e.win.innerWidth * SHEET_WIDTH_FRACTION) {
+    bottom = Math.max(bottom, reach(side));
+    right = 0;
+  }
   right = Math.min(right, Math.max(0, e.win.innerWidth * (1 - MIN_FREE_FRACTION) - left));
   return {
     top: e.top.offsetHeight,
-    bottom: Math.max(reach(e.dock), reach(e.timeline)),
+    bottom,
     right,
     left,
   };
 }
+
+/** A side panel at least this share of the viewport wide counts as a bottom sheet (phones). */
+export const SHEET_WIDTH_FRACTION = 0.9;
 
 /** The framing area keeps at least this share of the viewport width. */
 export const MIN_FREE_FRACTION = 0.25;
