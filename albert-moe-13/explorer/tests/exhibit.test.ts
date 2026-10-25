@@ -32,25 +32,28 @@ describe('exhibit caption and assets', () => {
 });
 
 describe('exhibit scene object', () => {
-  it('lies outside every overview frame (the overview framing stays as it was)', () => {
+  it('hangs in the model room: inside the overview frame on screens from 1:1 up, and the row still fits', () => {
     const ex = createExhibit(extent);
     const points = overviewPoints(extent);
-    for (const aspect of [0.46, 1, 1.78, 2.4]) {
+    for (const aspect of [1, 1.78, 2.4]) {
       const { target, distance } = overviewPose(aspect, 45, extent);
-      // worst case: a right panel halves the free width, so the camera sits twice as far
       const cam = new THREE.PerspectiveCamera(45, aspect, 0.1, 100000);
       cam.up.set(0, 0, 1);
-      cam.position.copy(target).addScaledVector(new THREE.Vector3(-0.45, -1, 0.5).normalize(), distance * 2);
+      cam.position.copy(target).addScaledVector(new THREE.Vector3(-0.45, -1, 0.5).normalize(), distance);
       cam.lookAt(target);
       cam.updateMatrixWorld(true);
       cam.updateProjectionMatrix();
       const frustum = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
       expect(points.every((p) => frustum.containsPoint(p))).toBe(true);
+      // the whole wall (frame and plaque) is in view, not only its centre
       const box = new THREE.Box3().setFromObject(ex.group);
-      expect({ aspect, hit: frustum.intersectsBox(box) }).toEqual({ aspect, hit: false });
+      const corners = [box.min, box.max].flatMap((lo) => [0, 1].flatMap((i) => [0, 1].map((j) => new THREE.Vector3(i ? box.max.x : box.min.x, j ? box.max.y : box.min.y, lo.z))));
+      expect({ aspect, inside: corners.every((c) => frustum.containsPoint(c)) }).toEqual({ aspect, inside: true });
     }
-    // the exhibit adds nothing to the row extent that the overview frames
-    expect(exhibitAnchor(extent).x).toBeGreaterThan(extent.maxX + 400);
+    // the exhibit adds nothing to the row extent that the overview frames: it stands within the row's length
+    const x = exhibitAnchor(extent).x;
+    expect(x).toBeGreaterThan(extent.minX);
+    expect(x).toBeLessThan(extent.maxX);
   });
 
   it('creates its texture at most once, only on request, and disposes it', async () => {
