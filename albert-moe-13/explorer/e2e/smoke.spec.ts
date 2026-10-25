@@ -109,6 +109,10 @@ test.describe('smoke', () => {
     }
     expect([...reached].sort()).toEqual(['dock', 'top', 'workbench']);
 
+    await page.evaluate(() => {
+      const r = window.__albert.rig as any; (window as any).__log = [];
+      for (const k of ['flyTo', 'flyToPose', 'frameBox', 'frame', 'overview']) { const o = r[k].bind(r); r[k] = (...x: unknown[]) => { (window as any).__log.push(Math.round(performance.now()) + ' ' + k + ' ' + ((new Error().stack || '').split('\n')[2] || '').trim().slice(-70)); return o(...x); }; }
+    });
     // Esc: one level per press. Open a level and the side panel, then press Esc until the overview is back.
     await page.evaluate(() => window.__albert.view.explode('L12.bank'));
     await settle(page);
@@ -128,7 +132,12 @@ test.describe('smoke', () => {
     expect(steps.at(-1)).toEqual({ depth: 0, side: false });
     await page.keyboard.press('Escape');
     // the flight back to the overview ends at the overview pose (SwiftShader frames are slow: poll, do not guess a time)
-    await expect.poll(() => page.evaluate(() => window.__albert.rig.atOverview() && !window.__albert.rig.isFlying()), { timeout: 20_000 }).toBe(true);
+    try {
+      await expect.poll(() => page.evaluate(() => window.__albert.rig.atOverview() && !window.__albert.rig.isFlying()), { timeout: 20_000 }).toBe(true);
+    } catch (e) {
+      console.log('DIAG', JSON.stringify(await page.evaluate(() => (window as any).__log)));
+      throw e;
+    }
   });
 
   test('mobile 390 × 844: pinch zooms, the panel is a full-width sheet, the preset is low', async ({ browser }) => {
