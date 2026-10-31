@@ -7,6 +7,7 @@ import { type Architecture, validateArchitecture } from '../src/data/architectur
 import { decText, numText } from '../src/data/labeled';
 import { createSound } from '../src/audio/sound';
 import { createAbout } from '../src/ui/about';
+import { PUBLISHER_URL } from '../src/site/seo';
 import { NOTES } from '../src/content/notes';
 import { createLobby } from '../src/ui/lobby';
 import { getLang, setLang, setMode } from '../src/ui/prefs';
@@ -220,9 +221,9 @@ describe('About dialog', () => {
     const { btn, box } = lobbyApp();
     btn.click();
     const hrefs = [...box.querySelectorAll<HTMLAnchorElement>('a[href]')].map((x) => x.getAttribute('href'));
-    expect(hrefs).toEqual([ABOUT.links.repo, ABOUT.links.huggingface]);
+    expect(hrefs).toEqual([ABOUT.links.repo, ABOUT.links.huggingface, PUBLISHER_URL]);
     const readme = readFileSync('../../README.md', 'utf8');
-    for (const h of hrefs) expect(readme, h!).toContain(h!);
+    for (const h of hrefs.slice(0, 2)) expect(readme, h!).toContain(h!);
     for (const x of box.querySelectorAll<HTMLAnchorElement>('a[href]')) {
       expect(x.rel).toContain('noopener');
       expect(x.target).toBe('_blank');
