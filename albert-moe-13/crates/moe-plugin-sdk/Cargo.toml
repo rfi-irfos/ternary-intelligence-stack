@@ -4,7 +4,7 @@ version = "2.0.0"
 edition = "2024"
 description = "Stable SDK for building third-party MoE-13 inference plugins."
 license = "LGPL-3.0-or-later"
-repository = "https://github.com/eriirfos-eng/ternary-intelligence-stack"
+repository = "https://github.com/rfi-irfos/ternary-intelligence-stack"
 documentation = "https://docs.rs/moe-plugin-sdk"
 
 [dependencies]

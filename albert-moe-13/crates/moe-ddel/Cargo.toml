@@ -4,7 +4,7 @@ version = "2.0.0"
 edition = "2024"
 description = "Deterministic distributed execution layer for MoE-13 graphs."
 license = "LGPL-3.0-or-later"
-repository = "https://github.com/eriirfos-eng/ternary-intelligence-stack"
+repository = "https://github.com/rfi-irfos/ternary-intelligence-stack"
 
 [dependencies]
 anyhow = "1.0"

@@ -5,7 +5,7 @@ edition = "2024"
 authors = ["Simeon Kepp <s.kepp@ternlang.com>"]
 description = "Production-grade Sovereign Compliance SDK for EU AI Act Articles 13, 14, & 15. Native audit transparency for ternary-logic decision agents."
 keywords = ["sovereign-ai", "eu-ai-act", "compliance", "transparency", "ternary-logic"]
-repository = "https://github.com/eriirfos-eng/ternary-intelligence-stack"
+repository = "https://github.com/rfi-irfos/ternary-intelligence-stack"
 license = "LGPL-3.0-or-later"
 
 [dependencies]

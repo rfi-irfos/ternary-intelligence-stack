@@ -20,8 +20,8 @@ resolver = "2"
 version     = "1.5.0"
 edition     = "2024"
 license     = "LGPL-3.0-or-later"
-repository  = "https://github.com/eriirfos-eng/ternary-intelligence-stack"
-homepage    = "https://ternlang.com"
+repository  = "https://github.com/rfi-irfos/ternary-intelligence-stack"
+homepage    = "https://rfi-irfos.com/"
 authors     = [
     "Simeon Kepp <s.kepp@ternlang.com>",
     "Nikoletta Csonka <csonikoletta@ternlang.com>",

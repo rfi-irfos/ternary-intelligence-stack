@@ -4,7 +4,7 @@ version = "1.5.0"
 edition = "2024"
 authors = ["Simeon Kepp <s.kepp@ternlang.com>"]
 description = "High-performance Python-to-Ternary-Bytecode transpiler for MoE model training."
-repository = "https://github.com/eriirfos-eng/ternary-intelligence-stack"
+repository = "https://github.com/rfi-irfos/ternary-intelligence-stack"
 license = "LGPL-3.0-or-later"
 
 [dependencies]
