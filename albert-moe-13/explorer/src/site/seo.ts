@@ -15,6 +15,7 @@ export const THEME_COLOR = '#050914'; // --bg-bottom of src/style/tokens.css, th
 export const SHARE_IMAGE = 'og-image.png';
 export const SHARE_IMAGE_SIZE = { width: 1200, height: 630 } as const;
 export const PUBLISHER = 'RFI-IRFOS';
+export const PUBLISHER_URL = 'https://rfi-irfos.com/';
 
 /** The site origin with exactly one trailing slash. */
 export function siteUrl(env: string | undefined): string {
@@ -57,7 +58,7 @@ export function summaryHtml(a: Architecture): string {
       <h2>${esc(APP_NAME)}</h2>
       <p>${esc(tr('about.what', 'en', 'advanced'))}</p>
       <ul>${lines}</ul>
-      <p><a href="${esc(about.links.repo)}" tabindex="-1">Source code and model card</a> · <a href="${esc(about.links.huggingface)}" tabindex="-1">Model on Hugging Face</a></p>
+      <p><a href="${esc(about.links.repo)}" tabindex="-1">Source code and model card</a> · <a href="${esc(about.links.huggingface)}" tabindex="-1">Model on Hugging Face</a> · <a href="${PUBLISHER_URL}" tabindex="-1">Built by RFI-IRFOS, research institute in Graz</a></p>
     </section>`;
 }
 
@@ -84,7 +85,7 @@ export function jsonLd(a: Architecture, site: string): string {
     inLanguage: ['en', 'de'],
     isAccessibleForFree: true,
     image: `${site}${SHARE_IMAGE}`,
-    publisher: { '@type': 'Organization', name: PUBLISHER },
+    publisher: { '@type': 'Organization', name: PUBLISHER, url: PUBLISHER_URL },
     codeRepository: about.links.repo,
     sameAs: [about.links.repo, about.links.huggingface],
   };

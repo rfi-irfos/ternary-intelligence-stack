@@ -91,6 +91,7 @@ describe('crawlable content', () => {
     expect(s.textContent).toContain(a.model.params.toLocaleString('en-US'));
     expect(s.textContent).toContain(tr('about.what', 'en', 'advanced'));
     expect(s.querySelector('a[href^="https://github.com/rfi-irfos/"]')).not.toBeNull();
+    expect(s.querySelector('a[href="https://rfi-irfos.com/"]')).not.toBeNull();
     // hidden links must not take Tab stops before the app (the e2e keyboard test caught it)
     for (const l of s.querySelectorAll('a')) expect(l.getAttribute('tabindex')).toBe('-1');
   });
@@ -116,7 +117,7 @@ describe('JSON-LD', () => {
     expect(ld.applicationCategory).toBe('ScientificApplication');
     expect(ld.inLanguage).toEqual(['en', 'de']);
     expect(ld.isAccessibleForFree).toBe(true);
-    expect(ld.publisher).toEqual({ '@type': 'Organization', name: 'RFI-IRFOS' });
+    expect(ld.publisher).toEqual({ '@type': 'Organization', name: 'RFI-IRFOS', url: 'https://rfi-irfos.com/' });
     expect(ld.codeRepository).toBe('https://github.com/rfi-irfos/ternary-intelligence-stack');
     expect(ld.sameAs).toEqual([ld.codeRepository, 'https://huggingface.co/rfi-irfos/albert']);
     for (const k of ['aggregateRating', 'review', 'offers', 'address']) expect(ld).not.toHaveProperty(k);

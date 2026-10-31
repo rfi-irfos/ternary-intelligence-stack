@@ -6,6 +6,7 @@ import { ICONS } from './icons';
 import { getLang, lt, onPrefsChange, t } from './prefs';
 import { richT } from './richText';
 import type { Lang, StringKey } from './strings';
+import { PUBLISHER_URL as INSTITUTE_URL } from '../site/seo';
 
 /** ISO date as people read it: 23.09.2026 in German, 2026-09-23 in English. */
 export const dateText = (iso: string, lang: Lang): string => {
@@ -206,7 +207,7 @@ export function createAbout(deps: AboutDeps): About {
     const lk = section('about-links', 'about.linksTitle');
     const lul = doc.createElement('ul');
     lul.className = 'about-list about-links';
-    lul.append(link(rec.links.repo, 'about.repo'), link(rec.links.huggingface, 'about.hf'));
+    lul.append(link(rec.links.repo, 'about.repo'), link(rec.links.huggingface, 'about.hf'), link(INSTITUTE_URL, 'about.institute'));
     lk.add(lul, para('about-credits', richT('about.credits', {})));
     secs.push(lk.sec);
 
