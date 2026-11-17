@@ -1,4 +1,4 @@
-# Wirkungsbericht 2025/26: erstes Vereinsjahr
+# Wirkungsbericht 2025/26: Vereinsjahr
 
 Research Focus Institute (RFI-IRFOS), Graz · ZVR 1015608684 · Berichtszeitraum 13.11.2025 bis 16.11.2026 · Stand 16.11.2026
 
@@ -6,7 +6,7 @@ Wirkungsbericht nach dem Social Reporting Standard, erstellt von den Mitgliedern
 
 # Dieses Jahr in Zahlen
 
-Heute legen wir offen, was im ersten Vereinsjahr entstanden ist. RFI-IRFOS erforscht KI-gestützte Zukunftstechnologien und veröffentlicht die Ergebnisse. Alle Mitwirkenden arbeiten ehrenamtlich, öffentliche Förderung hat der Verein bisher nicht erhalten.
+Heute legen wir offen, was im Vereinsjahr entstanden ist. RFI-IRFOS erforscht KI-gestützte Zukunftstechnologien und veröffentlicht die Ergebnisse. Alle Mitwirkenden arbeiten ehrenamtlich, öffentliche Förderung hat der Verein bisher nicht erhalten.
 
 - **331 Mio.** Parameter im Sprachmodell albert. (ternäres Modell, jedes Gewicht −1, 0 oder +1)
 - **6** Veröffentlichungen mit DOI (frei lesbar auf OSF)
@@ -140,9 +140,9 @@ Abbildung 3: Wirkungskette von RFI-IRFOS.
 
 # Kapitel 3: Ressourcen, Leistungen und Wirkungen im Berichtszeitraum
 
-Hier steht, was im ersten Vereinsjahr entstanden ist, von der ersten Zeile Code bis zum Kundenportal. Jede Kennzahl nennt Quelle und Abrufdatum. Die Fallstudien erzählen auch, was schiefging und wie wir es korrigiert haben.
+Hier steht, was im Vereinsjahr entstanden ist, von der ersten Zeile Code bis zum Kundenportal. Jede Kennzahl nennt Quelle und Abrufdatum. Die Fallstudien erzählen auch, was schiefging und wie wir es korrigiert haben.
 
-Berichtszeitraum ist das erste Vereinsjahr (13.11.2025 bis 16.11.2026). Die Zahlen beziehen sich auf den Stand am 16.11.2026. Der Verein führt die Arbeit der Gründergruppe fort, die seit 2020 gemeinsam forscht (siehe Kapitel 5.1). Die Kennzahlen zur Forschung sind daher kumuliert.
+Berichtszeitraum ist das Vereinsjahr 2025/26 (13.11.2025 bis 16.11.2026). Die Zahlen beziehen sich auf den Stand am 16.11.2026. Der Verein führt die Arbeit der Gründergruppe fort, die seit 2020 gemeinsam forscht (siehe Kapitel 5.1). Die Kennzahlen zur Forschung sind daher kumuliert.
 
 ## 3.1 Eingesetzte Ressourcen (Input)
 
@@ -285,7 +285,7 @@ Die Werte stammen von einem Laptop-Prozessor aus dem Jahr 2013 (Intel i7-4800MQ)
 
 ## 3.6 Zielerreichung und Lernerfahrungen
 
-Berichtszeitraum ist das erste Vereinsjahr, Vorjahresziele des Vereins liegen daher nicht vor. Drei Lernerfahrungen:
+Für den Berichtszeitraum 13.11.2025 bis 16.11.2026 liegen keine Vorjahresziele des Vereins vor. Drei Lernerfahrungen:
 
 - **Wirkung nur mit Beleg behaupten.** Wir haben bewusst keine Angabe zum Energiebedarf in Watt veröffentlicht, solange keine Messung vorliegt. Veröffentlicht ist, was gemessen ist: Speicher, Durchsatz, Rechenzeit.
 - **Transparenz über den Reifegrad.** Das Portal ist jung, deshalb belegen wir seine Reife über Live-Betrieb, Tests und eigene Nutzung und können uns auf keine lange Entwicklungsgeschichte berufen.
