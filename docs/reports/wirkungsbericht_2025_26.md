@@ -4,9 +4,25 @@ Research Focus Institute (RFI-IRFOS), Graz · ZVR 1015608684 · Berichtszeitraum
 
 Wirkungsbericht nach dem Social Reporting Standard, erstellt von den Mitgliedern des Vereins. Diese Datei ist die Textfassung. Die Diagramme und das vollständige Layout stehen in der PDF-Ausgabe: [wirkungsbericht_2025_26.pdf](wirkungsbericht_2025_26.pdf).
 
+# Executive Summary
+
+Das Research Focus Institute (RFI-IRFOS) in Graz ist ein Verein, der KI-gestützte Zukunftstechnologien erforscht und die Ergebnisse veröffentlicht. Dieser Bericht folgt dem Social Reporting Standard und deckt das Vereinsjahr 2025/26 ab (13.11.2025 bis 16.11.2026).
+
+### Ergebnis
+
+Im Berichtszeitraum entstanden ein ternäres Sprachmodell mit 331 Mio. Parametern, ein Team aus 292 spezialisierten Agenten, 41 öffentliche Repositories mit 11.269 Commits und sechs Veröffentlichungen mit DOI. In der Sicherheitsforschung haben wir 387+ öffentliche Apps auf Quellcode-Ebene geprüft und 249 Berichte veröffentlicht, die Betreiber vor der Veröffentlichung erhalten.
+
+### Wirkung
+
+Kleine Unternehmen bekommen Zugang zu Sicherheitsprüfung und KI, die bisher großen Organisationen vorbehalten waren. Ternäres Rechnen senkt dafür die Einstiegshürde, denn auf einer CPU von 2013 braucht es 4× weniger Speicher. Das Jahr trägt zu den UN-Zielen 8, 9 und 10 bei (Kapitel 2.3.3).
+
+### Ausblick
+
+Wir bauen unsere Server so weit aus, dass wir das Sprachmodell lokal trainieren und die Forschung zur ternären Logik skalieren können. Zahlende Kunden des Managed SOC finanzieren den Ausbau, das Ziel sind fünf bis zum 31.12.2026. Die Wirkung bei Kunden messen wir ab 2027 (Kapitel 4.1).
+
 # Dieses Jahr in Zahlen
 
-Heute legen wir offen, was im Vereinsjahr entstanden ist. RFI-IRFOS erforscht KI-gestützte Zukunftstechnologien und veröffentlicht die Ergebnisse.
+Heute legen wir offen, was im Vereinsjahr entstanden ist. Die wichtigsten Zahlen stehen hier, jede mit ihrer Quelle in Kapitel 3 und Anhang A.
 
 - **331 Mio.** Parameter im Sprachmodell albert. (ternäres Modell, jedes Gewicht −1, 0 oder +1)
 - **6** Veröffentlichungen mit DOI (frei lesbar auf OSF)
@@ -29,7 +45,7 @@ Mit Menschen: Agenten finden, Menschen entscheiden. Das Managed SOC setzt keinen
 
 Grenzen: Wo wir keine Zahl haben, sagen wir es. Kundenwirkung messen wir ab 2027.
 
-Stand 16.11.2026. Quellen, Abrufdaten und Zählweise stehen in Kapitel 3 und Anhang A. Das Modell albert. ist ein Forschungsprototyp.
+Stand 16.11.2026. Das Modell albert. ist ein Forschungsprototyp.
 
 # Kapitel 1: Terminologie
 
