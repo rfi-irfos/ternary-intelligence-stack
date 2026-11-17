@@ -807,7 +807,7 @@ Ein Verein, drei Co-Founder, ein Kassier und eine Gründungsgeschichte, die 2020
 | Simeon Andreas Kepp MBA | Co-Founder, Obmann, gewerberechtlicher Geschäftsführer |
 | Louis Paul Ehrig | Kassier |
 | Zabihullah Karimi | Co-Founder, Kernteam |
-| Laura Serna Gaviria | Co-Founder, Kernteam. Hat alle 292 Agenten mit der gesamten Logik der Multi-Agenten-Umgebung gebaut, The Squad produktionsreif gemacht und beim Aufbau von DINGIR, NYX und der Sales-Intelligence-Agenten mitgewirkt. |
+| Laura Serna Gaviria | Co-Founder, Kernteam. Hat alle 292 Agenten mit der gesamten Logik der Multi-Agenten-Umgebung gebaut, The Squad produktionsreif gemacht und zum Aufbau von DINGIR, NYX und der Sales-Intelligence-Agenten einen unermesslichen Beitrag geleistet. |
 
 Simeon Kepp, Zabihullah Karimi und Laura Serna Gaviria haben das Institut gemeinsam gegründet und tragen die inhaltliche Arbeit. Laura Serna Gaviria hat sehr viele Stunden in das Institut investiert, und viele Ergebnisse dieses Vereinsjahres gibt es nur durch diesen Einsatz. Zudem ist der Verein ein Kleinstunternehmen.
 
