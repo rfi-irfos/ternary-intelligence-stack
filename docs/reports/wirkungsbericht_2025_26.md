@@ -84,7 +84,7 @@ Nach unserer Einschätzung (Hypothese) reichen diese Ansätze für kleine Betrie
 
 ## 2.3 Unser Lösungsansatz
 
-RFI-IRFOS ist ein interdisziplinäres Forschungsinstitut mit mehreren Forschungsfeldern und arbeitet nach den Prinzipien der offenen Wissenschaft (Open Science). Zweck des Vereins laut Statuten (2.1): die Erforschung von KI-gestützten Zukunftstechnologien. Die Tätigkeit ist nicht auf Gewinn gerichtet (2.2), Überschüsse bleiben im Verein, werden monatlich reinvestiert und finanzieren künftige Vereinszwecke (3.2).
+RFI-IRFOS ist ein interdisziplinäres Forschungsinstitut mit mehreren Forschungsfeldern und arbeitet nach den Prinzipien der offenen Wissenschaft (Open Science). Zweck des Vereins laut Statuten (2.1): die Erforschung von KI-gestützten Zukunftstechnologien. Die Tätigkeit ist nicht auf Gewinn gerichtet (2.2). Überschüsse werden bis zum Monatsende reinvestiert, wobei höchstens 10 % als Rücklage bleiben dürfen, und zum Jahresende wird der gesamte Überschuss bis auf null ausgegeben, also reinvestiert. Damit finanzieren sie künftige Vereinszwecke (3.2).
 
 Wir setzen an allen drei Problemen an, mit einem Grundsatz: **Wissen offen machen, Aufwand senken, Menschen einbinden.**
 
@@ -793,7 +793,7 @@ Ein Verein, drei Co-Founder, ein Kassier und eine Gründungsgeschichte, die 2020
 
 **Vorstand und Vertretung:** Obmann Simeon Andreas Kepp und Kassier Louis Paul Ehrig (Funktionsperiode 25.01.2026 bis 24.01.2030). Nach den Statuten (13.1) vertreten sie den Verein gemeinsam.
 
-**Zweck und Gewinnverwendung:** Erforschung von KI-gestützten Zukunftstechnologien (Statuten 2.1). Die Tätigkeit ist nicht auf Gewinn gerichtet (2.2). Überschüsse bleiben im Verein und dienen künftigen Vereinszwecken (3.2). Die monatliche Reinvestition beschreibt Kapitel 2.3.
+**Zweck und Gewinnverwendung:** Erforschung von KI-gestützten Zukunftstechnologien (Statuten 2.1). Die Tätigkeit ist nicht auf Gewinn gerichtet (2.2). Überschüsse dienen künftigen Vereinszwecken (3.2). Die Regeln zur Reinvestition (Monatsende, höchstens 10 % Rücklage, Jahresende bei null) beschreibt Kapitel 2.3.
 
 **Gewerbe:** Der Verein ist selbst Inhaber des Gewerbes (Gewerbeanmeldung 25.01.2026, Dienstleistungen in der automatischen Datenverarbeitung und Informationstechnik). Die kommerziellen Produkte gehören dem Verein. Beteiligungen an anderen Unternehmen bestehen nicht.
 
