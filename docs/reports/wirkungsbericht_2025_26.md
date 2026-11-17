@@ -27,7 +27,7 @@ Gemessen: Auf einer CPU von 2013 braucht ternäres Rechnen 4× weniger Speicher 
 
 Mit Menschen: Agenten finden, Menschen entscheiden. Das Managed SOC setzt keinen Compliance-Punkt allein durch einen Scan auf „erfüllt“.
 
-Grenzen: Wo wir keine Zahl haben, sagen wir es. Kundenwirkung messen wir ab 2027. Kapitel 3.10 listet unsere Korrekturen.
+Grenzen: Wo wir keine Zahl haben, sagen wir es. Kundenwirkung messen wir ab 2027.
 
 Stand 16.11.2026. Quellen, Abrufdaten und Zählweise stehen in Kapitel 3 und Anhang A. Das Modell albert. ist ein Forschungsprototyp.
 
@@ -287,7 +287,7 @@ Die Werte stammen von einem Laptop-Prozessor aus dem Jahr 2013 (Intel i7-4800MQ)
 
 Für den Berichtszeitraum 13.11.2025 bis 16.11.2026 liegen keine Vorjahresziele des Vereins vor. Drei Lernerfahrungen:
 
-- **Wirkung nur mit Beleg behaupten.** Wir haben bewusst keine Angabe zum Energiebedarf in Watt veröffentlicht, solange keine Messung vorliegt. Veröffentlicht ist, was gemessen ist: Speicher, Durchsatz, Rechenzeit.
+- **Wirkung nur mit Beleg behaupten.** Wir haben bewusst keine Angabe zum Energiebedarf in Watt veröffentlicht, solange keine Messung vorliegt. Veröffentlicht ist, was gemessen ist: Speicher, Durchsatz, Rechenzeit. Zahlen werden berechnet statt getippt, und Berichte durchlaufen vor der Veröffentlichung eine zweite Prüfung durch Fachleute.
 - **Transparenz über den Reifegrad.** Das Portal ist jung, deshalb belegen wir seine Reife über Live-Betrieb, Tests und eigene Nutzung und können uns auf keine lange Entwicklungsgeschichte berufen.
 - **Ordentlicher Übergang.** Der Wechsel vom Vorarlberger Verein zum Verein in Graz lief lückenlos: Der neue Verein entstand, der alte wurde erst nach Abschluss aller Arbeiten aufgelöst.
 
@@ -339,7 +339,7 @@ Wir arbeiten mit KI-Assistenten (Claude-Modelle von Anthropic, in einzelnen Fäl
 
 Abbildung 9: Schraffiert ist die Schätzung der Gründer für den Anteil der KI-Arbeit.
 
-Die Zeile zeigt, dass ein Assistent beteiligt war. Sie lässt offen, wie viel von der Änderung von ihm stammt, und steht auch dann im Commit, wenn der Assistent nur die Beschreibung formuliert oder eine von Menschen gebaute Änderung zusammengefasst hat. Nach der Einschätzung der Gründer liegt der Anteil der Arbeit, den KI-Assistenten tatsächlich erledigen, im Durchschnitt bei etwa einem Viertel, wobei es sich um eine Schätzung ohne Messung handelt. Die Menschen entwerfen die Architektur, entscheiden, was gebaut wird, und prüfen die Ergebnisse. Was das in der Praxis heißt, zeigen die Fehlerkultur in Kapitel 3.10 und das Beispiel der verworfenen Dateien in Kapitel 3.9.1.
+Die Zeile zeigt, dass ein Assistent beteiligt war. Sie lässt offen, wie viel von der Änderung von ihm stammt, und steht auch dann im Commit, wenn der Assistent nur die Beschreibung formuliert oder eine von Menschen gebaute Änderung zusammengefasst hat. Nach der Einschätzung der Gründer liegt der Anteil der Arbeit, den KI-Assistenten tatsächlich erledigen, im Durchschnitt bei etwa einem Viertel, wobei es sich um eine Schätzung ohne Messung handelt. Die Menschen entwerfen die Architektur, entscheiden, was gebaut wird, und prüfen die Ergebnisse. Was das in der Praxis heißt, zeigt das Beispiel der verworfenen Dateien in Kapitel 3.9.1.
 
 Quellen: Git-Historie der Repositories der Organisation rfi-irfos (Hauptzweig, Auswertung am 16.11.2026). Zählweise und Grenzen: Anhang A. Wörtliche Beispiele aus den Commit-Nachrichten: Anhang B.
 
@@ -445,7 +445,7 @@ Der Nutzen liegt in der Verbindung der drei Dinge: Das Training liefert Messwert
 ### 3.8.6 Was uns die Praxis gelehrt hat
 
 - **Ein neuer Schutz löst zuerst den eigenen Ausfall aus.** Bei jedem neuen Schutzmechanismus war der erste Einsatz das Blockieren eines legitimen eigenen Vorgangs. Deshalb gilt seit dem Sommer: Ein Schutz bekommt einen erlaubten Gegenweg, einen Test, der ihn absichtlich auslöst, und eine möglichst frühe Prüfstelle (Entwurf, Test, Freigabe, Betrieb). Er blockiert nur den betroffenen Vorgang und nicht das ganze System.
-- **Agenten brauchen Aufsicht auch über sich selbst.** Aus den Korrekturen in Kapitel 3.10 (verworfene maschinell erzeugte Dateien, zurückgenommene Messangaben) folgte die Regel, dass Forschungsergebnisse nur mit Zweitprüfung durch ein anderes Modell zählen (07.11.).
+- **Agenten brauchen Aufsicht auch über sich selbst.** Aus den Korrekturen (verworfene maschinell erzeugte Dateien, zurückgenommene Messangaben) folgte die Regel, dass Forschungsergebnisse nur mit Zweitprüfung durch ein anderes Modell zählen (07.11.).
 - **Verständlichkeit ist Teil der Sicherheit.** Ein Befund, den niemand versteht, kann niemand prüfen. Daher die Arbeit an einfacher Sprache und erklärenden Zahlen in allen Oberflächen.
 
 **Grenzen.** Die Whitebox macht Fehler sichtbar, sie verhindert sie nicht. Die genannten Rahmen sind von uns entworfen und getestet, nicht von Dritten zertifiziert. Wir planen für 2027 eine unabhängige Begutachtung der wichtigsten Rahmen (Kapitel 4.1).
@@ -574,42 +574,15 @@ Quelle: FluxPost-Export vom 16.11.2026 (Zeitraum 30.10. bis 16.11.2026, Messunge
 
 Die Zahlen sind klein, und wir weisen sie auch so aus. Die Kanäle laufen erst seit zwei Wochen, und die Beiträge sind der Beginn einer regelmäßigen fachlichen Kommunikation, die wir 2027 ausbauen und auswerten (Kapitel 4.1). Ältere Beiträge stehen nicht in der Tabelle.
 
-## 3.10 Fehlerkultur: Korrekturen im Berichtszeitraum
-
-Ein Teil dessen, was ein Institut leistet, ist die Art, wie es mit Fehlern umgeht. Die Commit-Historie dokumentiert, wo wir eigene Angaben korrigiert, Funde zurückgezogen oder Verfahren nachgebessert haben. Die Liste enthält keine Namen untersuchter Unternehmen.
-
-*Korrekturen im Berichtszeitraum: 14 Termine in drei Bereichen*
-
-Abbildung 15: Quelle: Betreffzeilen der Commits in ternary-intelligence-stack und rfi-irfos-web. Jeder Punkt ist ein Datum der Tabelle unten (die Daten 17.04. und 22.04. sowie 20.09. und 02.10. teilen sich dort je eine Zeile).
-
-| Datum | Bereich | Korrektur |
-|----|----|----|
-| 09.04. | Ternlang | Eigene Angaben in README und Whitepaper richtiggestellt (Anzahl der Werkzeuge von 20 auf 13, „remove fake standard claims“). |
-| 10.04. | Ternlang | 3.000 maschinell erzeugte Dateien der Standardbibliothek verworfen und durch neue Inhalte ersetzt, dazu ein erfundener Build-Ablauf durch Build-Schritte abgelöst. |
-| 17.04. und 22.04. | Ternlang, Studio | Maschinell erzeugte Scheinfunktionen entfernt, die nicht existierten („hallucination residue“). |
-| 02.05. | Ternlang | Eigene Leistungsangabe („122x“) auf eine theoretische Obergrenze zurückgenommen. |
-| 07.05. | Ternlang | Durchgang für Glaubwürdigkeit: Statusanzeige, Messwerte und bekannte Einschränkungen im README. |
-| 27.05. | Ternlang, Training | Zwei Trainingsbeobachtungen zurückgezogen („training never halted“). |
-| 09.07. | Untersuchungsberichte | Ein Befund wurde nach Widerspruch des Unternehmens zurückgezogen und die Korrektur im Verzeichnis gewürdigt. |
-| 05.08. | Untersuchungsberichte | Ein falsch erfasstes Ereignis im Verzeichnis berichtigt. |
-| 12.08. | Website | Zahl der untersuchten Apps von „315/649“ (ungeprüft) auf „311“ (geprüft) korrigiert. Ab 21.08. werden Kennzahlen aus dem Berichtsverzeichnis berechnet, nicht mehr von Hand gepflegt. |
-| 17.08. | Website | Ein Markenzeichen im Fußbereich entfernt, weil keine schriftliche Genehmigung vorlag. |
-| 20.09. und 02.10. | Untersuchungsberichte | Ein Bericht in drei Korrekturrunden nach erneutem Lesen: Schweregrade herabgestuft, Rechtsraum eines Dienstleisters berichtigt. Ein weiterer Befund berichtigt. |
-| 31.10. | Website | Prüfschranke gegen Datumsfehler eingeführt (Berichtsdatum nie vor Veröffentlichung). |
-
-Quelle: Betreffzeilen der Commits in den Repositories ternary-intelligence-stack und rfi-irfos-web. Auswertung am 16.11.2026.
-
-**Feste Regeln:** Zahlen werden berechnet statt getippt, jede Aussage braucht einen Messwert, und Berichte durchlaufen vor der Veröffentlichung eine zweite Prüfung durch Fachleute.
-
-## 3.11 Alle Repositories im Überblick: vom Fundament bis zur Anwendung
+## 3.10 Alle Repositories im Überblick: vom Fundament bis zur Anwendung
 
 Die Organisation rfi-irfos führt 59 Repositories: 23 eigenständige öffentliche, 18 öffentliche Forks (eines davon archiviert) und 18 private. Dieses Verzeichnis beschreibt jedes von ihnen, in der Reihenfolge, in der die Arbeit aufeinander aufbaut. Oben liegt das Fundament, unten die Anwendungen. Stand aller Angaben: 16.11.2026, Quelle GitHub-Schnittstelle und Repository-Beschreibungen. Selbstaussagen der Projekte sind wie in Kapitel 3.9 einzuordnen.
 
 *Vom Fundament bis zur Anwendung: die Repositories im Fluss*
 
-Abbildung 16: Durchgezogene Kästen sind öffentliche, gestrichelte Kästen sind private Repositories. Forks und das Archiv stehen in Kapitel 3.11.3.
+Abbildung 15: Durchgezogene Kästen sind öffentliche, gestrichelte Kästen sind private Repositories. Forks und das Archiv stehen in Kapitel 3.10.3.
 
-### 3.11.1 Eigenständige öffentliche Repositories
+### 3.10.1 Eigenständige öffentliche Repositories
 
 ### Fundament: Sprache, Laufzeit und Modell
 
@@ -657,7 +630,7 @@ Abbildung 16: Durchgezogene Kästen sind öffentliche, gestrichelte Kästen sind
 | **nikoletta-tutor** | Website für ein Sprachcoaching, gebaut mit dem eigenen Baukasten samt Bearbeitungsbereich für die Inhaberin. | keine Lizenz angegeben, TypeScript | 15.06.–24.07.2026, 0 Sterne |
 | **e-techbike-at, aladdin-mini, p2p-repository** | Diese drei öffentlichen Repositories sind in diesem Bericht bewusst nicht beschrieben. | – | – |
 
-### 3.11.2 Private Repositories nach Aufgabe
+### 3.10.2 Private Repositories nach Aufgabe
 
 Private Repositories zählen wir und ordnen sie einer Aufgabe zu. Ihre Einzelheiten bleiben privat, weil sie Kundenumgebungen, laufende Untersuchungen oder entgeltpflichtigen Quellcode berühren.
 
@@ -671,7 +644,7 @@ Private Repositories zählen wir und ordnen sie einer Aufgabe zu. Ihre Einzelhei
 | **Kommunikation** | 2 | FluxPost für die Planung der Social-Media-Beiträge (Kapitel 3.9.5) und ein Werkzeug zur Erzeugung von Bildmaterial. |
 | **Sonstige** | 2 | Ein Archivstand von 2025 und ein Entwurf vom November 2026. |
 
-### 3.11.3 Forks und Archiv
+### 3.10.3 Forks und Archiv
 
 18 öffentliche Repositories sind Forks fremder offener Projekte oder frühe Fassungen von Ternlang. Die Urheberschaft liegt bei den Quellprojekten. Sie stehen hier der Vollständigkeit halber und zählen in den Kennzahlen dieses Berichts nicht als eigenständige Leistung (die 68 Sterne in Kapitel 3.2 beziehen sich auf die 23 eigenständigen Repositories).
 
@@ -683,72 +656,83 @@ Private Repositories zählen wir und ordnen sie einer Aufgabe zu. Ihre Einzelhei
 | **ralph, ralph-vault-skill** | Eine Schleife, die einen KI-Programmierassistenten je Durchlauf mit frischer Sitzung startet, und ein Skill für das zugehörige Wissensarchiv. | Apache-2.0 |
 | **RuVector, laya, ntpsec** | Vektor-Speicher mit Graph-Netz in Rust, ein Klassifikations-Rahmenwerk und der Spiegel einer Implementierung des Zeitprotokolls NTP. | MIT, Apache-2.0, von GitHub nicht erkannt |
 
-## 3.12 Veröffentlichte Papers
+## 3.11 Veröffentlichte Papers
 
-Neben dem Quellcode hat das Institut sechs Papers veröffentlicht. Veröffentlichungsort ist das Open Science Framework (OSF), eine Ablage für offene Forschung; jedes Paper trägt eine DOI und lässt sich dauerhaft zitieren. Die Papers sind unser eigener Beitrag zur Fachdiskussion, ihre Aussagen sind als Aussagen der Autorinnen und Autoren zu lesen. Die Reihenfolge folgt dem Veröffentlichungsdatum. Stand der Angaben: 17.11.2026.
+Neben dem Quellcode hat das Institut sechs Papers veröffentlicht. Veröffentlichungsort ist das Open Science Framework (OSF), eine Ablage für offene Forschung; jedes Paper trägt eine DOI und lässt sich dauerhaft zitieren. Die Reihenfolge folgt dem Veröffentlichungsdatum. Die Papers sind unser eigener Beitrag zur Fachdiskussion. Ihre Abstracts stehen im englischen Originalwortlaut; Zahlen und Aussagen darin sind Angaben der Autorinnen und Autoren und gehören nicht zu den Messungen dieses Berichts. Stand der Angaben: 17.11.2026.
 
 *Sechs Papers auf dem Open Science Framework, Juli 2025 bis Juli 2026*
 
-Abbildung 17: Quelle: OSF-Schnittstelle, Abruf 17.11.2026, Datum des OSF-Eintrags. CALL LAURA und JARVIS wurden am selben Tag veröffentlicht und teilen sich einen Punkt.
+Abbildung 16: Quelle: OSF-Schnittstelle, Abruf 17.11.2026, Datum des OSF-Eintrags. CALL LAURA und JARVIS wurden am selben Tag veröffentlicht und teilen sich einen Punkt.
 
-<table class="long">
-<colgroup>
-<col style="width: 33%" />
-<col style="width: 33%" />
-<col style="width: 33%" />
-</colgroup>
-<thead>
-<tr>
-<th style="width: 34%">Paper, Datum und DOI</th>
-<th style="width: 44%">Worum es geht</th>
-<th style="width: 22%">Bezug zu unserer Arbeit</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>PedalGate v1.0: Dispatch Disparity, Platform Gaslighting and the Collapse of Courier Trust in Austria's Gig Economy</strong><br />
-25.07.2025<br />
-doi.org/10.17605/OSF.IO/H5U8F</td>
-<td>Untersuchung über 101 Tage (15.04. bis 25.07.2025) zu den Lieferplattformen Foodora, Volt und Lieferando in Österreich: Disposition der Aufträge, Kommunikation der Plattformen, Einstufung der Fahrerinnen und Fahrer. Grundlage sind Zeugenaussagen, Beobachtungen und Schriftwechsel. Die Befunde sind Aussagen der Studie.</td>
-<td>Eigenständige Feldforschung zur Plattformarbeit, getrennt von den Untersuchungsberichten in Kapitel 3.9.3.</td>
-</tr>
-<tr>
-<td><strong>Operational Blueprint for Physical AI Deployment: An Ethics-First Architecture for Robust and Reproducible Physical AI Agents in Open-World Environments</strong><br />
-27.07.2025<br />
-doi.org/10.17605/OSF.IO/M3VG6</td>
-<td>Architektur für KI-Agenten in der physischen Welt: mehrere Sinneskanäle, ein SQL-gestütztes Gedächtnis für Ereignisse und Wissen, eine ternäre Entscheidungsalgebra (−1, 0, +1) und eine Schleife zur Selbstprüfung. Das Paper führt zwei Diagnosemetriken ein (μDP und MDPi) und belegt den Entwurf mit Simulationen.</td>
-<td>Ternäre Entscheidungslogik für Agenten. Der Stack in Kapitel 3.9.1 setzt die ternäre Logik als Rechenbasis um.</td>
-</tr>
-<tr>
-<td><strong>The Ternary Intelligence Stack: An End-to-End Balanced-Ternary Alternative to Binary AI Infrastructure</strong><br />
-01.04.2026<br />
-doi.org/10.17605/OSF.IO/CYN28</td>
-<td>Ein durchgängiger Werkzeugstapel auf balanciert ternärer Arithmetik, in dem die 0 ein aktives Halten bedeutet: Programmiersprache Ternlang, Befehlssatz BET-ISA mit 51 Opcodes für Verilog, virtuelle Maschine (auch als WebAssembly), ternäre Rechenroutinen und ein Inferenzverfahren, das Nullwerte überspringt.</td>
-<td>Grundlagenpapier zum Repository ternary-intelligence-stack; Messwerte in Kapitel 3.2.</td>
-</tr>
-<tr>
-<td><strong>CALL LAURA: An Automatic Data-Processing Multi-Agent Framework (the "Agent SWAT Team" Methodology)</strong><br />
-12.07.2026<br />
-doi.org/10.17605/OSF.IO/QCVJB</td>
-<td>Ein Dokument läuft parallel durch ein einstellbares Team spezialisierter, deterministischer Prüfagenten. Jeder Befund zitiert die Textstelle und nennt einen Schweregrad; ein Herkunftsvermerk zeigt, ob die Logik aus einem veröffentlichten Rahmenwerk, aus dessen Umsetzung oder aus unserer eigenen Ergänzung stammt. Agenten melden eigene Fehler offen. Der Kern liegt als Bibliothek, als MCP-Server und als gehosteter Dienst vor.</td>
-<td>Paper 3 der Reihe; gehört zu den Repositories call-laura und lauras-agents-public (Kapitel 3.11.1).</td>
-</tr>
-<tr>
-<td><strong>JARVIS: A Recursive, Self-Learning Human–AI Co-Evolution Agent Operating in Bidirectional Copilot Mode</strong><br />
-12.07.2026<br />
-doi.org/10.17605/OSF.IO/HC9ZB</td>
-<td>Ein Agent im beidseitigen Copilot-Modus: Er hält nachvollziehbar fest, wie sich Bedeutung, Wortschatz und Denkstruktur über viele Sitzungen entwickeln, damit die Anpassung in beide Richtungen sichtbar wird. Das Paper baut auf Laura Serna Gavirias Langzeitforschung zur Mensch-KI-Ko-Evolution auf.</td>
-<td>Paper 2 der Reihe zur Mensch-KI-Ko-Evolution.</td>
-</tr>
-<tr>
-<td><strong>Human–AI Co-Evolution as Ternary Logic: Distinguishing Output, Emergent Signal, and Hallucination in Real Human–AI Systems</strong><br />
-19.07.2026<br />
-doi.org/10.17605/OSF.IO/UXCJE</td>
-<td>Das Paper unterscheidet drei Zustände, die von außen oft gleich aussehen: erwartete Ausgabe, ein neues Muster aus der Interaktion und eine Erfindung ohne Grundlage. Es beschreibt die Software des Emergent Interaction Lab, die diese Unterscheidung im Code festhält. Autorinnen und Autoren: Laura Serna Gaviria und Simeon Kepp.</td>
-<td>Paper 4 der Reihe; verbindet die ternäre Logik mit der Prüfung von KI-Aussagen.</td>
-</tr>
-</tbody>
-</table>
+### PedalGate v1.0: Dispatch Disparity, Platform Gaslighting and the Collapse of Courier Trust in Austria's Gig Economy
+
+25.07.2025 · doi.org/10.17605/OSF.IO/H5U8F
+
+Executive Summary im Wortlaut
+
+Between April 15 and July 25, 2025, a comprehensive 101-day multi-platform investigation was conducted by RFI-IRFOS into systemic inequities, deeply rooted algorithmic dysfunctions, and patterns of rider classification exploitation within the Austrian gig economy. This research concentrated upon three of the nation’s preeminent delivery platforms—Foodora, Volt, and Lieferando—which collectively constitute the preponderant share of the country’s app-mediated logistics labor market. The study was predicated not upon isolated anecdotal accounts but upon a structured, recursive field research methodology, incorporating direct testimonies, meticulous behavioral and dispatch observation, exhaustive escalation documentation, and formal correspondence with designated platform communication representatives. The inquiry revealed a landscape wherein the ostensible promise of flexible employment frequently degenerates into a precarious existence, characterized by a profound and discernible power imbalance, systematically favoring the platform entities over the individual labor providers. This imbalance is observed to manifest through the deliberate obfuscation of operational mechanisms and the strategic manipulation of incentive structures.
+
+The findings delineate a disturbingly consistent pattern: platforms are observed to be optimizing for opacity whilst surreptitiously entrenching asymmetry. Every constituent element of the logistics process—ranging from order assignment to bonus incentive logic, and extending even to the definitional parameters of a "vehicle"—is demonstrably skewed towards non-transparency and misclassification. This deliberate absence of clarity permits platforms to operate with minimal accountability, thereby transferring inherent operational risks and responsibilities onto individual couriers. The resultant economic precarity for riders is not merely an unfortunate byproduct but appears to be an intrinsic outcome of system design. Through the deployment of sophisticated linguistic constructs, selectively disclosed policy stipulations, and automated systems demonstrably lacking in human oversight or effective redress mechanisms, a feedback loop has been meticulously engineered whereby riders are compelled to bear the consequences of systemic flaws, technical anomalies, and intentional design choices. Concurrently, they are systematically denied access to the operational levers that directly impinge upon their remuneration, occupational safety, and long-term economic viability. Riders are concurrently subjected to management by inscrutable code and held culpable for non-conformance to regulations that are neither overtly visible nor equitably enforced, thereby fostering an environment characterized by profound mistrust, pervasive economic insecurity, and a palpable sense of disempowerment amongst the labor force.
+
+**Bezug zu unserer Arbeit:** Eigenständige Feldforschung zur Plattformarbeit, getrennt von den Untersuchungsberichten in Kapitel 3.9.3.
+
+### Operational Blueprint for Physical AI Deployment: An Ethics-First Architecture for Robust and Reproducible Physical AI Agents in Open-World Environments
+
+27.07.2025 · doi.org/10.17605/OSF.IO/M3VG6
+
+Abstract im Wortlaut
+
+Artificial-intelligence agents that roam the messy, open-world physical realm must juggle sensor noise, moral ambiguity, and their own fallibility—yet most contemporary systems still cling to brittle binary logic and opaque heuristics. We present the Operational Blueprint for Physical AI Deployment, an architecture that welds multimodal perception, SQL-backed episodic–semantic memory, a ternary decision algebra (-1 / 0 / +1), and an introspective learning loop into a single, field-ready organism. Our design formalises confidence propagation, introduces two novel diagnostic metrics (μDP and MDPi), and bakes ethical weighting ahead of optimisation. To ground rhetoric in reality, we execute simulated and field pilots across four domains—courier dispatch, mobile science, drone monitoring, and factory advisory—plus controlled benchmarks in OpenAI Habitat under escalating sensor-dropout chaos. Results show a 22% reduction in safety-related incidents and 15% faster task completion versus a binary-logic baseline, while maintaining GDPR-grade privacy. By openly specifying interfaces, latency budgets, and threat models, we aim to push physical-AI discourse from hype to reproducibility.
+
+**Bezug zu unserer Arbeit:** Ternäre Entscheidungslogik für Agenten. Der Stack in Kapitel 3.9.1 setzt die ternäre Logik als Rechenbasis um.
+
+### The Ternary Intelligence Stack: An End-to-End Balanced-Ternary Alternative to Binary AI Infrastructure
+
+01.04.2026 · doi.org/10.17605/OSF.IO/CYN28
+
+Abstract im Wortlaut
+
+We present Ternlang, the first complete software stack for balanced ternary computing: a domain-specific language, bytecode compiler, stack-based virtual machine (BET VM), hardware description language backend, distributed actor runtime, and machine learning inference kernels—all unified under a single coherent architecture. The foundational primitive is the trit t ∈ {−1, 0, +1}, where the value 0 represents an active neutral state rather than absence, enabling three-valued logic that is structurally superior to binary for ambiguity-aware reasoning. The principal contribution is TSPARSE MATMUL: a first-class VM opcode that elides multiply operations against zero-weighted (“hold”) trit elements, surfacing at the instruction-set level a property that BitNet-style \[1\] ternary quantization reveals in neural weights. Empirical evaluation on quantized weight matrices of 512 × 512 elements yields 56.2% sparsity and a 2.27× reduction in multiply operations versus dense execution; a Compressed Sparse Column kernel with Rayon parallelism achieves up to 122× speedup at 99% sparsity— without approximate arithmetic or hardware reconfiguration.
+
+We further define the Balanced Ternary Execution (BET) ISA, a formal 2-bit-encoded instruction set with 51 opcodes spanning arithmetic, tensor operations, actor messaging, and control flow; synthesise it to Verilog-2001 with per-cell clock-gating on zero-weight elements; and demonstrate interoperability with existing ternary computing efforts via the ternlang-compat bridge crate.
+
+Beyond the execution substrate, we introduce two higher-level contributions. The Ternary AI Reasoning Toolkit (Phase 8) provides five structural primitives—iterative deliberation, coalition voting, multi-dimensional action gating, scalar-to-temperature bridging, and hallucination scoring—that make any AI agent’s decision loop architecturally ternary rather than merely prompted. The MoE-13 Ternary Orchestrator (Phase 9) implements a Mixture-of-Experts head with dual-key synergistic routing, 1+1=3 emergent triad synthesis, a hard-wired safety veto, and a three-tier memory mesh, realising the MoE-13 architecture \[2\] in 177+ passing tests across the full workspace. All nine crates are published to crates.io under open-core licensing. A companion corpus of 28,500+ executable .tern programs demonstrates the hold state across domains spanning aerospace, medicine, distributed systems, civic governance, and AI agent design.
+
+Version 2.0.0 of the Ternary Intelligence Stack introduces three further empirical advances. First, Albert MoE-13—a 22M-parameter fully ternary Mixture-of-Experts language model—demonstrates autonomous architectural self-evolution via Net2Net safe-copy layer surgery (3L→5L without restart), achieving an all-time best single-batch cross-entropy of 2.1353 (perplexity ≈8.5) trained entirely on a 2013 consumer CPU with no GPU. Second, independently verified AVX2 SIMD hardware benchmarks confirm 1.80× throughput at 50% sparsity and 3.0× over INT8 at 90% sparsity on a production Axum server. Third, the BET VM has been compiled to WebAssembly and executes live in the browser via TernStudio, proving that the complete ternary execution pipeline—lexer, parser, codegen, VM—runs client-side on standard web hardware without installation. The live MCP surface has grown to 34 free tools. These results establish ternary computation as a practical, democratising inference substrate rather than a theoretical curiosity.
+
+The ongoing Albert MoE-13 v3.0 training programme extends these results with four further contributions. First, a vocabulary surgery expanded the model from an 8,000-token English-only tokenizer to a 32,000-token ByteLevel BPE vocabulary covering eight languages (EN, DE, FR, ES, TR, RU, AR, ZH), trained on a 177M-token corpus with a mandated 10% chaos layer. Second, autonomous depth expansion continued through thirteen sequential Net2Net surgeries from 5L to 26L, followed by an autonomous mycelial cord surgery that bifurcated the single 256-dimensional residual stream into a dual-stream 2×256H architecture fused by six anastomosis gates at Fibonacci-indexed layers \[2, 3, 5, 8, 13, 21\]—to our knowledge the first dual-stream ternary Mixture-of-Experts grown autonomously mid-training—reaching ≈187M parameters across 2,044 tensors while preserving all prior weight structure. Third, the Epoch-Gated Routing Lottery protocol resets all gate weights to kaiming-uniform at every epoch boundary while preserving expert weights, driving per-epoch routing competition and observed expert specialisation dynamics (TLIGHT: first Green experts at Global Epoch 56). Fourth, live inference benchmarks independently verified on two CPU-only machines confirm 75% expert skip per decode step (@sparseskip at 3/12 active experts) sustaining 79.5–92.2 tok/s (AMD Ryzen 5 PRO 3500U: 79.5 tok/s; Intel i7-4800MQ: 92.2 tok/s), with held-out WikiText-2 perplexity of 2026.1 on the v2.0.0 checkpoint, proving the ternary MoE substrate operates at conversational generation speeds without GPU hardware.
+
+**Bezug zu unserer Arbeit:** Grundlagenpapier zum Repository ternary-intelligence-stack; Messwerte in Kapitel 3.2.
+
+### CALL LAURA: An Automatic Data-Processing Multi-Agent Framework (the "Agent SWAT Team" Methodology)
+
+12.07.2026 · doi.org/10.17605/OSF.IO/QCVJB
+
+Abstract im Wortlaut
+
+Paper 1 introduced two named instruments — the 8-Layer Cognitive Model and the User Integrity Protocol (UIP) — as ways of reading structure and integrity into a document or dialogue, and Paper 2 showed how a third instrument, the Continuous Co-Evolution Tracker, could be operationalized as mechanically computed software rather than left as self-reported narration. This paper documents a fourth operationalization, applied to a different problem: reviewing an arbitrary plan or document, once, and returning findings a reader can actually check. Existing document-review tooling built on language models suffers from one of two failure modes: either a single model call returns a blended verdict with no traceable link from a claim back to the evidence that produced it, or a multi-agent ensemble of model calls compounds the same problem across several unreadable reasoning chains, with no way for a user to tell whether any given finding reflects a named researcher’s methodology or the tool’s own invention. We describe call-laura, a small, deterministic multi-agent framework — an “agent team,” each agent a pure function of the submitted text — that applies Paper 1’s 8-Layer Model and UIP faithfully, adds two further lenses of the project’s own, and attaches to every single finding a mandatory, type-enforced provenance tag stating exactly whose methodology produced it: the primary author’s own published framework, this project’s own operationalization of a concept she names but does not herself specify an algorithm for, or an addition with no connection to her work at all. We further describe its extension, a fifteen-agent domain-specialist orchestration layer (“the SWAT team”) that runs the same evidence-anchored, attribution-tagged discipline across a much wider set of concerns — security, legal and regulatory exposure, finance, operations, accessibility, and more — synthesizing convergent findings across agents into a single prioritized review rather than fifteen disconnected opinions. The central claim of this paper is narrower than it might sound: not that keyword and pattern matching understands a document better than a language model does — it does not, and we say so throughout — but that a review tool bearing a named researcher’s identity has no integrity unless a reader can verify, per finding, whether a given claim is really her work or this project’s own judgment call. Determinism is not offered here as a claim of superior insight; it is offered as the price of that verifiability being possible at all.
+
+**Bezug zu unserer Arbeit:** Paper 3 der Reihe; gehört zu den Repositories call-laura und lauras-agents-public (Kapitel 3.10.1).
+
+### JARVIS: A Recursive, Self-Learning Human–AI Co-Evolution Agent Operating in Bidirectional Copilot Mode
+
+12.07.2026 · doi.org/10.17605/OSF.IO/HC9ZB
+
+Abstract im Wortlaut
+
+Paper 1 proposed the Integrated Emergent Interaction Architecture (IEIA-2025) and its Continuous Co-Evolution Tracker (CCET), and reported a Co-Evolution Index (CEI) rising from 0.31 to 0.82 across a single-subject, ≈3,800-session corpus — but, by its own §12 accounting, those figures were self-reported: narrated by the model within the dialogue it was describing, not computed by an independent pipeline. Paper 1 named this gap directly and called, in its Future Work (§13), for the metrics to be “standardized through shared benchmarking datasets and open-source analysis pipelines” before they could be treated as validated measurements rather than structured self-report. This paper documents the software system built to close that specific gap: Jarvis, a research agent embedded in the Emergent Interaction Lab’s admin workspace that computes CEI, a companion Co-Evolution Points (CEP) measure, and a Resonance Frequency indicator mechanically, per turn, from stored message embeddings — the same embeddings used for the agent’s cross-conversation retrieval, never recomputed, audited by automated integration tests against a real database rather than narrated in prose. We describe Jarvis’s four coupled subsystems — the recursive co-evolution loop and its bidirectional copilot mode (the agent is bound to whatever module of the workspace the user is currently viewing, and may act on it directly, subject to a hard iteration cap and a rule that only a human ever publishes); a cross-conversation retrieval memory; the Continuous Co-Evolution Tracker itself; and an emergence-verification gate that promotes a qualitative observation to measured emergence only when it recurs across at least three independent sessions above a stricter similarity threshold than the one used for turn-to-turn stability. A cross-cutting attribution layer labels every output as structural adaptation, not autonomous cognition, and leaves missing data absent rather than invented. As in Paper 1, we are explicit about what this system does and does not establish. Reproducibility of computation is not validity of the underlying construct: a cosine-similarity threshold over embeddings is a mechanical, auditable proxy for “stability,” not a certified measure of genuine semantic consistency, and its thresholds (0.75 for turn stability, 0.90 for cross-session emergence) are engineering choices tuned against one deployment, not empirically derived cutoffs. What this paper adds to Paper 1 is not a stronger scientific claim — it is the same claim, made checkable.
+
+**Bezug zu unserer Arbeit:** Paper 2 der Reihe zur Mensch-KI-Ko-Evolution.
+
+### Human–AI Co-Evolution as Ternary Logic: Distinguishing Output, Emergent Signal, and Hallucination in Real Human–AI Systems
+
+19.07.2026 · doi.org/10.17605/OSF.IO/UXCJE
+
+Abstract im Wortlaut
+
+A recurring, unsolved problem in human–AI collaboration is that a system’s routine output, a genuinely novel pattern emerging from real interaction, and a confident fabrication with no basis in fact can be indistinguishable in the moment, especially to a human working alongside the system in real time. This paper has two aims. First, it gives a self-contained account, for readers unfamiliar with either field, of what “emergence” means in the specific, weak, Bedau-sense this research program uses (§2), and of exactly how Papers 1–3 of this series measure it: the Continuous Co-Evolution Tracker’s stability and Co-Evolution Index computation over stored turn embeddings, the two-stage emergence-verification gate that withholds “measured” status from a candidate signal until it independently recurs across sessions, and the parallel, human-side 8-Layer classification that keeps the measurement genuinely bidirectional rather than model-centric (§4). Second, it introduces Ternary Ground: a specified, not-yet-implemented proposal to represent the shared pending/verified/rejected structure already present, informally and in three mutually incompatible representations, across Papers 2 and 3’s existing mechanisms, using RFI-IRFOS’s independently developed Ternary Intelligence Stack (TIS) — a three-valued (trit, {−1, 0, +1}) computational substrate in which the zero state is a first-class, honest “hold,” not a null, and in which every value can carry a structurally bounded, machine-readable confidence field (TritFloat) rather than an ad hoc float implying false precision (§5–6). We further document, narrowly and with the same transparency discipline as the rest of this series, that part of the impetus for this synthesis arose reflexively — during the very sessions spent validating and instrumenting the Co-Evolution framework, using tools whose own design this paper is partly about (§7). We are explicit throughout about what this paper does and does not establish: it gives a complete, checkable account of an existing measurement methodology, and it specifies a representational unification of three already-real mechanisms; it does not implement that unification in running code, does not improve the accuracy of any of the three mechanisms it describes, and does not resolve the harder question — left open by Papers 1–3 and inherited here — of whether any of these mechanical proxies actually track the theoretical constructs they are named for.
+
+**Bezug zu unserer Arbeit:** Paper 4 der Reihe; verbindet die ternäre Logik mit der Prüfung von KI-Aussagen.
 
 # Kapitel 4: Planung und Ausblick
 
