@@ -599,7 +599,7 @@ Abbildung 15: Quelle: Betreffzeilen der Commits in ternary-intelligence-stack un
 
 Quelle: Betreffzeilen der Commits in den Repositories ternary-intelligence-stack und rfi-irfos-web. Auswertung am 16.11.2026.
 
-**Lernerfahrung:** Früh veröffentlichte Zahlen und Aussagen mussten mehrfach nachgebessert werden. Daraus folgten feste Regeln: Zahlen werden berechnet statt getippt, Aussagen brauchen einen Messwert, und Berichte durchlaufen eine zweite Prüfung durch Fachleute.
+**Feste Regeln:** Zahlen werden berechnet statt getippt, jede Aussage braucht einen Messwert, und Berichte durchlaufen vor der Veröffentlichung eine zweite Prüfung durch Fachleute.
 
 ## 3.11 Alle Repositories im Überblick: vom Fundament bis zur Anwendung
 
