@@ -742,7 +742,8 @@ Für jedes Ziel nennen wir die Messgröße, an der der nächste Bericht uns prü
 
 | Ziel | Messgröße |
 |----|----|
-| Fünf zahlende Kunden bis 31.12.2026 | Anzahl monatlich zahlender Kundenverträge |
+| Eigene Server so weit ausbauen, dass wir unser Sprachmodell lokal trainieren und die Forschung zur ternären Logik skalieren | Rechenkapazität der eigenen Server, Anzahl der Trainingsläufe auf eigener Hardware, neue Forschungsergebnisse zur ternären Logik pro Jahr |
+| Zahlende Kunden finanzieren den Ausbau (Ziel: fünf bis 31.12.2026) | Anzahl monatlich zahlender Kundenverträge |
 | Wirkung bei Kunden sichtbar machen (ab 2027) | Anzahl betreuter kleiner Betriebe, Anteil der Befunde mit bestätigter Korrektur (erkannt über den Merge im Portal), Zeit von der Meldung bis zur Korrektur |
 | Klare Lizenzen für die eigenen Repositories | Anteil der eigenständigen öffentlichen Repositories mit Lizenz (heute 27 öffentliche Repositories mit Lizenz) |
 | Wirkungsbericht als Jahresbericht | Veröffentlichung jährlich nach dem Social Reporting Standard |
