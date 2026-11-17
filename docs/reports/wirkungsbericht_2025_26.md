@@ -807,15 +807,38 @@ Ein Verein, drei Co-Founder, ein Kassier und eine Gründungsgeschichte, die 2020
 | Simeon Andreas Kepp MBA | Co-Founder, Obmann, gewerberechtlicher Geschäftsführer |
 | Louis Paul Ehrig | Kassier |
 | Zabihullah Karimi | Co-Founder, Kernteam |
-| Laura Serna Gaviria | Co-Founder, Kernteam. Hat alle 292 Agenten mit der gesamten Logik der Multi-Agenten-Umgebung gebaut, The Squad produktionsreif gemacht und zum Aufbau von DINGIR, NYX und der Sales-Intelligence-Agenten einen unermesslichen Beitrag geleistet. |
+| Laura Serna Gaviria | Co-Founder, Kernteam, Forschungspartnerin (Kapitel 6) |
 
-Simeon Kepp, Zabihullah Karimi und Laura Serna Gaviria haben das Institut gemeinsam gegründet und tragen die inhaltliche Arbeit. Laura Serna Gaviria hat sehr viele Stunden in das Institut investiert, und viele Ergebnisse dieses Vereinsjahres gibt es nur durch diesen Einsatz. Zudem ist der Verein ein Kleinstunternehmen.
+Simeon Kepp, Zabihullah Karimi und Laura Serna Gaviria haben das Institut gemeinsam gegründet und tragen die inhaltliche Arbeit. Zudem ist der Verein ein Kleinstunternehmen.
 
 ## 5.3 Partnerschaften, Kooperationen und Netzwerke
 
 - **Forschungspartner:** Im Auftrag von Forschungspartnern untersuchen wir veröffentlichte mobile Apps (Kapitel 3.2).
 - **Open-Source-Gemeinschaft:** Wir nutzen offene Werkzeuge (Semgrep, Gitleaks, Trivy) und veröffentlichen eigene Software unter freien Lizenzen.
 - **Wirtschaftskammer:** Der Verein ist Mitglied der Wirtschaftskammer.
+
+# Kapitel 6: Forschungspartnerschaft mit Laura Serna Gaviria
+
+Laura Serna Gaviria ist Co-Founder und unsere Forschungspartnerin. Hier steht, was im Vereinsjahr auf ihrer Arbeit beruht.
+
+## 6.1 Rolle und Zusammenarbeit
+
+Laura Serna Gaviria hat das Institut mitgegründet und leitet das Emergent Interaction Lab. Seit 2023 erforscht Laura die Interaktion zwischen Mensch und KI über lange Zeiträume und hat dafür eigene Methoden entwickelt, mit denen sich kognitive, verhaltensbezogene und systemische Muster erkennen, rekonstruieren und bewerten lassen. Für das Institut arbeitet Laura als Forschungspartnerin an der Architektur, der Logik und der Prüfung unserer Agenten und der Plattformen, die auf ihnen laufen.
+
+Dabei hat Laura sehr viele Stunden in das Institut investiert, und viele Ergebnisse dieses Vereinsjahres gibt es nur durch diesen Einsatz.
+
+## 6.2 Was im Vereinsjahr auf Lauras Arbeit beruht
+
+| Bereich | Lauras Beitrag | Wo im Bericht, Quelle |
+|----|----|----|
+| Agenten | Alle 292 Agenten mit der gesamten Logik der Multi-Agenten-Umgebung gebaut | Übersicht, Kapitel 3.9.4 |
+| The Squad | The Squad produktionsreif gemacht | Kapitel 3.2, Produkte |
+| DINGIR, NYX und Sales-Intelligence-Agenten | Unermesslicher Beitrag zum Aufbau | NYX in Kapitel 3.8 |
+| Planung und Prüfung | Peer-Review jedes Workplans im Forschungsprogramm zum World Model seit etwa August 2026, in mehreren Runden | Aussage der Gründer, Planungsdokumente |
+| Veröffentlichungen | CALL LAURA, JARVIS und Human–AI Co-Evolution as Ternary Logic beschreiben Software des Emergent Interaction Lab | Kapitel 3.11 |
+| Repositories | call-laura, lauras-port-proxy, laura, veo-framework und lauras-agents-public, zusammen 53 Commits | Kapitel 3.9.4 |
+
+Quelle: Angaben der Gründer. Für die Peer-Reviews liegen Planungsdokumente vor, in denen Lauras Korrekturen übernommen sind. Ein Teil der Arbeit steht in Plänen, Konzepten und Reviews und taucht deshalb in den Commit-Zahlen aus Kapitel 3 nur teilweise auf. Eine Stundenzahl erfassen wir bisher nicht, der Bericht gibt darum keine an.
 
 # Anhang A: Zählweise und Grenzen
 
