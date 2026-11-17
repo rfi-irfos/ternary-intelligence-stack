@@ -6,7 +6,7 @@ Wirkungsbericht nach dem Social Reporting Standard, erstellt von den Mitgliedern
 
 # Dieses Jahr in Zahlen
 
-Heute legen wir offen, was im Vereinsjahr entstanden ist. RFI-IRFOS erforscht KI-gestützte Zukunftstechnologien und veröffentlicht die Ergebnisse. Alle Mitwirkenden arbeiten ehrenamtlich, öffentliche Förderung hat der Verein bisher nicht erhalten.
+Heute legen wir offen, was im Vereinsjahr entstanden ist. RFI-IRFOS erforscht KI-gestützte Zukunftstechnologien und veröffentlicht die Ergebnisse.
 
 - **331 Mio.** Parameter im Sprachmodell albert. (ternäres Modell, jedes Gewicht −1, 0 oder +1)
 - **6** Veröffentlichungen mit DOI (frei lesbar auf OSF)
@@ -35,7 +35,7 @@ Stand 16.11.2026. Quellen, Abrufdaten und Zählweise stehen in Kapitel 3 und Anh
 
 Wirkungen (Outcome und Impact) sind Veränderungen bei Zielgruppen, in ihrem Umfeld und in der Gesellschaft, die auf unsere Leistungen folgen. Wir stellen sie in der IOOI-Wirkungskette dar: **Ressourcen (Input) → Leistungen (Output) → Wirkungen (Outcome und Impact)**.
 
-Abkürzungen: KI = künstliche Intelligenz, KMU = kleine und mittlere Unternehmen, SOC = Security Operations Center (Sicherheitszentrale, die Sicherheitsvorfälle laufend beobachtet und bearbeitet), SDG = Ziel für nachhaltige Entwicklung der Vereinten Nationen, VZÄ = Vollzeitäquivalent, TWh = Terawattstunde.
+Abkürzungen: KI = künstliche Intelligenz, KMU = kleine und mittlere Unternehmen, SOC = Security Operations Center (Sicherheitszentrale, die Sicherheitsvorfälle laufend beobachtet und bearbeitet), SDG = Ziel für nachhaltige Entwicklung der Vereinten Nationen, TWh = Terawattstunde.
 
 Aussagen in diesem Bericht gehören einer von drei Arten an: **gemessen** (eigene Messung, mit Quelle), **belegt** (externe Quelle, im Quellenverzeichnis) oder **geplant** bzw. **Hypothese** (so gekennzeichnet).
 
@@ -124,7 +124,7 @@ Aus der Forschung entstehen kommerzielle Leistungen, die über das Gewerbe des V
 | Gesellschaft, Umwelt | Ternäre Effizienz auf Standard-Hardware | Geringerer Speicher- und Rechenbedarf, niedrigere Einstiegshürde für KI (SDG 9) |
 | Verein | Überschüsse werden monatlich reinvestiert | Dauerhafte Finanzierung weiterer Forschung (Impact First) |
 
-**Input** (Ehrenamt, Eigenmittel, Wissen, Standard-Hardware) → **Output** (Berichte, offene Software, Squad, Managed SOC, Workshops) → **Outcome** (Kleine Betriebe prüfen Software, Fachleute entscheiden mit Agenten, Wissen ist offen nutzbar) → **Impact** (Breiterer Zugang zu Sicherheit und KI, sichere Arbeit, geringerer Ressourcenbedarf)
+**Input** (Arbeitszeit, Eigenmittel, Wissen, Standard-Hardware) → **Output** (Berichte, offene Software, Squad, Managed SOC, Workshops) → **Outcome** (Kleine Betriebe prüfen Software, Fachleute entscheiden mit Agenten, Wissen ist offen nutzbar) → **Impact** (Breiterer Zugang zu Sicherheit und KI, sichere Arbeit, geringerer Ressourcenbedarf)
 
 Abbildung 3: Wirkungskette von RFI-IRFOS.
 
@@ -146,8 +146,8 @@ Berichtszeitraum ist das Vereinsjahr 2025/26 (13.11.2025 bis 16.11.2026). Die Za
 
 ## 3.1 Eingesetzte Ressourcen (Input)
 
-- **Zeit:** Alle Mitwirkenden arbeiten ehrenamtlich, 0 VZÄ bezahlte Stellen.
-- **Finanzielle Mittel:** Der Verein finanziert sich vollständig selbst, aus Vorträgen, Workshops, Spenden und viel Eigenarbeit. Öffentliche Förderungen hat der Verein bisher nicht erhalten.
+- **Zeit:** Die Arbeitszeit des Kernteams und der Mitglieder.
+- **Finanzielle Mittel:** Der Verein finanziert sich vollständig selbst, aus Vorträgen, Workshops, Spenden und viel Eigenarbeit.
 - **Sachmittel:** Eigene Rechner. Alle Benchmarks laufen auf Standard-Hardware (CPU eines Laptops aus dem Jahr 2013), ohne Grafikkarte.
 - **Immaterielle Ressourcen:** Wissen und Fähigkeiten des Teams, eigene Software unter freien Lizenzen (13 Repositories Apache-2.0, 8 MIT, 2 LGPL, 4 weitere), Forschungspartnerschaften.
 
@@ -269,7 +269,7 @@ Die Werte stammen von einem Laptop-Prozessor aus dem Jahr 2013 (Intel i7-4800MQ)
 
 | Wirkungskette | Berichtszeitraum | Indikator |
 |----|----|----|
-| **Input** | Ehrenamtliche Arbeit, Eigenfinanzierung aus Vorträgen, Workshops, Spenden | 0 VZÄ bezahlt, 0 € öffentliche Förderung |
+| **Input** | Arbeitszeit des Kernteams, Eigenfinanzierung aus Vorträgen, Workshops, Spenden | Kernteam und Mitglieder, eigene Standard-Hardware |
 | **Output** | Veröffentlichte Forschung, offene Software, Messwerte, Portal, Squad | 387+ Apps, 249 veröffentlichte Berichte, 1,04 Mio.+ Klassen, 41 öffentliche Repositories, 27 mit Lizenz, 5 Benchmark-Kernwerte, 11.269 Commits, 51 Pakete auf crates.io |
 | **Outcome** | Nachprüfbare Ergebnisse, Befunde bei Aufsichtsbehörden, Portal im Einsatz | 262+ kritische Befunde, Portal live mit Preismodell |
 | **Impact** | Zugang zu Sicherheit und KI wird breiter, geringerer Ressourcenbedarf | 4× weniger Speicher, 1,63× Durchsatz (gemessen); Kundenwirkung ab 2027 gemessen |
@@ -778,7 +778,7 @@ Für jedes Ziel nennen wir die Messgröße, an der der nächste Bericht uns prü
 
 | Risiko | Gegenmaßnahme |
 |----|----|
-| Abhängigkeit von ehrenamtlicher Arbeit weniger Personen | Produkte finanzieren Betrieb und Forschung; Dokumentation und offene Repositories sichern Wissen im Verein |
+| Abhängigkeit von der Arbeit weniger Personen | Produkte finanzieren Betrieb und Forschung; Dokumentation und offene Repositories sichern Wissen im Verein |
 | Zu wenig Nachfrage nach den Produkten | Preisstufe ab 99 € pro Monat, gezielte Ansprache kleiner Betriebe, offene Forschungsberichte als Vertrauensanker |
 | Rechtliche und ethische Risiken der Sicherheitsforschung | Koordinierte Offenlegung, Berichte ohne personenbezogene Daten, Zugriff auf Kundenumgebungen nur mit ausdrücklicher Freigabe und eng begrenztem Umfang |
 | Zu schnelle Wachstumsversprechen | Aussagen nur mit Messwert; Projektionen und Pläne als solche gekennzeichnet |
@@ -805,8 +805,8 @@ Ein Verein, drei Co-Founder, ein Kassier und eine Gründungsgeschichte, die 2020
 |----|----|
 | Simeon Andreas Kepp MBA | Co-Founder, Obmann, gewerberechtlicher Geschäftsführer |
 | Louis Paul Ehrig | Kassier |
-| Zabihullah Karimi | Co-Founder, Kernteam, ehrenamtlich |
-| Laura Serna Gaviria | Co-Founder, Kernteam, ehrenamtlich |
+| Zabihullah Karimi | Co-Founder, Kernteam |
+| Laura Serna Gaviria | Co-Founder, Kernteam |
 
 Simeon Kepp, Zabihullah Karimi und Laura Serna Gaviria haben das Institut gemeinsam gegründet und tragen die inhaltliche Arbeit. Zudem ist der Verein ein Kleinstunternehmen.
 
