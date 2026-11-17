@@ -10,7 +10,7 @@ Das Research Focus Institute (RFI-IRFOS) in Graz ist ein Verein, der KI-gestütz
 
 ### Ergebnis
 
-Im Berichtszeitraum entstanden ein ternäres Sprachmodell mit 331 Mio. Parametern, ein Team aus 292 spezialisierten Agenten, 41 öffentliche Repositories mit 11.269 Commits und sechs Veröffentlichungen mit DOI. In der Sicherheitsforschung haben wir 387+ öffentliche Apps auf Quellcode-Ebene geprüft und 249 Berichte veröffentlicht, die Betreiber vor der Veröffentlichung erhalten.
+Im Berichtszeitraum entstanden ein ternäres Sprachmodell mit 331 Mio. Parametern, ein von Laura Serna Gaviria gebautes Team aus 292 spezialisierten Agenten, 41 öffentliche Repositories mit 11.269 Commits und sechs Veröffentlichungen mit DOI. In der Sicherheitsforschung haben wir 387+ öffentliche Apps auf Quellcode-Ebene geprüft und 249 Berichte veröffentlicht, die Betreiber vor der Veröffentlichung erhalten.
 
 ### Wirkung
 
@@ -555,7 +555,7 @@ Neben den großen Projekten stehen kleine, abgeschlossene Werkzeuge öffentlich 
 | **gut-check** | Prüftor für KI-Agenten mit zwei Schleifen: Ein schneller Klassifikator markiert Unsicherheit und reicht sie an das große Sprachmodell weiter. Eine Messung an Aufgaben mit bekannter Lösung ergab laut Commit-Nachricht „found a real failure“ (22.09.). | 22.–23.09.2026, 32 | Apache-2.0 |
 | **invisible-layer** | Webseite mit 44 Sensor-Experimenten, die zeigen, was ein Telefon alles messen kann (Seismik, Raumakustik, Kompass, Barometer und weitere). Zweisprachig, installierbar, mit Barrierefreiheitsdurchgang. | 23.05.–06.10.2026, 85 | keine |
 | **claude-cache-idiocracy** | Werkzeug, das beim Arbeiten mit KI-Programmierassistenten den Verbrauch senkt: Es vermeidet doppelte Lesezugriffe, schützt Zwischenspeicher, verdichtet lange Sitzungen, begrenzt gleichzeitige Unter-Agenten und sperrt bei Fehlern („fail-closed“). | 24.–26.10.2026, 42 | MIT |
-| **call-laura, lauras-port-proxy, laura, veo-framework, lauras-agents-public** | Kleine Forschungswerkzeuge im Umfeld des Emergent Interaction Lab: ein deterministischer Prüfserver für KI-Assistenten, eine installierbare Prüfung offener Netzwerk-Ports, ein Köder-Datensatz gegen Datendiebstahl über Nähe und ein Verfahren, in dem ein Sprachmodell Ausgabe, Emergenz und Halluzination unterscheiden soll. Für den Prüfserver wurde eine Sicherheitslücke bei den Zugriffsregeln (CORS) geschlossen (16.07.). | 12.07.–19.08.2026, zusammen 53 | MIT, teils nicht eindeutig |
+| **call-laura, lauras-port-proxy, laura, veo-framework, lauras-agents-public** | Open-Source-Arbeiten aus der Forschung von Laura Serna Gaviria am Emergent Interaction Lab, zwei davon mit eigenem Paper (Kapitel 3.11): ein deterministischer Prüfserver für KI-Assistenten, eine installierbare Prüfung offener Netzwerk-Ports, ein Köder-Datensatz gegen Datendiebstahl über Nähe und ein Verfahren, mit dem ein Sprachmodell Ausgabe, Emergenz und Halluzination auseinanderhält. Für den Prüfserver wurde eine Sicherheitslücke bei den Zugriffsregeln (CORS) geschlossen (16.07.). | 12.07.–19.08.2026, zusammen 53 | MIT, teils nicht eindeutig |
 | **agent-albert-cli, bifp, ai-security, ginie** | Kommandozeilen-Programm für mehrere Sprachmodelle, Protokollentwurf für wechselseitige Rückmeldungen, Sammlung von 20 Werkzeugen zur Sicherheitsprüfung von KI-Systemen und ein Desktop-Begleiter, der offline von einem USB-Stick läuft. | 22.06.–06.10.2026, zusammen 47 | MIT bzw. keine |
 | **foodchain-analysis** | Agentenbasiertes Simulationsmodell zum globalen Ernährungssystem: Es rechnet durch, wie sich das Kalorienangebot von der Ernte bis zum Teller verringert (Verluste nach der Ernte, Verarbeitung, Zugangshürden). Das Modell kommt zu dem Ergebnis, dass die Erde rund das 1,64-Fache des Kalorienbedarfs erzeugt, das wirksame Angebot aber durch diese Verluste auf etwa das 0,94-Fache sinkt. Das ist eine Aussage des Modells und keine unabhängig geprüfte Messung. Mit Dashboard im Browser. Forschungsergebnis zum Thema Umwelt und Ernährung (SDG 2 und 12). | 17.06.–15.08.2026, 14 (auch Rück- und Neuveröffentlichung) | keine Angabe |
 | **nikoletta-tutor** | Website für ein Sprachcoaching, gebaut mit dem eigenen Baukasten samt Bearbeitungsbereich für die Inhaberin. | 2026, 153 | keine |
@@ -807,9 +807,9 @@ Ein Verein, drei Co-Founder, ein Kassier und eine Gründungsgeschichte, die 2020
 | Simeon Andreas Kepp MBA | Co-Founder, Obmann, gewerberechtlicher Geschäftsführer |
 | Louis Paul Ehrig | Kassier |
 | Zabihullah Karimi | Co-Founder, Kernteam |
-| Laura Serna Gaviria | Co-Founder, Kernteam |
+| Laura Serna Gaviria | Co-Founder, Kernteam. Hat alle 292 Agenten mit der gesamten Logik der Multi-Agenten-Umgebung gebaut und beim Aufbau von DINGIR, NYX und der Sales-Intelligence-Agenten mitgewirkt. |
 
-Simeon Kepp, Zabihullah Karimi und Laura Serna Gaviria haben das Institut gemeinsam gegründet und tragen die inhaltliche Arbeit. Zudem ist der Verein ein Kleinstunternehmen.
+Simeon Kepp, Zabihullah Karimi und Laura Serna Gaviria haben das Institut gemeinsam gegründet und tragen die inhaltliche Arbeit. Laura Serna Gaviria hat sehr viele Stunden in das Institut investiert. Zudem ist der Verein ein Kleinstunternehmen.
 
 ## 5.3 Partnerschaften, Kooperationen und Netzwerke
 
